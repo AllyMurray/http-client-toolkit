@@ -1,0 +1,57 @@
+{
+  "name": "http-client-toolkit-monorepo",
+  "description": "HTTP client toolkit monorepo with pluggable caching, deduplication, and rate limiting",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AllyMurray/http-client-toolkit.git"
+  },
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:build": "turbo run test:build",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint -- --fix",
+    "pre-commit": "prettier --write . && turbo run lint test --filter=...[HEAD^1]",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "dev": "turbo run dev --parallel",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish"
+  },
+  "author": {
+    "name": "Ally Murray",
+    "email": "allymurray88@gmail.com",
+    "organization": false
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "@types/node": "20",
+    "commitizen": "4.3.1",
+    "husky": "9.1.7",
+    "prettier": "3.6.2",
+    "rimraf": "6.0.1",
+    "turbo": "^2.0.0",
+    "typescript": "5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "typescript": "5.8.3"
+    }
+  },
+  "engines": {
+    "node": ">= 20.0.0"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0",
+  "workspaces": [
+    "packages/*"
+  ]
+}

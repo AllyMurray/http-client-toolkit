@@ -1,0 +1,73 @@
+{
+  "name": "@http-client-toolkit/core",
+  "description": "Core HTTP client with pluggable caching, deduplication, and rate limiting",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AllyMurray/http-client-toolkit.git"
+  },
+  "scripts": {
+    "build": "tsup && npm run test",
+    "lint": "eslint --fix src && prettier --write .",
+    "test": "vitest run --dir=src",
+    "test:watch": "vitest --dir=src",
+    "dev": "tsup --watch",
+    "clean": "rimraf lib dist node_modules .turbo"
+  },
+  "author": {
+    "name": "Ally Murray",
+    "email": "allymurray88@gmail.com",
+    "organization": false
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsup-config": "workspace:*",
+    "@repo/vitest-config": "workspace:*",
+    "@types/node": "20",
+    "nock": "14.0.5",
+    "tsup": "8.5.0",
+    "typescript": "5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "axios": "1.10.0",
+    "zod": "3.25.71"
+  },
+  "keywords": [
+    "http-client",
+    "caching",
+    "deduplication",
+    "rate-limiting",
+    "http-toolkit"
+  ],
+  "engines": {
+    "node": ">= 20.0.0"
+  },
+  "main": "./lib/index.cjs",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["lib/**"],
+  "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
+  "version": "0.1.0",
+  "bugs": {
+    "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
+  },
+  "types": "./lib/index.d.ts",
+  "type": "module",
+  "module": "./lib/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "require": {
+        "types": "./lib/index.d.cts",
+        "default": "./lib/index.cjs"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+}
