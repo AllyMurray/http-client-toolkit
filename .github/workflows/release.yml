@@ -78,7 +78,7 @@ jobs:
         if: steps.changesets.outputs.has_changesets == 'true'
         run: npx changeset publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
       - name: Push tags

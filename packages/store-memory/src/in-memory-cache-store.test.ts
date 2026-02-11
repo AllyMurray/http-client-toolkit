@@ -59,14 +59,14 @@ describe('InMemoryCacheStore', () => {
 
   describe('TTL functionality', () => {
     it('should expire values after TTL', async () => {
-      await store.set('key1', 'value1', 0.001); // 1ms TTL
+      await store.set('key1', 'value1', 0.05); // 50ms TTL
 
       // Should be available immediately
       let value = await store.get('key1');
       expect(value).toBe('value1');
 
       // Wait for expiration
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       value = await store.get('key1');
       expect(value).toBeUndefined();
