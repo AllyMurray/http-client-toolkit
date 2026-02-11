@@ -566,11 +566,14 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
 
   private deserializeResult(serializedResult: unknown): T | undefined {
     try {
-      if (
-        serializedResult === '__UNDEFINED__' ||
-        serializedResult === '__NULL__'
-      ) {
+      if (serializedResult === '__UNDEFINED__') {
         return undefined;
+      }
+
+      // Preserve explicit null payloads; callers may rely on null as a valid
+      // response distinct from "no result" (undefined).
+      if (serializedResult === '__NULL__') {
+        return null as unknown as T;
       }
 
       if (serializedResult) {
