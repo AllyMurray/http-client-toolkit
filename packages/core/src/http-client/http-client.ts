@@ -10,6 +10,18 @@ import {
 } from '../stores/index.js';
 import { HttpClientContract } from '../types/index.js';
 
+const DEFAULT_RATE_LIMIT_HEADER_NAMES = {
+  retryAfter: ['retry-after'],
+  limit: ['ratelimit-limit', 'x-ratelimit-limit', 'rate-limit-limit'],
+  remaining: [
+    'ratelimit-remaining',
+    'x-ratelimit-remaining',
+    'rate-limit-remaining',
+  ],
+  reset: ['ratelimit-reset', 'x-ratelimit-reset', 'rate-limit-reset'],
+  combined: ['ratelimit'],
+} as const;
+
 /**
  * Wait for a specified period while supporting cancellation via AbortSignal.
  *
@@ -80,11 +92,30 @@ export interface HttpClientOptions {
    * based on response content (e.g., API-level error codes).
    */
   responseHandler?: (data: unknown) => unknown;
+  /**
+   * Configure rate-limit response header names for standards and custom APIs.
+   */
+  rateLimitHeaders?: {
+    retryAfter?: Array<string>;
+    limit?: Array<string>;
+    remaining?: Array<string>;
+    reset?: Array<string>;
+    combined?: Array<string>;
+  };
+}
+
+interface RateLimitHeaderConfig {
+  retryAfter: Array<string>;
+  limit: Array<string>;
+  remaining: Array<string>;
+  reset: Array<string>;
+  combined: Array<string>;
 }
 
 export class HttpClient implements HttpClientContract {
   private _http;
   private stores: HttpClientStores;
+  private serverCooldowns = new Map<string, number>();
   private options: Required<
     Pick<
       HttpClientOptions,
@@ -94,7 +125,9 @@ export class HttpClient implements HttpClientContract {
     Pick<
       HttpClientOptions,
       'responseTransformer' | 'errorHandler' | 'responseHandler'
-    >;
+    > & {
+      rateLimitHeaders: RateLimitHeaderConfig;
+    };
 
   constructor(stores: HttpClientStores = {}, options: HttpClientOptions = {}) {
     this._http = axios.create();
@@ -106,7 +139,56 @@ export class HttpClient implements HttpClientContract {
       responseTransformer: options.responseTransformer,
       errorHandler: options.errorHandler,
       responseHandler: options.responseHandler,
+      rateLimitHeaders: this.normalizeRateLimitHeaders(
+        options.rateLimitHeaders,
+      ),
     };
+  }
+
+  private normalizeRateLimitHeaders(
+    customHeaders?: HttpClientOptions['rateLimitHeaders'],
+  ): RateLimitHeaderConfig {
+    return {
+      retryAfter: this.normalizeHeaderNames(
+        customHeaders?.retryAfter,
+        DEFAULT_RATE_LIMIT_HEADER_NAMES.retryAfter,
+      ),
+      limit: this.normalizeHeaderNames(
+        customHeaders?.limit,
+        DEFAULT_RATE_LIMIT_HEADER_NAMES.limit,
+      ),
+      remaining: this.normalizeHeaderNames(
+        customHeaders?.remaining,
+        DEFAULT_RATE_LIMIT_HEADER_NAMES.remaining,
+      ),
+      reset: this.normalizeHeaderNames(
+        customHeaders?.reset,
+        DEFAULT_RATE_LIMIT_HEADER_NAMES.reset,
+      ),
+      combined: this.normalizeHeaderNames(
+        customHeaders?.combined,
+        DEFAULT_RATE_LIMIT_HEADER_NAMES.combined,
+      ),
+    };
+  }
+
+  private normalizeHeaderNames(
+    providedNames: Array<string> | undefined,
+    defaultNames: ReadonlyArray<string>,
+  ): Array<string> {
+    if (!providedNames || providedNames.length === 0) {
+      return [...defaultNames];
+    }
+
+    const customNames = providedNames
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (customNames.length === 0) {
+      return [...defaultNames];
+    }
+
+    return [...new Set([...customNames, ...defaultNames])];
   }
 
   /**
@@ -145,6 +227,179 @@ export class HttpClient implements HttpClientContract {
     return { endpoint, params };
   }
 
+  private getOriginScope(url: string): string {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private getHeaderValue(
+    headers: Record<string, unknown> | undefined,
+    names: Array<string>,
+  ): string | undefined {
+    if (!headers) {
+      return undefined;
+    }
+
+    for (const rawName of names) {
+      const name = rawName.toLowerCase();
+      const value = headers[name] ?? headers[rawName];
+
+      if (typeof value === 'string') {
+        return value;
+      }
+
+      if (Array.isArray(value) && value.length > 0) {
+        const first = value.find((entry) => typeof entry === 'string');
+        if (typeof first === 'string') {
+          return first;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseIntegerHeader(value: string | undefined): number | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return undefined;
+    }
+
+    return parsed;
+  }
+
+  private parseRetryAfterMs(value: string | undefined): number | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const numeric = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+      return numeric * 1000;
+    }
+
+    const dateMs = Date.parse(value);
+    if (!Number.isFinite(dateMs)) {
+      return undefined;
+    }
+
+    return Math.max(0, dateMs - Date.now());
+  }
+
+  private parseResetMs(value: string | undefined): number | undefined {
+    const parsed = this.parseIntegerHeader(value);
+    if (parsed === undefined) {
+      return undefined;
+    }
+
+    if (parsed === 0) {
+      return 0;
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    if (parsed > nowSeconds + 1) {
+      return Math.max(0, (parsed - nowSeconds) * 1000);
+    }
+
+    return parsed * 1000;
+  }
+
+  private parseCombinedRateLimitHeader(value: string | undefined): {
+    remaining?: number;
+    resetMs?: number;
+  } {
+    if (!value) {
+      return {};
+    }
+
+    const remainingMatch = value.match(/(?:^|[;,])\s*r\s*=\s*(\d+)/i);
+    const resetMatch = value.match(/(?:^|[;,])\s*t\s*=\s*(\d+)/i);
+
+    return {
+      remaining: remainingMatch
+        ? this.parseIntegerHeader(remainingMatch[1])
+        : undefined,
+      resetMs: resetMatch ? this.parseResetMs(resetMatch[1]) : undefined,
+    };
+  }
+
+  private applyServerRateLimitHints(
+    url: string,
+    headers: Record<string, unknown> | undefined,
+    statusCode?: number,
+  ): void {
+    if (!headers) {
+      return;
+    }
+
+    const config = this.options.rateLimitHeaders;
+    const retryAfterRaw = this.getHeaderValue(headers, config.retryAfter);
+    const resetRaw = this.getHeaderValue(headers, config.reset);
+    const remainingRaw = this.getHeaderValue(headers, config.remaining);
+    const combinedRaw = this.getHeaderValue(headers, config.combined);
+
+    const retryAfterMs = this.parseRetryAfterMs(retryAfterRaw);
+    const resetMs = this.parseResetMs(resetRaw);
+    const remaining = this.parseIntegerHeader(remainingRaw);
+    const combined = this.parseCombinedRateLimitHeader(combinedRaw);
+
+    const effectiveRemaining = remaining ?? combined.remaining;
+    const effectiveResetMs = resetMs ?? combined.resetMs;
+    const hasRateLimitErrorStatus = statusCode === 429 || statusCode === 503;
+
+    let waitMs: number | undefined;
+
+    if (retryAfterMs !== undefined) {
+      waitMs = retryAfterMs;
+    } else if (
+      effectiveResetMs !== undefined &&
+      (hasRateLimitErrorStatus ||
+        (effectiveRemaining !== undefined && effectiveRemaining <= 0))
+    ) {
+      waitMs = effectiveResetMs;
+    }
+
+    if (waitMs === undefined || waitMs <= 0) {
+      return;
+    }
+
+    const scope = this.getOriginScope(url);
+    this.serverCooldowns.set(scope, Date.now() + waitMs);
+  }
+
+  private async enforceServerCooldown(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const scope = this.getOriginScope(url);
+    const cooldownUntil = this.serverCooldowns.get(scope);
+    if (!cooldownUntil) {
+      return;
+    }
+
+    const waitMs = cooldownUntil - Date.now();
+    if (waitMs <= 0) {
+      this.serverCooldowns.delete(scope);
+      return;
+    }
+
+    if (this.options.throwOnRateLimit) {
+      throw new Error(
+        `Rate limit exceeded for origin '${scope}'. Wait ${waitMs}ms before retrying.`,
+      );
+    }
+
+    await wait(Math.min(waitMs, this.options.maxWaitTime), signal);
+  }
+
   private generateClientError(err: unknown): Error {
     // If a custom error handler is provided, use it
     if (this.options.errorHandler) {
@@ -173,6 +428,8 @@ export class HttpClient implements HttpClientContract {
     const resource = this.inferResource(url);
 
     try {
+      await this.enforceServerCooldown(url, signal);
+
       // 1. Cache - check for cached response
       if (this.stores.cache) {
         const cachedResult = await this.stores.cache.get(hash);
@@ -227,6 +484,11 @@ export class HttpClient implements HttpClientContract {
 
       // 4. Execute the actual HTTP request
       const response = await this._http.get(url, { signal });
+      this.applyServerRateLimitHints(
+        url,
+        response.headers as Record<string, unknown>,
+        response.status,
+      );
 
       // 5. Apply response transformer if provided
       let data = response.data;
@@ -259,6 +521,15 @@ export class HttpClient implements HttpClientContract {
 
       return result;
     } catch (error) {
+      const axiosError = error as AxiosError;
+      if (axiosError.response) {
+        this.applyServerRateLimitHints(
+          url,
+          axiosError.response.headers as Record<string, unknown>,
+          axiosError.response.status,
+        );
+      }
+
       // Mark deduplication as failed
       if (this.stores.dedupe) {
         await this.stores.dedupe.fail(hash, error as Error);

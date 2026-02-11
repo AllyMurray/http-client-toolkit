@@ -145,6 +145,72 @@ describe('HttpClient', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  test('should enforce Retry-After cooldown from throttled responses', async () => {
+    nock(baseUrl)
+      .get('/throttled')
+      .reply(429, { message: 'Too many requests' }, { 'Retry-After': '1' });
+
+    const client = new HttpClient();
+
+    await expect(client.get(`${baseUrl}/throttled`)).rejects.toThrow(
+      HttpClientError,
+    );
+
+    await expect(client.get(`${baseUrl}/blocked-by-cooldown`)).rejects.toThrow(
+      /Rate limit exceeded for origin/,
+    );
+  });
+
+  test('should honor non-X RateLimit headers with exhausted remaining quota', async () => {
+    nock(baseUrl).get('/quota-status').reply(
+      200,
+      { ok: true },
+      {
+        'RateLimit-Remaining': '0',
+        'RateLimit-Reset': '1',
+      },
+    );
+
+    const client = new HttpClient();
+
+    const result = await client.get<{ ok: boolean }>(`${baseUrl}/quota-status`);
+    expect(result.ok).toBe(true);
+
+    await expect(client.get(`${baseUrl}/cooldown-active`)).rejects.toThrow(
+      /Rate limit exceeded for origin/,
+    );
+  });
+
+  test('should allow custom non-standard rate-limit header names', async () => {
+    nock(baseUrl).get('/custom-headers').reply(
+      200,
+      { ok: true },
+      {
+        'Remaining-Requests': '0',
+        'Window-Reset-Seconds': '1',
+      },
+    );
+
+    const client = new HttpClient(
+      {},
+      {
+        rateLimitHeaders: {
+          remaining: ['Remaining-Requests'],
+          reset: ['Window-Reset-Seconds'],
+        },
+      },
+    );
+
+    const result = await client.get<{ ok: boolean }>(
+      `${baseUrl}/custom-headers`,
+    );
+    expect(result.ok).toBe(true);
+
+    await expect(client.get(`${baseUrl}/custom-cooldown`)).rejects.toThrow(
+      /Rate limit exceeded for origin/,
+    );
+  });
+
   test('should pass request priority to adaptive rate-limit methods', async () => {
     const priorities: {
       canProceed: Array<string>;

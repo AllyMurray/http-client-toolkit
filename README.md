@@ -100,14 +100,15 @@ The `url` must be an absolute URL (for example, `https://api.example.com/items`)
 
 **Options:**
 
-| Property              | Type                         | Default | Description                             |
-| --------------------- | ---------------------------- | ------- | --------------------------------------- |
-| `defaultCacheTTL`     | `number`                     | `3600`  | Cache TTL in seconds                    |
-| `throwOnRateLimit`    | `boolean`                    | `true`  | Throw when rate limited vs. wait        |
-| `maxWaitTime`         | `number`                     | `60000` | Max wait time (ms) before throwing      |
-| `responseTransformer` | `(data: unknown) => unknown` | -       | Transform raw response data             |
-| `responseHandler`     | `(data: unknown) => unknown` | -       | Validate/process transformed data       |
-| `errorHandler`        | `(error: unknown) => Error`  | -       | Convert errors to domain-specific types |
+| Property              | Type                         | Default  | Description                             |
+| --------------------- | ---------------------------- | -------- | --------------------------------------- |
+| `defaultCacheTTL`     | `number`                     | `3600`   | Cache TTL in seconds                    |
+| `throwOnRateLimit`    | `boolean`                    | `true`   | Throw when rate limited vs. wait        |
+| `maxWaitTime`         | `number`                     | `60000`  | Max wait time (ms) before throwing      |
+| `responseTransformer` | `(data: unknown) => unknown` | -        | Transform raw response data             |
+| `responseHandler`     | `(data: unknown) => unknown` | -        | Validate/process transformed data       |
+| `errorHandler`        | `(error: unknown) => Error`  | -        | Convert errors to domain-specific types |
+| `rateLimitHeaders`    | `RateLimitHeaderConfig`      | defaults | Configure standard/custom header names  |
 
 Cache TTL semantics are consistent across built-in stores: `ttlSeconds > 0` expires after that many seconds, `ttlSeconds = 0` never expires, and `ttlSeconds < 0` is treated as immediately expired.
 
@@ -140,6 +141,41 @@ The adaptive store dynamically shifts capacity between user and background pools
 
 Rate limits are tracked per inferred resource name. The client derives this from the URL path's last segment (for example, `/v1/users/42` maps to resource `42`).
 Use explicit `resourceConfigs` keys that match your URL patterns.
+
+### Header-Based Rate Limiting
+
+`HttpClient` also respects server-provided rate-limit hints and applies an origin-level cooldown when appropriate.
+
+Supported out of the box:
+
+- `Retry-After`
+- `RateLimit-Remaining` / `RateLimit-Reset`
+- `X-RateLimit-Remaining` / `X-RateLimit-Reset`
+- `Rate-Limit-Remaining` / `Rate-Limit-Reset`
+- combined structured `RateLimit` (for example: `"default";r=0;t=30`)
+
+The client only enforces reset-based cooldowns when:
+
+- the response is a throttling status (`429` or `503`), or
+- remaining quota is explicitly exhausted (`remaining <= 0`).
+
+If `throwOnRateLimit` is `true`, the next request throws immediately while cooldown is active.
+If `throwOnRateLimit` is `false`, the client waits (up to `maxWaitTime`).
+
+You can map non-standard header names per API:
+
+```typescript
+const client = new HttpClient(
+  {},
+  {
+    rateLimitHeaders: {
+      retryAfter: ['RetryAfterSeconds'],
+      remaining: ['Remaining-Requests'],
+      reset: ['Window-Reset-Seconds'],
+    },
+  },
+);
+```
 
 ### Cancellation
 
