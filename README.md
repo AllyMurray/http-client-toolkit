@@ -109,6 +109,8 @@ The `url` must be an absolute URL (for example, `https://api.example.com/items`)
 | `responseHandler`     | `(data: unknown) => unknown` | -       | Validate/process transformed data       |
 | `errorHandler`        | `(error: unknown) => Error`  | -       | Convert errors to domain-specific types |
 
+Cache TTL semantics are consistent across built-in stores: `ttlSeconds > 0` expires after that many seconds, `ttlSeconds = 0` never expires, and `ttlSeconds < 0` is treated as immediately expired.
+
 ### Request Flow
 
 When `client.get(url)` is called, the request passes through each configured layer in order:

@@ -96,9 +96,9 @@ describe('SQLiteCacheStore', () => {
     it('should handle zero TTL', async () => {
       await store.set('key1', 'value1', 0);
 
-      // Should be expired immediately
+      // Should not expire
       const value = await store.get('key1');
-      expect(value).toBeUndefined();
+      expect(value).toBe('value1');
     });
 
     it('should handle negative TTL', async () => {
@@ -220,6 +220,22 @@ describe('SQLiteCacheStore', () => {
 
       const value = await cleanupStore.get('key1');
       expect(value).toBe('value1');
+
+      cleanupStore.destroy();
+    });
+
+    it('should not clean up non-expiring items', async () => {
+      const cleanupStore = new SQLiteCacheStore({
+        database: testDbPath,
+        cleanupIntervalMs: 10,
+      });
+
+      await cleanupStore.set('permanent', 'value', 0);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const value = await cleanupStore.get('permanent');
+      expect(value).toBe('value');
 
       cleanupStore.destroy();
     });

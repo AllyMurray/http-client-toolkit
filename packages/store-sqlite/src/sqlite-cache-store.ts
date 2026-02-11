@@ -1,6 +1,6 @@
 import type { CacheStore } from '@http-client-toolkit/core';
 import Database from 'better-sqlite3';
-import { eq, lt, count, sql } from 'drizzle-orm';
+import { and, eq, gt, lt, count, sql } from 'drizzle-orm';
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { cacheTable } from './schema.js';
 
@@ -83,7 +83,7 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
 
     const now = Date.now();
 
-    if (now >= item.expiresAt) {
+    if (item.expiresAt > 0 && now >= item.expiresAt) {
       await this.db.delete(cacheTable).where(eq(cacheTable.hash, hash));
       return undefined;
     }
@@ -106,7 +106,8 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
     }
 
     const now = Date.now();
-    const expiresAt = ttlSeconds <= 0 ? now : now + ttlSeconds * 1000;
+    const expiresAt =
+      ttlSeconds < 0 ? now : ttlSeconds === 0 ? 0 : now + ttlSeconds * 1000;
 
     let serializedValue: string;
     try {
@@ -178,7 +179,7 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
     const expiredResult = await this.db
       .select({ count: count() })
       .from(cacheTable)
-      .where(lt(cacheTable.expiresAt, now));
+      .where(and(gt(cacheTable.expiresAt, 0), lt(cacheTable.expiresAt, now)));
 
     // Get database size (approximate)
     const pageCount = Number(
@@ -203,7 +204,9 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
    */
   async cleanup(): Promise<void> {
     const now = Date.now();
-    await this.db.delete(cacheTable).where(lt(cacheTable.expiresAt, now));
+    await this.db
+      .delete(cacheTable)
+      .where(and(gt(cacheTable.expiresAt, 0), lt(cacheTable.expiresAt, now)));
   }
 
   /**
