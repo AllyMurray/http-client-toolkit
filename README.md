@@ -246,6 +246,7 @@ Expired entries are removed lazily on `get` (and during scheduled cleanup), and 
 Prevents duplicate concurrent requests. If a request for the same hash is already in-flight, subsequent callers wait for the original to complete.
 
 Built-in dedupe stores implement an atomic `registerOrJoin` path so exactly one caller executes the upstream request while other concurrent callers join and wait.
+If you implement a custom dedupe store, expose `registerOrJoin` as well to get the same strict single-owner behavior under heavy concurrency.
 
 ```typescript
 import { InMemoryDedupeStore } from '@http-client-toolkit/store-memory';
