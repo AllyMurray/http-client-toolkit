@@ -45,9 +45,7 @@ describe('AdaptiveRateLimitStore', () => {
     it('should accept per-resource configuration', async () => {
       const customStore = new AdaptiveRateLimitStore({
         defaultConfig: { limit: 100, windowMs: 60_000 },
-        resourceConfigs: new Map([
-          ['special', { limit: 5, windowMs: 10_000 }],
-        ]),
+        resourceConfigs: new Map([['special', { limit: 5, windowMs: 10_000 }]]),
       });
 
       const defaultStatus = await customStore.getStatus(resource);

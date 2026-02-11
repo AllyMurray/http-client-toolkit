@@ -214,10 +214,7 @@ export class AdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     return this.activityMetrics.get(resource)!;
   }
 
-  private getCurrentUsage(
-    resource: string,
-    requests: Array<number>,
-  ): number {
+  private getCurrentUsage(resource: string, requests: Array<number>): number {
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const windowStart = Date.now() - config.windowMs;
     return requests.filter((timestamp) => timestamp > windowStart).length;
