@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { RateLimitConfig } from '@http-client-toolkit/core';
+import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SQLiteRateLimitStore } from './sqlite-rate-limit-store.js';
 
@@ -427,6 +428,148 @@ describe('SQLiteRateLimitStore', () => {
       await expect(store.canProceed('test')).rejects.toThrow();
       await expect(store.record('test')).rejects.toThrow();
       await expect(store.getStatus('test')).rejects.toThrow();
+      await expect(store.getWaitTime('test')).rejects.toThrow();
+      await expect(store.getStats()).rejects.toThrow();
+      await expect(store.clear()).rejects.toThrow();
+      await expect(store.reset('test')).rejects.toThrow();
+    });
+  });
+
+  describe('internal branches', () => {
+    it('returns configured resource config via getter', () => {
+      store.setResourceConfig('custom', { limit: 3, windowMs: 1234 });
+      expect(store.getResourceConfig('custom')).toEqual({
+        limit: 3,
+        windowMs: 1234,
+      });
+    });
+
+    it('returns default resource config via getter', () => {
+      expect(store.getResourceConfig('unknown')).toEqual(defaultConfig);
+    });
+
+    it('returns zero wait time when under limit', async () => {
+      await expect(store.getWaitTime('fresh')).resolves.toBe(0);
+    });
+
+    it('handles empty oldest-result branch in wait-time calculation', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () =>
+                | Promise<Array<{ count?: number }>>
+                | {
+                    orderBy: () => {
+                      limit: () => Promise<Array<{ timestamp?: number }>>;
+                    };
+                  };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      let call = 0;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => {
+            call += 1;
+            if (call === 1) {
+              return Promise.resolve([{ count: 999 }]);
+            }
+            return {
+              orderBy: () => ({ limit: async () => [] }),
+            };
+          },
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.getWaitTime('patched')).resolves.toBe(0);
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('handles undefined oldest timestamp branch in wait-time calculation', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () =>
+                | Promise<Array<{ count?: number }>>
+                | {
+                    orderBy: () => {
+                      limit: () => Promise<Array<{ timestamp?: number }>>;
+                    };
+                  };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      let call = 0;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => {
+            call += 1;
+            if (call === 1) {
+              return Promise.resolve([{ count: 999 }]);
+            }
+            return {
+              orderBy: () => ({
+                limit: async () => [{ timestamp: undefined }],
+              }),
+            };
+          },
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.getWaitTime('patched-undefined')).resolves.toBe(0);
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('allows sharing an external sqlite connection', async () => {
+      const sqlite = new Database(testDbPath);
+      const sharedStore = new SQLiteRateLimitStore({
+        database: sqlite,
+        defaultConfig,
+      });
+
+      try {
+        await sharedStore.record('shared-resource');
+        await sharedStore.close();
+
+        const row = sqlite
+          .prepare(
+            'SELECT COUNT(*) as count FROM rate_limits WHERE resource = ?',
+          )
+          .get('shared-resource') as { count: number };
+        expect(row.count).toBe(1);
+      } finally {
+        sqlite.close();
+      }
+    });
+
+    it('clear removes all tracked requests', async () => {
+      await store.record('clear-me');
+      await store.clear();
+
+      const stats = await store.getStats();
+      expect(stats.totalRequests).toBe(0);
+    });
+
+    it('getStats includes rate-limited resources', async () => {
+      store.setResourceConfig('limited', { limit: 1, windowMs: 60_000 });
+      await store.record('limited');
+
+      const stats = await store.getStats();
+      expect(stats.rateLimitedResources).toContain('limited');
     });
   });
 

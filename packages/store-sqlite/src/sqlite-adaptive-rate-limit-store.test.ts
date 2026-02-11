@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { RateLimitConfig } from '@http-client-toolkit/core';
+import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SqliteAdaptiveRateLimitStore } from './sqlite-adaptive-rate-limit-store.js';
 
@@ -187,6 +188,99 @@ describe('SqliteAdaptiveRateLimitStore', () => {
       const userWaitTime = await store.getWaitTime(resource, 'user');
       expect(userWaitTime).toBeLessThanOrEqual(backgroundWaitTime); // User should wait less
     });
+
+    it('computes wait time from oldest timestamp when capacity is exhausted', async () => {
+      const resource = 'bounded-background';
+      store.setResourceConfig(resource, { limit: 2, windowMs: 5000 });
+
+      await store.record(resource, 'background');
+
+      const waitTime = await store.getWaitTime(resource, 'background');
+      expect(waitTime).toBeGreaterThan(0);
+      expect(waitTime).toBeLessThanOrEqual(5000);
+    });
+
+    it('returns zero wait time when oldest result is missing', async () => {
+      const resource = 'missing-oldest';
+      store.setResourceConfig(resource, { limit: 2, windowMs: 5000 });
+      await store.record(resource, 'background');
+
+      const privateStore = store as unknown as {
+        sqlite: {
+          prepare: (sqlText: string) => {
+            get: (
+              ...args: Array<unknown>
+            ) => undefined | { timestamp?: number };
+          };
+        };
+      };
+
+      const originalPrepare = privateStore.sqlite.prepare;
+      privateStore.sqlite.prepare = ((sqlText: unknown) => {
+        const stmt = originalPrepare.call(
+          privateStore.sqlite as unknown as object,
+          sqlText as never,
+        );
+        if (
+          typeof sqlText === 'string' &&
+          sqlText.includes('SELECT timestamp')
+        ) {
+          return {
+            get: () => undefined,
+          };
+        }
+        return stmt;
+      }) as typeof originalPrepare;
+
+      try {
+        await expect(store.getWaitTime(resource, 'background')).resolves.toBe(
+          0,
+        );
+      } finally {
+        privateStore.sqlite.prepare = originalPrepare;
+      }
+    });
+
+    it('returns zero wait time when oldest timestamp is falsy', async () => {
+      const resource = 'zero-oldest-ts';
+      store.setResourceConfig(resource, { limit: 2, windowMs: 5000 });
+      await store.record(resource, 'background');
+
+      const privateStore = store as unknown as {
+        sqlite: {
+          prepare: (sqlText: string) => {
+            get: (
+              ...args: Array<unknown>
+            ) => undefined | { timestamp?: number };
+          };
+        };
+      };
+
+      const originalPrepare = privateStore.sqlite.prepare;
+      privateStore.sqlite.prepare = ((sqlText: unknown) => {
+        const stmt = originalPrepare.call(
+          privateStore.sqlite as unknown as object,
+          sqlText as never,
+        );
+        if (
+          typeof sqlText === 'string' &&
+          sqlText.includes('SELECT timestamp')
+        ) {
+          return {
+            get: () => ({ timestamp: 0 }),
+          };
+        }
+        return stmt;
+      }) as typeof originalPrepare;
+
+      try {
+        await expect(store.getWaitTime(resource, 'background')).resolves.toBe(
+          0,
+        );
+      } finally {
+        privateStore.sqlite.prepare = originalPrepare;
+      }
+    });
   });
 
   describe('database persistence', () => {
@@ -231,6 +325,17 @@ describe('SqliteAdaptiveRateLimitStore', () => {
       expect(status.adaptive?.recentUserActivity).toBe(0);
       expect(status.remaining).toBe(200); // Should be back to full capacity
     });
+
+    it('reset clears persisted and in-memory state for a resource', async () => {
+      const resource = 'reset-resource';
+
+      await store.record(resource, 'user');
+      await store.reset(resource);
+
+      const status = await store.getStatus(resource);
+      expect(status.adaptive?.recentUserActivity).toBe(0);
+      expect(status.remaining).toBeGreaterThan(0);
+    });
   });
 
   describe('resource configuration', () => {
@@ -260,6 +365,17 @@ describe('SqliteAdaptiveRateLimitStore', () => {
       // With 0 activity and no requests, uses initial state strategy (30% of 50 = 15)
       expect(status.adaptive?.userReserved).toBe(15); // 30% of 50 = 15
       expect(status.adaptive?.backgroundMax).toBe(35); // 50 - 15 = 35
+    });
+
+    it('returns configured resource config', () => {
+      const config: RateLimitConfig = { limit: 77, windowMs: 1234 };
+      store.setResourceConfig('cfg', config);
+
+      expect(store.getResourceConfig('cfg')).toEqual(config);
+    });
+
+    it('returns default resource config for unknown resource', () => {
+      expect(store.getResourceConfig('unknown-cfg')).toEqual(defaultConfig);
     });
   });
 
@@ -306,6 +422,15 @@ describe('SqliteAdaptiveRateLimitStore', () => {
         'Rate limit store has been destroyed',
       );
       await expect(store.reset('test')).rejects.toThrow(
+        'Rate limit store has been destroyed',
+      );
+      await expect(store.getWaitTime('test')).rejects.toThrow(
+        'Rate limit store has been destroyed',
+      );
+      await expect(store.getStats()).rejects.toThrow(
+        'Rate limit store has been destroyed',
+      );
+      await expect(store.clear()).rejects.toThrow(
         'Rate limit store has been destroyed',
       );
     });
@@ -364,6 +489,96 @@ describe('SqliteAdaptiveRateLimitStore', () => {
 
       const status = await store.getStatus(resource);
       expect(status.adaptive?.recentUserActivity).toBeGreaterThan(0);
+    });
+
+    it('returns configured window when limit is zero', async () => {
+      store.setResourceConfig('zero-limit', { limit: 0, windowMs: 3210 });
+      await expect(store.getWaitTime('zero-limit')).resolves.toBe(3210);
+    });
+
+    it('returns zero wait time when request can proceed', async () => {
+      await expect(store.getWaitTime('fresh-resource', 'user')).resolves.toBe(
+        0,
+      );
+    });
+
+    it('supports sharing an external sqlite connection', async () => {
+      const sqlite = new Database(testDbPath);
+      const sharedStore = new SqliteAdaptiveRateLimitStore({
+        database: sqlite,
+        defaultConfig,
+      });
+
+      try {
+        await sharedStore.record('shared-resource', 'user');
+        await sharedStore.close();
+
+        const row = sqlite
+          .prepare(
+            'SELECT COUNT(*) as count FROM rate_limits WHERE resource = ?',
+          )
+          .get('shared-resource') as { count: number };
+        expect(row.count).toBe(1);
+      } finally {
+        sqlite.close();
+      }
+    });
+
+    it('covers default-capacity branch during cached interval', () => {
+      const privateStore = store as unknown as {
+        lastCapacityUpdate: Map<string, number>;
+        calculateCurrentCapacity: (
+          resource: string,
+          metrics: {
+            recentUserRequests: Array<number>;
+            recentBackgroundRequests: Array<number>;
+            userActivityTrend: 'increasing' | 'stable' | 'decreasing' | 'none';
+          },
+        ) => {
+          reason: string;
+        };
+      };
+
+      privateStore.lastCapacityUpdate.set('cached-resource', Date.now());
+      const result = privateStore.calculateCurrentCapacity('cached-resource', {
+        recentUserRequests: [],
+        recentBackgroundRequests: [],
+        userActivityTrend: 'none',
+      });
+
+      expect(result.reason).toContain('Default capacity allocation');
+    });
+
+    it('cleans up gracefully when no resources are present', async () => {
+      await expect(store.cleanup()).resolves.toBeUndefined();
+    });
+
+    it('cleans up expired requests for tracked resources', async () => {
+      const resource = 'cleanup-resource';
+      store.setResourceConfig(resource, { limit: 10, windowMs: 5 });
+
+      await store.record(resource, 'user');
+      await sleep(20);
+
+      await store.cleanup();
+
+      const stats = await store.getStats();
+      expect(stats.totalRequests).toBe(0);
+    });
+
+    it('cleans up expired requests using default config fallback', async () => {
+      const resource = 'cleanup-default-resource';
+      await store.record(resource, 'background');
+
+      await sleep(10);
+      await store.cleanup();
+
+      const stats = await store.getStats();
+      expect(stats.totalRequests).toBe(1);
+    });
+
+    it('supports destroy alias', () => {
+      expect(() => store.destroy()).not.toThrow();
     });
   });
 });

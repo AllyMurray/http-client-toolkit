@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SQLiteCacheStore } from './sqlite-cache-store.js';
 
 describe('SQLiteCacheStore', () => {
@@ -369,6 +370,187 @@ describe('SQLiteCacheStore', () => {
       // Should throw errors after destruction
       await expect(store.get('key')).rejects.toThrow();
       await expect(store.set('key', 'value', 60)).rejects.toThrow();
+    });
+  });
+
+  describe('statistics and internals', () => {
+    it('returns cache statistics', async () => {
+      await store.set('active', 'value', 60);
+      await store.set('expired', 'value', -1);
+
+      const stats = await (store as SQLiteCacheStore).getStats();
+      expect(stats.totalItems).toBeGreaterThanOrEqual(1);
+      expect(stats.expiredItems).toBeGreaterThanOrEqual(0);
+      expect(stats.databaseSizeKB).toBeGreaterThanOrEqual(0);
+    });
+
+    it('falls back to zero DB size when pragma values are not numeric', async () => {
+      const privateStore = store as unknown as {
+        sqlite: {
+          pragma: (name: string, options: { simple: boolean }) => unknown;
+        };
+      };
+      const originalPragma = privateStore.sqlite.pragma;
+      privateStore.sqlite.pragma = () => 'not-a-number';
+
+      try {
+        const stats = await (store as SQLiteCacheStore).getStats();
+        expect(stats.databaseSizeKB).toBe(0);
+      } finally {
+        privateStore.sqlite.pragma = originalPragma;
+      }
+    });
+
+    it('falls back to zero counts when stats queries return empty sets', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where?: () => Promise<Array<{ count?: number }>>;
+              then?: unknown;
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: async () => [],
+          then: undefined,
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        const stats = await (store as SQLiteCacheStore).getStats();
+        expect(stats.totalItems).toBe(0);
+        expect(stats.expiredItems).toBe(0);
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('drops corrupted cache rows when value cannot be deserialized', async () => {
+      const now = Date.now();
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => {
+                limit: () => Promise<
+                  Array<{
+                    hash: string;
+                    value: unknown;
+                    expiresAt: number;
+                    createdAt: number;
+                  }>
+                >;
+              };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [
+              {
+                hash: 'corrupt',
+                value: { not: 'a-json-string' },
+                expiresAt: now + 60_000,
+                createdAt: now,
+              },
+            ],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.get('corrupt')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('covers defensive branch when select result row is undefined', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [undefined],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.get('undefined-row')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('covers non-Error serialization failure formatting path', async () => {
+      const stringifySpy = vi
+        .spyOn(JSON, 'stringify')
+        .mockImplementation(() => {
+          throw 'boom';
+        });
+
+      try {
+        await expect(store.set('serialize-fail', 'value', 60)).rejects.toThrow(
+          /Failed to serialize value: boom/,
+        );
+      } finally {
+        stringifySpy.mockRestore();
+      }
+    });
+
+    it('allows sharing an external sqlite connection', async () => {
+      const sqlite = new Database(testDbPath);
+      const sharedStore = new SQLiteCacheStore({ database: sqlite });
+
+      try {
+        await sharedStore.set('shared', 'value', 60);
+        await sharedStore.close();
+
+        const row = sqlite
+          .prepare('SELECT value FROM cache WHERE hash = ?')
+          .get('shared') as { value: Buffer | string } | undefined;
+        expect(row).toBeDefined();
+        expect(row?.value).toBeDefined();
+      } finally {
+        sqlite.close();
+      }
+    });
+
+    it('can run cleanupExpiredItems private helper', async () => {
+      const now = Date.now();
+      const sqlite = (store as unknown as { sqlite: Database.Database }).sqlite;
+      sqlite
+        .prepare(
+          `INSERT INTO cache (hash, value, expires_at, created_at) VALUES (?, ?, ?, ?)`,
+        )
+        .run('expired-private', '"v"', now - 1_000, now - 2_000);
+
+      await (
+        store as unknown as {
+          cleanupExpiredItems: () => Promise<void>;
+        }
+      ).cleanupExpiredItems();
+
+      await expect(store.get('expired-private')).resolves.toBeUndefined();
     });
   });
 

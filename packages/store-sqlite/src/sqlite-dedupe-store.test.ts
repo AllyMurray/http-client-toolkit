@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SQLiteDedupeStore } from './sqlite-dedupe-store.js';
 
 describe('SQLiteDedupeStore', () => {
@@ -76,6 +77,16 @@ describe('SQLiteDedupeStore', () => {
       // Failed jobs should not be available
       const result = await store.waitFor(hash);
       expect(result).toBeUndefined();
+    });
+
+    it('should settle pending waiters when a job fails', async () => {
+      const hash = 'failed-pending-hash';
+      await store.register(hash);
+
+      const waiting = store.waitFor(hash);
+      await store.fail(hash, new Error('failed while waiting'));
+
+      await expect(waiting).resolves.toBeUndefined();
     });
 
     it('should check if jobs are in progress', async () => {
@@ -212,6 +223,54 @@ describe('SQLiteDedupeStore', () => {
 
       timeoutStore.destroy();
     });
+
+    it('waitFor returns shared pending promise for repeated callers', async () => {
+      const hash = 'shared-promise';
+      await store.register(hash);
+
+      const p1 = store.waitFor(hash);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const p2 = store.waitFor(hash);
+
+      await store.complete(hash, 'done');
+
+      await expect(p1).resolves.toBe('done');
+      await expect(p2).resolves.toBe('done');
+    });
+
+    it('waitFor settles pending jobs on timeout callback', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 20,
+        pollIntervalMs: 50,
+      });
+
+      try {
+        await timeoutStore.register('timeout-waiter');
+        await expect(
+          timeoutStore.waitFor('timeout-waiter'),
+        ).resolves.toBeUndefined();
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
+    it('waitFor timeout callback exits early when store is destroyed', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 20,
+        pollIntervalMs: 50,
+      });
+
+      try {
+        await timeoutStore.register('timeout-destroyed');
+        const waiting = timeoutStore.waitFor('timeout-destroyed');
+        timeoutStore.destroy();
+        await expect(waiting).resolves.toBeUndefined();
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
   });
 
   describe('cleanup functionality', () => {
@@ -285,6 +344,499 @@ describe('SQLiteDedupeStore', () => {
       expect(result1).toBeNull();
       expect(result2).toBeUndefined();
     });
+
+    it('returns undefined when completed payload cannot be deserialized', async () => {
+      const hash = 'invalid-json';
+
+      // Use raw SQL to force invalid JSON payload in a completed row.
+      (
+        store as unknown as {
+          sqlite: {
+            prepare: (sqlText: string) => {
+              run: (...args: Array<unknown>) => void;
+            };
+          };
+        }
+      ).sqlite
+        .prepare(
+          `INSERT INTO dedupe_jobs (hash, job_id, status, result, error, created_at, updated_at)
+           VALUES (?, 'job', 'completed', ?, NULL, ?, ?)`,
+        )
+        .run(hash, 'not-json', Date.now(), Date.now());
+
+      await expect(store.waitFor(hash)).resolves.toBeUndefined();
+    });
+
+    it('throws when trying to complete a non-serializable circular payload', async () => {
+      const hash = 'circular-payload';
+      const circular: { self?: unknown } = {};
+      circular.self = circular;
+
+      await store.register(hash);
+      await expect(store.complete(hash, circular as unknown)).rejects.toThrow(
+        /Failed to serialize result/,
+      );
+    });
+
+    it('formats non-Error serialization failures in complete()', async () => {
+      await store.register('non-error-serialize');
+
+      const stringifySpy = vi
+        .spyOn(JSON, 'stringify')
+        .mockImplementation(() => {
+          throw 'boom';
+        });
+
+      try {
+        await expect(
+          store.complete('non-error-serialize', { value: 'x' } as unknown),
+        ).rejects.toThrow(/Failed to serialize result: boom/);
+      } finally {
+        stringifySpy.mockRestore();
+      }
+    });
+  });
+
+  describe('internal guards', () => {
+    it('returns undefined when waitFor query fails', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => {
+        throw new Error('db error');
+      }) as typeof originalSelect;
+
+      try {
+        await expect(store.waitFor('select-failure')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('returns undefined when waitFor select yields undefined row', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [undefined],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(
+          store.waitFor('undefined-wait-row'),
+        ).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('settles waitFor when poll query throws', async () => {
+      await store.register('poll-throws');
+
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      let calls = 0;
+      privateStore.db.select = (() => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            from: () => ({
+              where: () => ({
+                limit: async () => [
+                  {
+                    hash: 'poll-throws',
+                    jobId: 'job-1',
+                    status: 'pending',
+                    result: null,
+                    error: null,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                  },
+                ],
+              }),
+            }),
+          };
+        }
+        throw new Error('poll failure');
+      }) as typeof originalSelect;
+
+      try {
+        await expect(store.waitFor('poll-throws')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('timeout callback settles when store is flagged destroyed', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 15,
+        pollIntervalMs: 100,
+      });
+
+      try {
+        await timeoutStore.register('timeout-destroy-branch');
+        const waiting = timeoutStore.waitFor('timeout-destroy-branch');
+
+        (timeoutStore as unknown as { isDestroyed: boolean }).isDestroyed =
+          true;
+        await expect(waiting).resolves.toBeUndefined();
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
+    it('poll marks stale pending jobs as failed before settling', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 50,
+        pollIntervalMs: 5,
+      });
+
+      try {
+        const hash = 'stale-pending-job';
+        await timeoutStore.register(hash);
+
+        const sqlite = (
+          timeoutStore as unknown as { sqlite: Database.Database }
+        ).sqlite;
+        sqlite
+          .prepare('UPDATE dedupe_jobs SET created_at = ? WHERE hash = ?')
+          .run(Date.now() - 5_000, hash);
+
+        await expect(timeoutStore.waitFor(hash)).resolves.toBeUndefined();
+
+        const row = sqlite
+          .prepare('SELECT status, error FROM dedupe_jobs WHERE hash = ?')
+          .get(hash) as { status: string; error: string } | undefined;
+        expect(row?.status).toBe('failed');
+        expect(row?.error).toBe('Job timed out');
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
+    it('timeout update errors are swallowed before settling waiters', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 15,
+        pollIntervalMs: 50,
+      });
+
+      const privateStore = timeoutStore as unknown as {
+        db: {
+          update: (...args: Array<unknown>) => {
+            set: (...setArgs: Array<unknown>) => {
+              where: (...whereArgs: Array<unknown>) => Promise<void>;
+            };
+          };
+        };
+      };
+
+      const originalUpdate = privateStore.db.update;
+      privateStore.db.update = (() => {
+        throw new Error('update failed');
+      }) as typeof originalUpdate;
+
+      try {
+        await timeoutStore.register('timeout-update-failure');
+        await expect(
+          timeoutStore.waitFor('timeout-update-failure'),
+        ).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.update = originalUpdate;
+        timeoutStore.destroy();
+      }
+    });
+
+    it('handles deserializeResult helper branches', () => {
+      const privateStore = store as unknown as {
+        deserializeResult: (value: unknown) => unknown;
+      };
+
+      expect(privateStore.deserializeResult('__UNDEFINED__')).toBeUndefined();
+      expect(privateStore.deserializeResult('__NULL__')).toBeNull();
+      expect(privateStore.deserializeResult('{"ok":true}')).toEqual({
+        ok: true,
+      });
+      expect(privateStore.deserializeResult('')).toBeUndefined();
+      expect(privateStore.deserializeResult('{not-json')).toBeUndefined();
+    });
+
+    it('close settles in-memory waiters map entries', async () => {
+      const privateStore = store as unknown as {
+        jobSettlers: Map<string, (value: unknown) => void>;
+      };
+
+      let settledWith: unknown = Symbol('unset');
+      privateStore.jobSettlers.set('manual-waiter', (value) => {
+        settledWith = value;
+      });
+
+      await store.close();
+      expect(settledWith).toBeUndefined();
+    });
+
+    it('skips cleanup when timeout is disabled', async () => {
+      const timeoutDisabledStore = new SQLiteDedupeStore({
+        database: ':memory:',
+        timeoutMs: 0,
+        cleanupIntervalMs: 0,
+      });
+
+      const privateStore = timeoutDisabledStore as unknown as {
+        cleanupExpiredJobs: () => Promise<void>;
+      };
+
+      await expect(privateStore.cleanupExpiredJobs()).resolves.toBeUndefined();
+      timeoutDisabledStore.destroy();
+    });
+
+    it('exercises getResult and stats helper paths', async () => {
+      await store.register('pending');
+      await store.register('completed');
+      await store.complete('completed', { ok: true });
+      await store.register('failed');
+      await store.fail('failed', new Error('boom'));
+
+      const pending = await store.getResult('pending');
+      const completed = await store.getResult('completed');
+      const failed = await store.getResult('failed');
+      const missing = await store.getResult('missing');
+
+      expect(pending).toBeUndefined();
+      expect(completed).toEqual({ ok: true });
+      expect(failed).toBeUndefined();
+      expect(missing).toBeUndefined();
+
+      const stats = await store.getStats();
+      expect(stats.totalJobs).toBeGreaterThanOrEqual(3);
+      expect(stats.pendingJobs).toBeGreaterThanOrEqual(1);
+      expect(stats.completedJobs).toBeGreaterThanOrEqual(1);
+      expect(stats.failedJobs).toBeGreaterThanOrEqual(1);
+    });
+
+    it('getStats returns zeroes for an empty store', async () => {
+      await store.clear();
+
+      await expect(store.getStats()).resolves.toEqual({
+        totalJobs: 0,
+        pendingJobs: 0,
+        completedJobs: 0,
+        failedJobs: 0,
+        expiredJobs: 0,
+      });
+    });
+
+    it('getResult preserves explicit undefined/null sentinels', async () => {
+      await store.register('sentinel-undefined');
+      await store.complete('sentinel-undefined', undefined);
+      await store.register('sentinel-null');
+      await store.complete('sentinel-null', null);
+
+      await expect(
+        store.getResult('sentinel-undefined'),
+      ).resolves.toBeUndefined();
+      await expect(store.getResult('sentinel-null')).resolves.toBeNull();
+    });
+
+    it('getResult returns undefined for empty completed payloads', async () => {
+      const sqlite = (store as unknown as { sqlite: Database.Database }).sqlite;
+      const now = Date.now();
+      sqlite
+        .prepare(
+          `INSERT INTO dedupe_jobs (hash, job_id, status, result, error, created_at, updated_at)
+           VALUES (?, ?, 'completed', ?, NULL, ?, ?)`,
+        )
+        .run('empty-completed', 'j1', null, now, now);
+
+      await expect(store.getResult('empty-completed')).resolves.toBeUndefined();
+    });
+
+    it('getResult swallows JSON parse failures in completed payloads', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [
+              {
+                hash: 'bad-json',
+                status: 'completed',
+                result: '{bad-json',
+                createdAt: Date.now(),
+              },
+            ],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.getResult('bad-json')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('getResult returns undefined when selected job row is missing', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [undefined],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.getResult('missing-row')).resolves.toBeUndefined();
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('isInProgress returns false when selected row is undefined', async () => {
+      const privateStore = store as unknown as {
+        db: {
+          select: () => {
+            from: () => {
+              where: () => { limit: () => Promise<Array<unknown>> };
+            };
+          };
+        };
+      };
+
+      const originalSelect = privateStore.db.select;
+      privateStore.db.select = (() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [undefined],
+          }),
+        }),
+      })) as typeof originalSelect;
+
+      try {
+        await expect(store.isInProgress('missing-job')).resolves.toBe(false);
+      } finally {
+        privateStore.db.select = originalSelect;
+      }
+    });
+
+    it('getResult deletes and returns undefined for expired rows', async () => {
+      const shortTimeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await shortTimeoutStore.register('expired-result-row');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        await expect(
+          shortTimeoutStore.getResult('expired-result-row'),
+        ).resolves.toBeUndefined();
+        await expect(
+          shortTimeoutStore.isInProgress('expired-result-row'),
+        ).resolves.toBe(false);
+      } finally {
+        shortTimeoutStore.destroy();
+      }
+    });
+
+    it('cleanup removes expired jobs', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await timeoutStore.register('expire-cleanup');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        await timeoutStore.cleanup();
+        await expect(timeoutStore.isInProgress('expire-cleanup')).resolves.toBe(
+          false,
+        );
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
+    it('clear settles pending waiters with undefined', async () => {
+      await store.register('pending-clear');
+      const waiting = store.waitFor('pending-clear');
+
+      await store.clear();
+      await expect(waiting).resolves.toBeUndefined();
+    });
+
+    it('supports sharing an external sqlite connection', async () => {
+      const sqlite = new Database(testDbPath);
+      const sharedStore = new SQLiteDedupeStore({ database: sqlite });
+
+      try {
+        await sharedStore.register('shared-db');
+        await sharedStore.complete('shared-db', 'value');
+        await sharedStore.close();
+
+        const row = sqlite
+          .prepare('SELECT status FROM dedupe_jobs WHERE hash = ?')
+          .get('shared-db') as { status: string } | undefined;
+        expect(row?.status).toBe('completed');
+      } finally {
+        sqlite.close();
+      }
+    });
   });
 
   describe('concurrent access', () => {
@@ -337,6 +889,9 @@ describe('SQLiteDedupeStore', () => {
       // Should throw errors after destruction
       await expect(store.waitFor('test')).rejects.toThrow();
       await expect(store.register('test')).rejects.toThrow();
+      await expect(store.isInProgress('test')).rejects.toThrow();
+      await expect(store.complete('test', 'value')).rejects.toThrow();
+      await expect(store.fail('test', new Error('boom'))).rejects.toThrow();
     });
 
     it('should settle pending waiters when destroyed', async () => {
@@ -360,6 +915,25 @@ describe('SQLiteDedupeStore', () => {
   });
 
   describe('configuration', () => {
+    it('uses jobTimeoutMs option alias', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        jobTimeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await timeoutStore.register('job-timeout-alias');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+
+        await expect(
+          timeoutStore.isInProgress('job-timeout-alias'),
+        ).resolves.toBe(false);
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
     it('should handle timeout of 0 (disabled)', async () => {
       const noTimeoutStore = new SQLiteDedupeStore({
         database: testDbPath,
