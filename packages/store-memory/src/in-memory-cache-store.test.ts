@@ -191,6 +191,20 @@ describe('InMemoryCacheStore', () => {
         lazyExpiryStore.destroy();
       }
     });
+
+    it('counts expired entries in stats before cleanup runs', async () => {
+      const statsStore = new InMemoryCacheStore({ cleanupIntervalMs: 0 });
+
+      try {
+        await statsStore.set('expiring', 'value', 0.001);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const stats = statsStore.getStats();
+        expect(stats.expired).toBeGreaterThan(0);
+      } finally {
+        statsStore.destroy();
+      }
+    });
   });
 
   describe('cleanup', () => {
@@ -406,7 +420,7 @@ describe('InMemoryCacheStore', () => {
     });
 
     it('should handle many concurrent operations', async () => {
-      const promises = [];
+      const promises: Array<Promise<void>> = [];
 
       // Set 100 values concurrently
       for (let i = 0; i < 100; i++) {
@@ -416,7 +430,7 @@ describe('InMemoryCacheStore', () => {
       await Promise.all(promises);
 
       // Get all values
-      const getPromises = [];
+      const getPromises: Array<Promise<unknown>> = [];
       for (let i = 0; i < 100; i++) {
         getPromises.push(store.get(`key${i}`));
       }
@@ -438,7 +452,7 @@ describe('InMemoryCacheStore', () => {
 
     it('should handle memory calculation errors gracefully', async () => {
       // Create an object that can't be JSON serialized
-      const circularObj = { name: 'test' };
+      const circularObj: { name: string; self?: unknown } = { name: 'test' };
       circularObj.self = circularObj;
 
       await store.set('circular', circularObj, 60);
@@ -446,6 +460,23 @@ describe('InMemoryCacheStore', () => {
       // Should not throw error and should use default estimate
       const stats = store.getStats();
       expect(stats.memoryUsageBytes).toBeGreaterThan(0);
+    });
+
+    it('uses fallback size estimate when stringify throws', async () => {
+      const stringifySpy = _vi
+        .spyOn(JSON, 'stringify')
+        .mockImplementation(() => {
+          throw new Error('boom');
+        });
+
+      try {
+        await store.set('throwing', { value: 'x' }, 60);
+        const stats = store.getStats();
+
+        expect(stats.memoryUsageBytes).toBeGreaterThanOrEqual(1024);
+      } finally {
+        stringifySpy.mockRestore();
+      }
     });
 
     it('should handle eviction when cache is empty', async () => {

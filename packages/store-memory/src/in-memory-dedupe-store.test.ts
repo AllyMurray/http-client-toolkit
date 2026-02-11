@@ -98,6 +98,14 @@ describe('InMemoryDedupeStore', () => {
       expect(result).toBeUndefined();
     });
 
+    it('returns undefined for completed jobs that ended in error', async () => {
+      const hash = 'failed-job';
+      await store.register(hash);
+      await store.fail(hash, new Error('failed'));
+
+      await expect(store.waitFor(hash)).resolves.toBeUndefined();
+    });
+
     it('should check if jobs are in progress', async () => {
       const hash = 'test-hash';
 
@@ -256,6 +264,42 @@ describe('InMemoryDedupeStore', () => {
       // Ensure the promise is handled
       await waitPromise;
     });
+
+    it('returns false from isInProgress when a job has expired', async () => {
+      const timeoutStore = new InMemoryDedupeStore({
+        jobTimeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await timeoutStore.register('expired-in-progress');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        await expect(
+          timeoutStore.isInProgress('expired-in-progress'),
+        ).resolves.toBe(false);
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
+
+    it('returns undefined from waitFor when a job has expired', async () => {
+      const timeoutStore = new InMemoryDedupeStore({
+        jobTimeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await timeoutStore.register('expired-wait-for');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        await expect(timeoutStore.waitFor('expired-wait-for')).resolves.toBe(
+          undefined,
+        );
+      } finally {
+        timeoutStore.destroy();
+      }
+    });
   });
 
   describe('statistics', () => {
@@ -302,6 +346,40 @@ describe('InMemoryDedupeStore', () => {
       const stats = store.getStats();
       expect(stats.activeJobs).toBe(0);
       expect(stats.totalJobsProcessed).toBe(1);
+    });
+
+    it('tracks oldest active job age', async () => {
+      const ageStore = new InMemoryDedupeStore({
+        jobTimeoutMs: 10_000,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await ageStore.register('age-hash');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const stats = ageStore.getStats();
+        expect(stats.oldestJobAgeMs).toBeGreaterThan(0);
+      } finally {
+        ageStore.destroy();
+      }
+    });
+
+    it('counts expired jobs in stats before cleanup', async () => {
+      const statsStore = new InMemoryDedupeStore({
+        jobTimeoutMs: 10,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await statsStore.register('expired-stats');
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        const stats = statsStore.getStats();
+        expect(stats.expiredJobs).toBeGreaterThan(0);
+      } finally {
+        statsStore.destroy();
+      }
     });
   });
 
@@ -390,6 +468,24 @@ describe('InMemoryDedupeStore', () => {
 
       expect(result1).toBeUndefined();
       expect(result2).toBeUndefined();
+    });
+
+    it('skips cleanup when timeout is disabled', async () => {
+      const noTimeoutStore = new InMemoryDedupeStore({
+        jobTimeoutMs: 0,
+        cleanupIntervalMs: 0,
+      });
+
+      try {
+        await noTimeoutStore.register('no-timeout');
+        noTimeoutStore.cleanup();
+
+        await expect(noTimeoutStore.isInProgress('no-timeout')).resolves.toBe(
+          true,
+        );
+      } finally {
+        noTimeoutStore.destroy();
+      }
     });
   });
 

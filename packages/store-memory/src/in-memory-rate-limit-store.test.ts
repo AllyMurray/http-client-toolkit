@@ -1,10 +1,9 @@
-import type { RateLimitConfig } from '@http-client-toolkit/core';
 import { describe, it, expect, beforeEach, afterEach, vi as _vi } from 'vitest';
 import { InMemoryRateLimitStore } from './in-memory-rate-limit-store.js';
 
 describe('InMemoryRateLimitStore', () => {
   let store: InMemoryRateLimitStore;
-  const defaultConfig: RateLimitConfig = { limit: 5, windowMs: 1000 };
+  const defaultConfig = { limit: 5, windowMs: 1000 };
 
   beforeEach(() => {
     store = new InMemoryRateLimitStore({ defaultConfig });
@@ -62,6 +61,37 @@ describe('InMemoryRateLimitStore', () => {
       const waitTime = await store.getWaitTime(resource);
       expect(waitTime).toBeGreaterThan(0);
       expect(waitTime).toBeLessThanOrEqual(defaultConfig.windowMs);
+    });
+
+    it('should return zero wait time when under limit', async () => {
+      const resource = 'under-limit';
+      await store.record(resource);
+
+      await expect(store.getWaitTime(resource)).resolves.toBe(0);
+    });
+
+    it('should guard against malformed request entries in wait-time calculation', async () => {
+      const resource = 'malformed';
+      const privateStore = store as unknown as {
+        limits: Map<
+          string,
+          {
+            requests: Array<number>;
+            limit: number;
+            windowMs: number;
+            resetTime: number;
+          }
+        >;
+      };
+
+      privateStore.limits.set(resource, {
+        requests: [undefined as unknown as number],
+        limit: 1,
+        windowMs: 1000,
+        resetTime: Date.now() + 1000,
+      });
+
+      await expect(store.getWaitTime(resource)).resolves.toBe(0);
     });
 
     it('should reset rate limits', async () => {
@@ -143,6 +173,7 @@ describe('InMemoryRateLimitStore', () => {
 
       const status = await store.getStatus(resource);
       expect(status.limit).toBe(defaultConfig.limit);
+      expect(store.getResourceConfig(resource)).toEqual(defaultConfig);
     });
 
     it('should use resource-specific configs', async () => {
@@ -216,6 +247,11 @@ describe('InMemoryRateLimitStore', () => {
       // Should use new config
       status = await store.getStatus(resource);
       expect(status.limit).toBe(20);
+
+      expect(store.getResourceConfig(resource)).toEqual({
+        limit: 20,
+        windowMs: 5000,
+      });
     });
   });
 
@@ -241,6 +277,17 @@ describe('InMemoryRateLimitStore', () => {
       await store.reset('test');
       stats = store.getStats();
       expect(stats.totalRequests).toBe(0);
+    });
+
+    it('counts rate-limited resources in stats', async () => {
+      const resource = 'limited';
+
+      for (let i = 0; i < defaultConfig.limit; i++) {
+        await store.record(resource);
+      }
+
+      const stats = store.getStats();
+      expect(stats.rateLimitedResources).toBeGreaterThanOrEqual(1);
     });
   });
 

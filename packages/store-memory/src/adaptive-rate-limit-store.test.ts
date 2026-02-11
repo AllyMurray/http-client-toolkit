@@ -261,6 +261,71 @@ describe('AdaptiveRateLimitStore', () => {
       expect(waitTime).toBeGreaterThan(0);
       expect(waitTime).toBeLessThanOrEqual(15 * 60 * 1000); // Should be within monitoring window
     });
+
+    it('returns 0 when blocked state has no requests to age out', async () => {
+      const privateStore = store as unknown as {
+        canProceed: (
+          resource: string,
+          priority?: 'user' | 'background',
+        ) => Promise<boolean>;
+        calculateCurrentCapacity: (
+          resource: string,
+          metrics: {
+            recentUserRequests: Array<number>;
+            recentBackgroundRequests: Array<number>;
+            userActivityTrend: 'increasing' | 'stable' | 'decreasing' | 'none';
+          },
+        ) => {
+          userReserved: number;
+          backgroundMax: number;
+          backgroundPaused: boolean;
+          reason: string;
+        };
+      };
+
+      vi.spyOn(privateStore, 'canProceed').mockResolvedValue(false);
+      vi.spyOn(privateStore, 'calculateCurrentCapacity').mockReturnValue({
+        userReserved: 0,
+        backgroundMax: 0,
+        backgroundPaused: false,
+        reason: 'forced',
+      });
+
+      await expect(store.getWaitTime(resource, 'background')).resolves.toBe(0);
+    });
+
+    it('uses paused-background wait path even without prior capacity updates', async () => {
+      const privateStore = store as unknown as {
+        canProceed: (
+          resource: string,
+          priority?: 'user' | 'background',
+        ) => Promise<boolean>;
+        calculateCurrentCapacity: (
+          resource: string,
+          metrics: {
+            recentUserRequests: Array<number>;
+            recentBackgroundRequests: Array<number>;
+            userActivityTrend: 'increasing' | 'stable' | 'decreasing' | 'none';
+          },
+        ) => {
+          userReserved: number;
+          backgroundMax: number;
+          backgroundPaused: boolean;
+          reason: string;
+        };
+      };
+
+      vi.spyOn(privateStore, 'canProceed').mockResolvedValue(false);
+      vi.spyOn(privateStore, 'calculateCurrentCapacity').mockReturnValue({
+        userReserved: 1,
+        backgroundMax: 0,
+        backgroundPaused: true,
+        reason: 'paused',
+      });
+
+      const waitTime = await store.getWaitTime(resource, 'background');
+      expect(waitTime).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('reset', () => {
@@ -312,7 +377,7 @@ describe('AdaptiveRateLimitStore', () => {
       const status3 = await store.getStatus(resource);
       expect(status3.adaptive?.reason).not.toBe(status1.adaptive?.reason);
       expect(status3.adaptive?.recentUserActivity).toBeGreaterThan(
-        status1.adaptive?.recentUserActivity,
+        status1.adaptive?.recentUserActivity ?? 0,
       );
     });
   });
@@ -332,6 +397,52 @@ describe('AdaptiveRateLimitStore', () => {
 
       // Should only count the recent request, old one should be cleaned up
       expect(status.adaptive?.recentUserActivity).toBe(1);
+    });
+
+    it('exposes default capacity helper shape', () => {
+      const result = (
+        store as unknown as {
+          getDefaultCapacity: (resourceName: string) => {
+            userReserved: number;
+            backgroundMax: number;
+            backgroundPaused: boolean;
+            reason: string;
+          };
+        }
+      ).getDefaultCapacity(resource);
+
+      expect(result.userReserved).toBeGreaterThanOrEqual(0);
+      expect(result.backgroundMax).toBeGreaterThanOrEqual(0);
+      expect(result.backgroundPaused).toBe(false);
+      expect(result.reason).toContain('Default capacity allocation');
+    });
+
+    it('falls back to default capacity when recalculation is cached without snapshot', () => {
+      const privateStore = store as unknown as {
+        lastCapacityUpdate: Map<string, number>;
+        calculateCurrentCapacity: (
+          resource: string,
+          metrics: {
+            recentUserRequests: Array<number>;
+            recentBackgroundRequests: Array<number>;
+            userActivityTrend: 'increasing' | 'stable' | 'decreasing' | 'none';
+          },
+        ) => {
+          userReserved: number;
+          backgroundMax: number;
+          backgroundPaused: boolean;
+          reason: string;
+        };
+      };
+
+      privateStore.lastCapacityUpdate.set(resource, Date.now());
+      const capacity = privateStore.calculateCurrentCapacity(resource, {
+        recentUserRequests: [],
+        recentBackgroundRequests: [],
+        userActivityTrend: 'none',
+      });
+
+      expect(capacity.reason).toContain('Default capacity allocation');
     });
   });
 
