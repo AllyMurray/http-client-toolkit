@@ -151,6 +151,28 @@ describe('SQLiteDedupeStore', () => {
 
       store2.destroy();
     });
+
+    it('should resolve waiters in another store instance when job completes', async () => {
+      const hash = 'cross-process-pending-hash';
+
+      await store.register(hash);
+
+      const store2 = new SQLiteDedupeStore({
+        database: testDbPath,
+        pollIntervalMs: 5,
+      });
+
+      try {
+        const waitingResult = store2.waitFor(hash);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await store.complete(hash, 'resolved-from-store-1');
+
+        await expect(waitingResult).resolves.toBe('resolved-from-store-1');
+      } finally {
+        store2.destroy();
+      }
+    });
   });
 
   describe('timeout handling', () => {
@@ -315,6 +337,25 @@ describe('SQLiteDedupeStore', () => {
       // Should throw errors after destruction
       await expect(store.waitFor('test')).rejects.toThrow();
       await expect(store.register('test')).rejects.toThrow();
+    });
+
+    it('should settle pending waiters when destroyed', async () => {
+      const timeoutStore = new SQLiteDedupeStore({
+        database: testDbPath,
+        timeoutMs: 5_000,
+        pollIntervalMs: 5,
+      });
+
+      try {
+        await timeoutStore.register('pending-on-destroy');
+        const waitingResult = timeoutStore.waitFor('pending-on-destroy');
+
+        timeoutStore.destroy();
+
+        await expect(waitingResult).resolves.toBeUndefined();
+      } finally {
+        timeoutStore.destroy();
+      }
     });
   });
 

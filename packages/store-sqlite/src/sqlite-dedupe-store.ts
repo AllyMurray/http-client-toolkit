@@ -10,6 +10,7 @@ export interface SQLiteDedupeStoreOptions {
   jobTimeoutMs?: number;
   timeoutMs?: number;
   cleanupIntervalMs?: number;
+  pollIntervalMs?: number;
 }
 
 export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
@@ -18,14 +19,9 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
   /** Indicates whether this store manages (and should close) the SQLite connection */
   private readonly isConnectionManaged: boolean = false;
   private jobPromises = new Map<string, Promise<T | undefined>>();
-  private jobResolvers = new Map<
-    string,
-    {
-      resolve: (value: T | undefined) => void;
-      reject: (reason: unknown) => void;
-    }
-  >();
+  private jobSettlers = new Map<string, (value: T | undefined) => void>();
   private readonly jobTimeoutMs: number;
+  private readonly pollIntervalMs: number;
   private cleanupInterval?: NodeJS.Timeout;
   private readonly cleanupIntervalMs: number;
   private isDestroyed = false;
@@ -39,6 +35,8 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
     timeoutMs,
     /** Cleanup interval in milliseconds. Defaults to 1 minute. */
     cleanupIntervalMs = 60_000,
+    /** Poll interval for checking pending jobs in milliseconds. Defaults to 100ms. */
+    pollIntervalMs = 100,
   }: SQLiteDedupeStoreOptions = {}) {
     // Support passing an existing `better-sqlite3` Database instance so that
     // multiple stores can share the *same* file and connection. If a string
@@ -59,6 +57,7 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
     this.db = drizzle(sqliteInstance);
     this.jobTimeoutMs = timeoutMs ?? jobTimeoutMs ?? 300000;
     this.cleanupIntervalMs = cleanupIntervalMs;
+    this.pollIntervalMs = pollIntervalMs;
 
     this.initializeDatabase();
     this.startCleanupInterval();
@@ -107,11 +106,16 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
       return existingPromise;
     }
 
-    const result = await this.db
-      .select()
-      .from(dedupeTable)
-      .where(eq(dedupeTable.hash, hash))
-      .limit(1);
+    let result: Array<typeof dedupeTable.$inferSelect>;
+    try {
+      result = await this.db
+        .select()
+        .from(dedupeTable)
+        .where(eq(dedupeTable.hash, hash))
+        .limit(1);
+    } catch {
+      return undefined;
+    }
 
     if (result.length === 0) {
       return undefined;
@@ -124,50 +128,124 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
 
     // If job is already completed, return result immediately
     if (job.status === 'completed') {
-      try {
-        if (job.result === '__UNDEFINED__' || job.result === '__NULL__') {
-          return undefined;
-        } else if (job.result) {
-          return JSON.parse(job.result as string);
-        }
-        return undefined;
-      } catch {
-        // If parse fails, return undefined instead of throwing
-        return undefined;
-      }
+      return this.deserializeResult(job.result);
     }
 
     if (job.status === 'failed') {
       return undefined;
     }
 
-    // Job is pending - create promise for deduplication
-    const promise = new Promise<T | undefined>((resolve, reject) => {
-      this.jobResolvers.set(hash, { resolve, reject });
+    // Job is pending - create a promise that polls DB state so other processes
+    // can observe completion/failure without in-memory resolver sharing.
+    const promise = new Promise<T | undefined>((resolve) => {
+      let settled = false;
+      let timeoutHandle: NodeJS.Timeout | undefined;
 
-      if (this.jobTimeoutMs > 0) {
-        setTimeout(() => {
-          const resolver = this.jobResolvers.get(hash);
-          if (resolver) {
-            this.jobResolvers.delete(hash);
-            this.jobPromises.delete(hash);
+      const settle = (value: T | undefined) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
 
-            this.db
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+        clearInterval(pollHandle);
+
+        this.jobSettlers.delete(hash);
+        this.jobPromises.delete(hash);
+        resolve(value);
+      };
+
+      this.jobSettlers.set(hash, settle);
+
+      const poll = async () => {
+        if (this.isDestroyed) {
+          settle(undefined);
+          return;
+        }
+
+        try {
+          const latest = await this.db
+            .select()
+            .from(dedupeTable)
+            .where(eq(dedupeTable.hash, hash))
+            .limit(1);
+
+          const latestJob = latest[0];
+          if (!latestJob) {
+            settle(undefined);
+            return;
+          }
+
+          const isExpired =
+            this.jobTimeoutMs > 0 &&
+            Date.now() - latestJob.createdAt >= this.jobTimeoutMs;
+
+          if (isExpired) {
+            await this.db
               .update(dedupeTable)
               .set({
                 status: 'failed',
                 error: 'Job timed out',
                 updatedAt: Date.now(),
               })
-              .where(eq(dedupeTable.hash, hash))
-              .then(() => {
-                resolve(undefined); // Resolve with undefined for timeout
-              })
-              .catch(() => {
-                resolve(undefined); // Even if update fails, resolve with undefined
-              });
+              .where(eq(dedupeTable.hash, hash));
+            settle(undefined);
+            return;
           }
+
+          if (latestJob.status === 'completed') {
+            settle(this.deserializeResult(latestJob.result));
+            return;
+          }
+
+          if (latestJob.status === 'failed') {
+            settle(undefined);
+          }
+        } catch {
+          settle(undefined);
+        }
+      };
+
+      const pollHandle = setInterval(() => {
+        void poll();
+      }, this.pollIntervalMs);
+
+      if (typeof pollHandle.unref === 'function') {
+        pollHandle.unref();
+      }
+
+      void poll();
+
+      if (this.jobTimeoutMs > 0) {
+        timeoutHandle = setTimeout(() => {
+          if (this.isDestroyed) {
+            settle(undefined);
+            return;
+          }
+
+          void (async () => {
+            try {
+              await this.db
+                .update(dedupeTable)
+                .set({
+                  status: 'failed',
+                  error: 'Job timed out',
+                  updatedAt: Date.now(),
+                })
+                .where(eq(dedupeTable.hash, hash));
+            } catch {
+              // Ignore DB errors on timeout settlement.
+            } finally {
+              settle(undefined);
+            }
+          })();
         }, this.jobTimeoutMs);
+
+        if (typeof timeoutHandle.unref === 'function') {
+          timeoutHandle.unref();
+        }
       }
     });
 
@@ -281,12 +359,10 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
       })
       .where(eq(dedupeTable.hash, hash));
 
-    // Resolve any waiting promises
-    const resolver = this.jobResolvers.get(hash);
-    if (resolver) {
-      resolver.resolve(value);
-      this.jobResolvers.delete(hash);
-      this.jobPromises.delete(hash);
+    // Resolve any waiting promises in this process immediately.
+    const settle = this.jobSettlers.get(hash);
+    if (settle) {
+      settle(value);
     }
   }
 
@@ -306,12 +382,10 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
       })
       .where(eq(dedupeTable.hash, hash));
 
-    // Reject any waiting promises
-    const resolver = this.jobResolvers.get(hash);
-    if (resolver) {
-      resolver.reject(error);
-      this.jobResolvers.delete(hash);
-      this.jobPromises.delete(hash);
+    // Resolve waiters to undefined on failure.
+    const settle = this.jobSettlers.get(hash);
+    if (settle) {
+      settle(undefined);
     }
   }
 
@@ -451,8 +525,12 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
   async clear(): Promise<void> {
     await this.db.delete(dedupeTable);
 
+    for (const settle of this.jobSettlers.values()) {
+      settle(undefined);
+    }
+
     this.jobPromises.clear();
-    this.jobResolvers.clear();
+    this.jobSettlers.clear();
   }
 
   /**
@@ -464,10 +542,14 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
       this.cleanupInterval = undefined;
     }
 
-    this.jobPromises.clear();
-    this.jobResolvers.clear();
-
     this.isDestroyed = true;
+
+    for (const settle of this.jobSettlers.values()) {
+      settle(undefined);
+    }
+
+    this.jobPromises.clear();
+    this.jobSettlers.clear();
 
     // Only close the underlying DB if **this** store created it.
     if (this.isConnectionManaged && typeof this.sqlite.close === 'function') {
@@ -480,6 +562,25 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
    */
   destroy(): void {
     this.close();
+  }
+
+  private deserializeResult(serializedResult: unknown): T | undefined {
+    try {
+      if (
+        serializedResult === '__UNDEFINED__' ||
+        serializedResult === '__NULL__'
+      ) {
+        return undefined;
+      }
+
+      if (serializedResult) {
+        return JSON.parse(serializedResult as string);
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private initializeDatabase(): void {

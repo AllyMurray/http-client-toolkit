@@ -343,8 +343,11 @@ new SQLiteDedupeStore({
   database: './dedupe.db',
   jobTimeoutMs: 300_000,
   cleanupIntervalMs: 60_000,
+  pollIntervalMs: 100, // Poll DB state for cross-instance waiters
 });
 ```
+
+Pending waiters are also settled when the store is closed/destroyed, preventing hanging promises during shutdown.
 
 ### SQLiteRateLimitStore
 
