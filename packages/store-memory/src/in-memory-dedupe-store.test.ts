@@ -4,20 +4,23 @@ import { InMemoryDedupeStore } from './in-memory-dedupe-store.js';
 describe('InMemoryDedupeStore', () => {
   let store: InMemoryDedupeStore;
   let unhandledRejections: Array<Error> = [];
+  let unhandledRejectionHandler: ((error: Error) => void) | undefined;
 
   beforeEach(() => {
     store = new InMemoryDedupeStore();
     unhandledRejections = [];
 
     // Catch any unhandled rejections
-    process.on('unhandledRejection', (error: Error) => {
+    unhandledRejectionHandler = (error: Error) => {
       if (
         error.message.includes('DedupeStore cleared') ||
         error.message.includes('Test error')
       ) {
         unhandledRejections.push(error);
       }
-    });
+    };
+
+    process.on('unhandledRejection', unhandledRejectionHandler);
   });
 
   afterEach(async () => {
@@ -27,6 +30,14 @@ describe('InMemoryDedupeStore', () => {
       store.destroy();
       // Wait a bit more for cleanup to complete
       await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // Tests add a process-level listener in beforeEach to assert there are no
+    // leaked rejections; always remove it so listeners do not accumulate across
+    // test cases and trigger MaxListeners warnings.
+    if (unhandledRejectionHandler) {
+      process.off('unhandledRejection', unhandledRejectionHandler);
+      unhandledRejectionHandler = undefined;
     }
   });
 

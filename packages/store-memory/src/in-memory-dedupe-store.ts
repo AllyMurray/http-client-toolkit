@@ -47,6 +47,11 @@ export class InMemoryDedupeStore<T = unknown> implements DedupeStore<T> {
       this.cleanupInterval = setInterval(() => {
         this.cleanup();
       }, cleanupIntervalMs);
+
+      // Do not keep the process alive solely for periodic maintenance.
+      if (typeof this.cleanupInterval.unref === 'function') {
+        this.cleanupInterval.unref();
+      }
     }
   }
 

@@ -39,6 +39,11 @@ export class InMemoryRateLimitStore implements RateLimitStore {
       this.cleanupInterval = setInterval(() => {
         this.cleanup();
       }, cleanupIntervalMs);
+
+      // Do not pin Node's event loop for background cleanup only.
+      if (typeof this.cleanupInterval.unref === 'function') {
+        this.cleanupInterval.unref();
+      }
     }
   }
 
