@@ -23,14 +23,19 @@ describe('HttpClient', () => {
     const mockResponse = { snake_case_key: 'value' };
     nock(baseUrl).get('/transform').reply(200, mockResponse);
 
-    const client = new HttpClient({}, {
-      responseTransformer: (data: unknown) => {
-        const obj = data as Record<string, unknown>;
-        return { camelCaseKey: obj['snake_case_key'] };
+    const client = new HttpClient(
+      {},
+      {
+        responseTransformer: (data: unknown) => {
+          const obj = data as Record<string, unknown>;
+          return { camelCaseKey: obj['snake_case_key'] };
+        },
       },
-    });
+    );
 
-    const result = await client.get<{ camelCaseKey: string }>(`${baseUrl}/transform`);
+    const result = await client.get<{ camelCaseKey: string }>(
+      `${baseUrl}/transform`,
+    );
     expect(result.camelCaseKey).toBe('value');
   });
 
@@ -38,17 +43,22 @@ describe('HttpClient', () => {
     const mockResponse = { error_code: 404, message: 'Not found' };
     nock(baseUrl).get('/handled').reply(200, mockResponse);
 
-    const client = new HttpClient({}, {
-      responseHandler: (data: unknown) => {
-        const obj = data as Record<string, unknown>;
-        if (obj['error_code'] === 404) {
-          throw new HttpClientError('Resource not found', 404);
-        }
-        return data;
+    const client = new HttpClient(
+      {},
+      {
+        responseHandler: (data: unknown) => {
+          const obj = data as Record<string, unknown>;
+          if (obj['error_code'] === 404) {
+            throw new HttpClientError('Resource not found', 404);
+          }
+          return data;
+        },
       },
-    });
+    );
 
-    await expect(client.get(`${baseUrl}/handled`)).rejects.toThrow(HttpClientError);
+    await expect(client.get(`${baseUrl}/handled`)).rejects.toThrow(
+      HttpClientError,
+    );
   });
 
   test('should use custom errorHandler when provided', async () => {
@@ -61,19 +71,24 @@ describe('HttpClient', () => {
       }
     }
 
-    const client = new HttpClient({}, {
-      errorHandler: () => new CustomError('Custom error occurred'),
-    });
+    const client = new HttpClient(
+      {},
+      {
+        errorHandler: () => new CustomError('Custom error occurred'),
+      },
+    );
 
     await expect(client.get(`${baseUrl}/error`)).rejects.toThrow(CustomError);
   });
 
   test('should throw HttpClientError on HTTP errors by default', async () => {
-    nock(baseUrl).get('/server-error').reply(500, { message: 'Internal error' });
+    nock(baseUrl)
+      .get('/server-error')
+      .reply(500, { message: 'Internal error' });
 
-    await expect(
-      httpClient.get(`${baseUrl}/server-error`),
-    ).rejects.toThrow(HttpClientError);
+    await expect(httpClient.get(`${baseUrl}/server-error`)).rejects.toThrow(
+      HttpClientError,
+    );
   });
 
   test('should throw HttpClientError with status code on HTTP errors', async () => {
@@ -91,9 +106,9 @@ describe('HttpClient', () => {
   test('should throw HttpClientError when request fails with no response', async () => {
     nock(baseUrl).get('/failed-request').replyWithError('Complete failure');
 
-    await expect(
-      httpClient.get(`${baseUrl}/failed-request`),
-    ).rejects.toThrow(HttpClientError);
+    await expect(httpClient.get(`${baseUrl}/failed-request`)).rejects.toThrow(
+      HttpClientError,
+    );
   });
 
   test('should abort rate-limit wait when signal is aborted', async () => {

@@ -86,8 +86,15 @@ export class HttpClient implements HttpClientContract {
   private _http;
   private stores: HttpClientStores;
   private options: Required<
-    Pick<HttpClientOptions, 'defaultCacheTTL' | 'throwOnRateLimit' | 'maxWaitTime'>
-  > & Pick<HttpClientOptions, 'responseTransformer' | 'errorHandler' | 'responseHandler'>;
+    Pick<
+      HttpClientOptions,
+      'defaultCacheTTL' | 'throwOnRateLimit' | 'maxWaitTime'
+    >
+  > &
+    Pick<
+      HttpClientOptions,
+      'responseTransformer' | 'errorHandler' | 'responseHandler'
+    >;
 
   constructor(stores: HttpClientStores = {}, options: HttpClientOptions = {}) {
     this._http = axios.create();

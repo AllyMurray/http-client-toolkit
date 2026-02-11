@@ -24,6 +24,7 @@
     "@repo/vitest-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "20",
+    "eslint": "^9.39.0",
     "tsup": "8.5.0",
     "typescript": "5.8.3",
     "vitest": "3.2.4"
@@ -48,7 +49,9 @@
   "main": "./lib/index.cjs",
   "license": "MIT",
   "sideEffects": false,
-  "files": ["lib/**"],
+  "files": [
+    "lib/**"
+  ],
   "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
   "version": "0.1.0",
   "bugs": {

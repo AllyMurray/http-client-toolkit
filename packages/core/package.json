@@ -23,6 +23,7 @@
     "@repo/tsup-config": "workspace:*",
     "@repo/vitest-config": "workspace:*",
     "@types/node": "20",
+    "eslint": "^9.39.0",
     "nock": "14.0.5",
     "tsup": "8.5.0",
     "typescript": "5.8.3",
@@ -45,7 +46,9 @@
   "main": "./lib/index.cjs",
   "license": "MIT",
   "sideEffects": false,
-  "files": ["lib/**"],
+  "files": [
+    "lib/**"
+  ],
   "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
   "version": "0.1.0",
   "bugs": {

@@ -23,19 +23,11 @@
     "@repo/tsup-config": "workspace:*",
     "@repo/vitest-config": "workspace:*",
     "@types/node": "20",
-    "eslint": "9",
-    "eslint-config-prettier": "10.1.5",
-    "eslint-import-resolver-node": "0.3.9",
-    "eslint-import-resolver-typescript": "4.4.4",
-    "eslint-plugin-import": "2.32.0",
-    "eslint-plugin-prettier": "5.5.1",
-    "globals": "16.3.0",
-    "prettier": "3.6.2",
+    "eslint": "^9.39.0",
     "rimraf": "6.0.1",
     "tsup": "8.5.0",
     "tsx": "4.20.3",
     "typescript": "5.8.3",
-    "typescript-eslint": "8",
     "vitest": "3.2.4"
   },
   "dependencies": {
@@ -56,7 +48,9 @@
   "main": "./lib/index.cjs",
   "license": "MIT",
   "sideEffects": false,
-  "files": ["lib/**"],
+  "files": [
+    "lib/**"
+  ],
   "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
   "version": "0.1.0",
   "bugs": {
