@@ -468,6 +468,19 @@ Useful root scripts:
 - `pnpm format` - format TypeScript/Markdown files with Prettier
 - `pnpm clean` - remove package build outputs and root `node_modules`
 
+## Adding a New Package
+
+1. Create the package under `packages/` and add it to `fixed` in `.changeset/config.json`
+2. Create a changeset (`pnpm changeset`) that includes the new package
+3. Create a classic **Automation** npm access token at npmjs.com
+4. Add it as a repository secret named `NPM_TOKEN` in GitHub (**Settings > Secrets and variables > Actions**)
+5. Run the **initial-publish** workflow manually from the Actions tab to publish the package with the token
+6. On npmjs.com, go to the new package's **Settings > Publishing access > Trusted publishing** and add a provider:
+   - Repository owner: `AllyMurray`
+   - Repository name: `http-client-toolkit`
+   - Workflow filename: `release.yml`
+7. Delete the `NPM_TOKEN` secret from GitHub — future releases use trusted publishing
+
 ## License
 
 ISC
