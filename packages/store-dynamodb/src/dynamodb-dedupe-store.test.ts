@@ -286,28 +286,21 @@ describe('DynamoDBDedupeStore', () => {
 
   describe('complete', () => {
     it('should complete a job with a value', async () => {
-      ddbMock.on(GetCommand).resolvesOnce({ Item: { status: 'pending' } });
       ddbMock.on(UpdateCommand).resolvesOnce({});
       await store.complete('test-hash', 'test-value');
-      expect(ddbMock.calls()).toHaveLength(2);
+      expect(ddbMock.calls()).toHaveLength(1);
     });
 
     it('should skip double completion', async () => {
-      ddbMock.on(GetCommand).resolvesOnce({
-        Item: { status: 'completed', result: '"original"' },
-      });
+      const error = new Error('The conditional request failed');
+      error.name = 'ConditionalCheckFailedException';
+      ddbMock.on(UpdateCommand).rejectsOnce(error);
       await store.complete('test-hash', 'new-value');
-      // Only 1 call (the get), no update
+      // Only 1 call (the conditional update), no error thrown
       expect(ddbMock.calls()).toHaveLength(1);
     });
 
     it('should handle null and undefined values', async () => {
-      // undefined
-      ddbMock
-        .on(GetCommand)
-        .resolvesOnce({ Item: { status: 'pending' } })
-        // null
-        .resolvesOnce({ Item: { status: 'pending' } });
       ddbMock.on(UpdateCommand).resolves({});
 
       await store.complete('hash-undef', undefined);
@@ -329,7 +322,6 @@ describe('DynamoDBDedupeStore', () => {
     });
 
     it('should throw on circular reference serialization', async () => {
-      ddbMock.on(GetCommand).resolvesOnce({ Item: { status: 'pending' } });
       const circular: { self?: unknown } = {};
       circular.self = circular;
 
@@ -339,8 +331,6 @@ describe('DynamoDBDedupeStore', () => {
     });
 
     it('should format non-Error serialization failures', async () => {
-      ddbMock.on(GetCommand).resolvesOnce({ Item: { status: 'pending' } });
-
       const stringifySpy = vi
         .spyOn(JSON, 'stringify')
         .mockImplementation(() => {
@@ -366,7 +356,6 @@ describe('DynamoDBDedupeStore', () => {
         settledWith = value;
       });
 
-      ddbMock.on(GetCommand).resolvesOnce({ Item: { status: 'pending' } });
       ddbMock.on(UpdateCommand).resolvesOnce({});
       await store.complete('settler-hash', 'settled-value');
 

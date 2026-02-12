@@ -360,24 +360,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
 
     const pk = `DEDUPE#${hash}`;
 
-    // Check if already completed to prevent double completion
-    let existing;
-    try {
-      existing = await this.docClient.send(
-        new GetCommand({
-          TableName: this.tableName,
-          Key: { pk, sk: pk },
-        }),
-      );
-    } catch (error: unknown) {
-      throwIfDynamoTableMissing(error, this.tableName);
-      throw error;
-    }
-
-    if (existing.Item && existing.Item['status'] === 'completed') {
-      return;
-    }
-
     try {
       await this.docClient.send(
         new UpdateCommand({
@@ -385,12 +367,15 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
           Key: { pk, sk: pk },
           UpdateExpression:
             'SET #status = :completed, #result = :result, updatedAt = :now',
+          ConditionExpression:
+            'attribute_exists(pk) AND #status = :pending',
           ExpressionAttributeNames: {
             '#status': 'status',
             '#result': 'result',
           },
           ExpressionAttributeValues: {
             ':completed': 'completed',
+            ':pending': 'pending',
             ':result': serializedResult,
             ':now': Date.now(),
           },
@@ -398,6 +383,15 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       );
     } catch (error: unknown) {
       throwIfDynamoTableMissing(error, this.tableName);
+      // Already completed or failed — ignore
+      if (
+        error &&
+        typeof error === 'object' &&
+        'name' in error &&
+        error.name === 'ConditionalCheckFailedException'
+      ) {
+        return;
+      }
       throw error;
     }
 
