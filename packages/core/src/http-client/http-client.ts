@@ -113,7 +113,7 @@ export interface HttpClientOptions {
   /**
    * Override specific cache header behaviors.
    */
-  cacheHeaderOverrides?: {
+  cacheOverrides?: {
     /** Cache responses even when Cache-Control: no-store is set */
     ignoreNoStore?: boolean;
     /** Skip revalidation even when Cache-Control: no-cache is set */
@@ -161,7 +161,7 @@ export class HttpClient implements HttpClientContract {
       | 'responseTransformer'
       | 'errorHandler'
       | 'responseHandler'
-      | 'cacheHeaderOverrides'
+      | 'cacheOverrides'
     > & {
       rateLimitHeaders: RateLimitHeaderConfig;
     };
@@ -175,7 +175,7 @@ export class HttpClient implements HttpClientContract {
       responseTransformer: options.responseTransformer,
       errorHandler: options.errorHandler,
       responseHandler: options.responseHandler,
-      cacheHeaderOverrides: options.cacheHeaderOverrides,
+      cacheOverrides: options.cacheOverrides,
       rateLimitHeaders: this.normalizeRateLimitHeaders(
         options.rateLimitHeaders,
       ),
@@ -593,7 +593,7 @@ export class HttpClient implements HttpClientContract {
   }
 
   private clampTTL(ttl: number): number {
-    const overrides = this.options.cacheHeaderOverrides;
+    const overrides = this.options.cacheOverrides;
     if (!overrides) return ttl;
     let clamped = ttl;
     if (overrides.minimumTTL !== undefined) {
@@ -716,7 +716,7 @@ export class HttpClient implements HttpClientContract {
               return entry.value as Result;
 
             case 'no-cache':
-              if (this.options.cacheHeaderOverrides?.ignoreNoCache) {
+              if (this.options.cacheOverrides?.ignoreNoCache) {
                 return entry.value as Result;
               }
               staleEntry = entry;
@@ -863,7 +863,7 @@ export class HttpClient implements HttpClientContract {
       if (this.stores.cache) {
         const cc = parseCacheControl(response.headers.get('cache-control'));
         const shouldStore =
-          !cc.noStore || this.options.cacheHeaderOverrides?.ignoreNoStore;
+          !cc.noStore || this.options.cacheOverrides?.ignoreNoStore;
 
         if (shouldStore) {
           const entry = createCacheEntry(

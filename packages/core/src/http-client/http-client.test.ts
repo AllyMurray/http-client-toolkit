@@ -1096,7 +1096,7 @@ describe('HttpClient', () => {
       const client = new HttpClient(
         { cache },
         {
-          cacheHeaderOverrides: { ignoreNoStore: true },
+          cacheOverrides: { ignoreNoStore: true },
         },
       );
 
@@ -1463,7 +1463,7 @@ describe('HttpClient', () => {
       const client = new HttpClient(
         { cache },
         {
-          cacheHeaderOverrides: { ignoreNoCache: true },
+          cacheOverrides: { ignoreNoCache: true },
         },
       );
 
@@ -1483,7 +1483,7 @@ describe('HttpClient', () => {
       const client = new HttpClient(
         { cache },
         {
-          cacheHeaderOverrides: { minimumTTL: 300 },
+          cacheOverrides: { minimumTTL: 300 },
         },
       );
 
@@ -1503,7 +1503,7 @@ describe('HttpClient', () => {
       const client = new HttpClient(
         { cache },
         {
-          cacheHeaderOverrides: { maximumTTL: 60 },
+          cacheOverrides: { maximumTTL: 60 },
         },
       );
 
@@ -1643,7 +1643,7 @@ describe('HttpClient', () => {
       const client = new HttpClient(
         { cache },
         {
-          cacheHeaderOverrides: { minimumTTL: 100, maximumTTL: 200 },
+          cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
         },
       );
 
