@@ -1,0 +1,64 @@
+{
+  "name": "@http-client-toolkit/store-dynamodb",
+  "description": "DynamoDB store implementations for HTTP client toolkit caching, deduplication, and rate limiting",
+  "type": "module",
+  "version": "0.0.1",
+  "main": "./lib/index.cjs",
+  "module": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "require": {
+        "types": "./lib/index.d.cts",
+        "default": "./lib/index.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup && npm run test",
+    "lint": "eslint --fix src && prettier --write .",
+    "test": "vitest run --dir=src",
+    "test:coverage": "vitest run --dir=src --coverage",
+    "test:watch": "vitest --dir=src",
+    "dev": "tsup --watch",
+    "clean": "rimraf lib dist node_modules .turbo"
+  },
+  "dependencies": {
+    "@http-client-toolkit/core": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.750.0",
+    "@aws-sdk/lib-dynamodb": "^3.750.0",
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-vitest": "^6.2.1",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsup-config": "workspace:*",
+    "@repo/vitest-config": "workspace:*",
+    "@types/node": "20",
+    "eslint": "^9.39.0",
+    "tsup": "8.5.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/**"
+  ],
+  "engines": {
+    "node": ">= 20.0.0"
+  },
+  "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+}
