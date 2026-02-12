@@ -5,6 +5,9 @@ import {
   isCacheEntry,
   getFreshnessStatus,
   calculateStoreTTL,
+  parseVaryHeader,
+  captureVaryValues,
+  varyMatches,
   type CacheEntry,
 } from '../cache/index.js';
 import { HttpClientError } from '../errors/http-client-error.js';
@@ -544,17 +547,18 @@ export class HttpClient implements HttpClientContract {
     url: string,
     hash: string,
     entry: CacheEntry<unknown>,
+    requestHeaders?: Record<string, string>,
   ): Promise<void> {
-    const headers = new Headers();
+    const fetchHeaders = new Headers(requestHeaders);
     if (entry.metadata.etag) {
-      headers.set('If-None-Match', entry.metadata.etag);
+      fetchHeaders.set('If-None-Match', entry.metadata.etag);
     }
     if (entry.metadata.lastModified) {
-      headers.set('If-Modified-Since', entry.metadata.lastModified);
+      fetchHeaders.set('If-Modified-Since', entry.metadata.lastModified);
     }
 
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers: fetchHeaders });
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
       if (response.status === 304) {
@@ -580,6 +584,13 @@ export class HttpClient implements HttpClientContract {
           response.headers,
           response.status,
         );
+        if (newEntry.metadata.varyHeaders && requestHeaders) {
+          const varyFields = parseVaryHeader(newEntry.metadata.varyHeaders);
+          newEntry.metadata.varyValues = captureVaryValues(
+            varyFields,
+            requestHeaders,
+          );
+        }
         const ttl = this.clampTTL(
           calculateStoreTTL(newEntry.metadata, this.options.defaultCacheTTL),
         );
@@ -689,9 +700,13 @@ export class HttpClient implements HttpClientContract {
 
   async get<Result>(
     url: string,
-    options: { signal?: AbortSignal; priority?: RequestPriority } = {},
+    options: {
+      signal?: AbortSignal;
+      priority?: RequestPriority;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<Result> {
-    const { signal, priority = 'background' } = options;
+    const { signal, priority = 'background', headers } = options;
     const { endpoint, params } = this.parseUrlForHashing(url);
     const hash = hashRequest(endpoint, params);
     const resource = this.inferResource(url);
@@ -709,45 +724,62 @@ export class HttpClient implements HttpClientContract {
 
         if (cachedResult !== undefined && isCacheEntry(cachedResult)) {
           const entry = cachedResult as CacheEntry<unknown>;
-          const status = getFreshnessStatus(entry.metadata);
 
-          switch (status) {
-            case 'fresh':
-              return entry.value as Result;
+          // Vary mismatch → treat as cache miss
+          if (
+            !varyMatches(
+              entry.metadata.varyValues,
+              entry.metadata.varyHeaders,
+              headers ?? {},
+            )
+          ) {
+            // fall through to fetch
+          } else {
+            const status = getFreshnessStatus(entry.metadata);
 
-            case 'no-cache':
-              if (this.options.cacheOverrides?.ignoreNoCache) {
+            switch (status) {
+              case 'fresh':
+                return entry.value as Result;
+
+              case 'no-cache':
+                if (this.options.cacheOverrides?.ignoreNoCache) {
+                  return entry.value as Result;
+                }
+                staleEntry = entry;
+                break;
+
+              case 'must-revalidate':
+                staleEntry = entry;
+                break;
+
+              case 'stale-while-revalidate': {
+                // Serve stale immediately, revalidate in background
+                const revalidation = this.backgroundRevalidate(
+                  url,
+                  hash,
+                  entry,
+                  headers,
+                );
+                this.pendingRevalidations.push(revalidation);
+                // Cleanup resolved promises periodically
+                revalidation.finally(() => {
+                  this.pendingRevalidations = this.pendingRevalidations.filter(
+                    (p) => p !== revalidation,
+                  );
+                });
                 return entry.value as Result;
               }
-              staleEntry = entry;
-              break;
 
-            case 'must-revalidate':
-              staleEntry = entry;
-              break;
+              case 'stale-if-error':
+                // Attempt fresh fetch, fall back to stale on error
+                staleCandidate = entry;
+                staleEntry = entry; // Also use for conditional request
+                break;
 
-            case 'stale-while-revalidate': {
-              // Serve stale immediately, revalidate in background
-              const revalidation = this.backgroundRevalidate(url, hash, entry);
-              this.pendingRevalidations.push(revalidation);
-              // Cleanup resolved promises periodically
-              revalidation.finally(() => {
-                this.pendingRevalidations = this.pendingRevalidations.filter(
-                  (p) => p !== revalidation,
-                );
-              });
-              return entry.value as Result;
+              case 'stale':
+                staleEntry = entry;
+                break;
             }
-
-            case 'stale-if-error':
-              // Attempt fresh fetch, fall back to stale on error
-              staleCandidate = entry;
-              staleEntry = entry; // Also use for conditional request
-              break;
-
-            case 'stale':
-              staleEntry = entry;
-              break;
           }
         }
       }
@@ -784,23 +816,22 @@ export class HttpClient implements HttpClientContract {
       }
 
       // 4. Execute the actual HTTP request
-      // Build conditional headers when we have a stale entry
+      // Start from user-provided headers, then layer conditional headers on top
       const fetchInit: RequestInit = { signal };
+      const fetchHeaders = new Headers(headers);
       if (staleEntry) {
-        const conditionalHeaders = new Headers();
         if (staleEntry.metadata.etag) {
-          conditionalHeaders.set('If-None-Match', staleEntry.metadata.etag);
+          fetchHeaders.set('If-None-Match', staleEntry.metadata.etag);
         }
         if (staleEntry.metadata.lastModified) {
-          conditionalHeaders.set(
+          fetchHeaders.set(
             'If-Modified-Since',
             staleEntry.metadata.lastModified,
           );
         }
-        // Only add headers if we actually have validators
-        if ([...conditionalHeaders].length > 0) {
-          fetchInit.headers = conditionalHeaders;
-        }
+      }
+      if ([...fetchHeaders].length > 0) {
+        fetchInit.headers = fetchHeaders;
       }
 
       const response = await fetch(url, fetchInit);
@@ -871,6 +902,10 @@ export class HttpClient implements HttpClientContract {
             response.headers,
             response.status,
           );
+          if (entry.metadata.varyHeaders && headers) {
+            const varyFields = parseVaryHeader(entry.metadata.varyHeaders);
+            entry.metadata.varyValues = captureVaryValues(varyFields, headers);
+          }
           const ttl = this.clampTTL(
             calculateStoreTTL(entry.metadata, this.options.defaultCacheTTL),
           );

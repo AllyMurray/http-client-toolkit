@@ -98,6 +98,31 @@ When a response includes `stale-if-error`, the client serves a stale cached valu
 
 Only server errors (5xx) and network failures trigger the fallback. Client errors (4xx) are always propagated.
 
+## Vary Header
+
+The client respects the `Vary` response header for cache matching. When a server sends `Vary: Accept`, the client captures the request's `Accept` value and stores it alongside the cache entry. On subsequent lookups, the cached entry is only used if the current request's header values match the stored ones — otherwise the cache is treated as a miss and a fresh request is made.
+
+```typescript
+// First request — cached with Vary: Accept
+const json = await client.get('https://api.example.com/data', {
+  headers: { accept: 'application/json' },
+});
+
+// Same Accept — cache hit
+const json2 = await client.get('https://api.example.com/data', {
+  headers: { accept: 'application/json' },
+});
+
+// Different Accept — cache miss, re-fetches
+const xml = await client.get('https://api.example.com/data', {
+  headers: { accept: 'application/xml' },
+});
+```
+
+`Vary: *` means the response varies on everything — it always triggers a fresh fetch.
+
+Since this is a private client cache, only one entry is stored per URL. A Vary mismatch overwrites the previous entry with the new response.
+
 ## Overrides
 
 The `cacheOverrides` option lets you selectively bypass certain cache directives:

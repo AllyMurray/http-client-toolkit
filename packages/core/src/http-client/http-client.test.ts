@@ -1743,5 +1743,174 @@ describe('HttpClient', () => {
       expect(helper('string error')).toBe(false);
       expect(helper({ response: { status: 'not-a-number' } })).toBe(false);
     });
+
+    test('Vary match returns cached value', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache });
+
+      nock(baseUrl)
+        .get('/vary-match')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=3600', Vary: 'Accept' },
+        );
+
+      await client.get(`${baseUrl}/vary-match`, {
+        headers: { accept: 'application/json' },
+      });
+
+      // Same Accept header — should return cached value without network request
+      const result = await client.get(`${baseUrl}/vary-match`, {
+        headers: { accept: 'application/json' },
+      });
+      expect(result).toEqual({ v: 1 });
+    });
+
+    test('Vary mismatch treats as cache miss', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache });
+
+      nock(baseUrl)
+        .get('/vary-miss')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=3600', Vary: 'Accept' },
+        );
+
+      await client.get(`${baseUrl}/vary-miss`, {
+        headers: { accept: 'application/json' },
+      });
+
+      // Different Accept header — should re-fetch
+      nock(baseUrl)
+        .get('/vary-miss')
+        .reply(
+          200,
+          { v: 2 },
+          { 'Cache-Control': 'max-age=3600', Vary: 'Accept' },
+        );
+
+      const result = await client.get(`${baseUrl}/vary-miss`, {
+        headers: { accept: 'text/html' },
+      });
+      expect(result).toEqual({ v: 2 });
+    });
+
+    test('Vary: * always misses', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache });
+
+      nock(baseUrl)
+        .get('/vary-star')
+        .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=3600', Vary: '*' });
+
+      await client.get(`${baseUrl}/vary-star`, {
+        headers: { accept: 'application/json' },
+      });
+
+      // Even with identical headers, Vary: * always re-fetches
+      nock(baseUrl)
+        .get('/vary-star')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=3600', Vary: '*' });
+
+      const result = await client.get(`${baseUrl}/vary-star`, {
+        headers: { accept: 'application/json' },
+      });
+      expect(result).toEqual({ v: 2 });
+    });
+
+    test('user headers are sent with fetch', async () => {
+      const client = new HttpClient();
+
+      nock(baseUrl)
+        .get('/custom-headers')
+        .matchHeader('x-custom', 'hello')
+        .reply(200, { ok: true });
+
+      const result = await client.get(`${baseUrl}/custom-headers`, {
+        headers: { 'x-custom': 'hello' },
+      });
+      expect(result).toEqual({ ok: true });
+    });
+
+    test('user headers merged with conditional headers on revalidation', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache });
+
+      nock(baseUrl)
+        .get('/merge-headers')
+        .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"e1"' });
+
+      await client.get(`${baseUrl}/merge-headers`, {
+        headers: { 'x-api-key': 'secret' },
+      });
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      // Should send both user header and conditional header
+      nock(baseUrl)
+        .get('/merge-headers')
+        .matchHeader('x-api-key', 'secret')
+        .matchHeader('If-None-Match', '"e1"')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/merge-headers`, {
+        headers: { 'x-api-key': 'secret' },
+      });
+      expect(result).toEqual({ v: 2 });
+    });
+
+    test('background revalidation sends user headers', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache });
+
+      nock(baseUrl).get('/swr-headers').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"s1"',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr-headers`, {
+        headers: { 'x-token': 'abc' },
+      });
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
+
+      // Background revalidation should include user headers
+      nock(baseUrl)
+        .get('/swr-headers')
+        .matchHeader('x-token', 'abc')
+        .matchHeader('If-None-Match', '"s1"')
+        .reply(
+          200,
+          { v: 2 },
+          { 'Cache-Control': 'max-age=60', Vary: 'X-Token' },
+        );
+
+      // SWR returns stale value immediately
+      const result = await client.get(`${baseUrl}/swr-headers`, {
+        headers: { 'x-token': 'abc' },
+      });
+      expect(result).toEqual({ v: 1 });
+
+      await client.flushRevalidations();
+
+      // After revalidation, cache should have updated value with Vary match
+      const result2 = await client.get(`${baseUrl}/swr-headers`, {
+        headers: { 'x-token': 'abc' },
+      });
+      expect(result2).toEqual({ v: 2 });
+    });
   });
 });

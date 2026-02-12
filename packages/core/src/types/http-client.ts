@@ -21,6 +21,12 @@ export interface HttpClientContract {
        * Priority level for the request (affects rate limiting behavior)
        */
       priority?: RequestPriority;
+      /**
+       * Custom headers to send with the request. Also used for Vary-based
+       * cache matching — the client captures header values listed in the
+       * response's Vary header and checks them on subsequent lookups.
+       */
+      headers?: Record<string, string>;
     },
   ): Promise<Result>;
 }
