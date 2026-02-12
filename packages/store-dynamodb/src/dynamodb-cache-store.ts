@@ -10,9 +10,9 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { CacheStore } from '@http-client-toolkit/core';
-import { DEFAULT_TABLE_NAME } from './table.js';
-import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import { batchDeleteWithRetries } from './dynamodb-utils.js';
+import { throwIfDynamoTableMissing } from './table-missing-error.js';
+import { DEFAULT_TABLE_NAME } from './table.js';
 
 export interface DynamoDBCacheStoreOptions {
   client?: DynamoDBDocumentClient | DynamoDBClient;
@@ -51,7 +51,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       this.docClient = DynamoDBDocumentClient.from(this.rawClient);
       this.isClientManaged = true;
     }
-
   }
 
   async get(hash: string): Promise<T | undefined> {
@@ -100,7 +99,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
-
 
     const now = Date.now();
     const nowEpoch = Math.floor(now / 1000);
@@ -157,7 +155,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
-
     const pk = `CACHE#${hash}`;
 
     try {
@@ -177,7 +174,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
-
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 

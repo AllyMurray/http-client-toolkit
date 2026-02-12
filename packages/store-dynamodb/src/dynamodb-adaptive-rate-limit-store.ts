@@ -20,13 +20,13 @@ import {
   type DynamicCapacityResult,
 } from '@http-client-toolkit/core';
 import { z } from 'zod';
-import { DEFAULT_TABLE_NAME } from './table.js';
-import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import {
   batchDeleteWithRetries,
   queryCountAllPages,
   queryItemsAllPages,
 } from './dynamodb-utils.js';
+import { throwIfDynamoTableMissing } from './table-missing-error.js';
+import { DEFAULT_TABLE_NAME } from './table.js';
 
 const DEFAULT_ADAPTIVE_RATE_LIMIT: RateLimitConfig = {
   limit: 200,
@@ -83,7 +83,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       this.docClient = DynamoDBDocumentClient.from(this.rawClient);
       this.isClientManaged = true;
     }
-
   }
 
   async canProceed(
@@ -122,7 +121,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
-
 
     await this.ensureActivityMetrics(resource);
     const metrics = this.getOrCreateActivityMetrics(resource);
@@ -236,7 +234,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-
     const now = Date.now();
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const ttl = Math.floor((now + config.windowMs) / 1000);
@@ -294,7 +291,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-
     await this.ensureActivityMetrics(resource);
     const metrics = this.getOrCreateActivityMetrics(resource);
     const capacity = this.calculateCurrentCapacity(resource, metrics);
@@ -330,7 +326,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-
     await this.deleteResourceItems(resource);
     this.activityMetrics.delete(resource);
     this.cachedCapacity.delete(resource);
@@ -344,7 +339,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
-
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
 
@@ -416,7 +410,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
-
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 

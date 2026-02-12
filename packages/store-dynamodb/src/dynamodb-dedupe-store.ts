@@ -12,9 +12,9 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { DedupeStore } from '@http-client-toolkit/core';
-import { DEFAULT_TABLE_NAME } from './table.js';
-import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import { batchDeleteWithRetries } from './dynamodb-utils.js';
+import { throwIfDynamoTableMissing } from './table-missing-error.js';
+import { DEFAULT_TABLE_NAME } from './table.js';
 
 export interface DynamoDBDedupeStoreOptions {
   client?: DynamoDBDocumentClient | DynamoDBClient;
@@ -59,7 +59,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       this.docClient = DynamoDBDocumentClient.from(this.rawClient);
       this.isClientManaged = true;
     }
-
   }
 
   async waitFor(hash: string): Promise<T | undefined> {
@@ -258,7 +257,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-
     const pk = `DEDUPE#${hash}`;
     const maxAttempts = 3;
 
@@ -336,7 +334,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-
     let serializedResult: string;
     if (value === undefined) {
       serializedResult = '__UNDEFINED__';
@@ -361,8 +358,7 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
           Key: { pk, sk: pk },
           UpdateExpression:
             'SET #status = :completed, #result = :result, updatedAt = :now',
-          ConditionExpression:
-            'attribute_exists(pk) AND #status = :pending',
+          ConditionExpression: 'attribute_exists(pk) AND #status = :pending',
           ExpressionAttributeNames: {
             '#status': 'status',
             '#result': 'result',
@@ -396,11 +392,10 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     }
   }
 
-  async fail(hash: string, error: Error): Promise<void> {
+  async fail(hash: string, _error: Error): Promise<void> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
-
 
     const pk = `DEDUPE#${hash}`;
 
@@ -438,7 +433,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
-
 
     const pk = `DEDUPE#${hash}`;
 
@@ -480,7 +474,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
-
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 
