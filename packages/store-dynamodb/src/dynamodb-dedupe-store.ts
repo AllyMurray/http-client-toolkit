@@ -31,7 +31,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
   private readonly tableName: string;
   private readonly jobTimeoutMs: number;
   private readonly pollIntervalMs: number;
-  private readonly readyPromise: Promise<void>;
   private jobPromises = new Map<string, Promise<T | undefined>>();
   private jobSettlers = new Map<string, (value: T | undefined) => void>();
   private isDestroyed = false;
@@ -61,15 +60,12 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       this.isClientManaged = true;
     }
 
-    this.readyPromise = Promise.resolve();
   }
 
   async waitFor(hash: string): Promise<T | undefined> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
-
-    await this.readyPromise;
 
     const existingPromise = this.jobPromises.get(hash);
     if (existingPromise) {
@@ -262,7 +258,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const pk = `DEDUPE#${hash}`;
     const maxAttempts = 3;
@@ -341,7 +336,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-    await this.readyPromise;
 
     let serializedResult: string;
     if (value === undefined) {
@@ -407,7 +401,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const pk = `DEDUPE#${hash}`;
 
@@ -446,7 +439,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const pk = `DEDUPE#${hash}`;
 
@@ -489,7 +481,6 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
-    await this.readyPromise;
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 

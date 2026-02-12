@@ -27,7 +27,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
   private readonly isClientManaged: boolean;
   private readonly tableName: string;
   private readonly maxEntrySizeBytes: number;
-  private readonly readyPromise: Promise<void>;
   private isDestroyed = false;
 
   constructor({
@@ -53,15 +52,12 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       this.isClientManaged = true;
     }
 
-    this.readyPromise = Promise.resolve();
   }
 
   async get(hash: string): Promise<T | undefined> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
-
-    await this.readyPromise;
 
     const pk = `CACHE#${hash}`;
 
@@ -105,7 +101,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const now = Date.now();
     const nowEpoch = Math.floor(now / 1000);
@@ -162,7 +157,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const pk = `CACHE#${hash}`;
 
@@ -184,7 +178,6 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
-    await this.readyPromise;
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 

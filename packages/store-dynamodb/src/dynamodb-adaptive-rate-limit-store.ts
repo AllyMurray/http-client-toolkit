@@ -47,7 +47,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
   private readonly rawClient: DynamoDBClient | undefined;
   private readonly isClientManaged: boolean;
   private readonly tableName: string;
-  private readonly readyPromise: Promise<void>;
   private defaultConfig: RateLimitConfig;
   private resourceConfigs: Map<string, RateLimitConfig>;
   private isDestroyed = false;
@@ -85,7 +84,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       this.isClientManaged = true;
     }
 
-    this.readyPromise = Promise.resolve();
   }
 
   async canProceed(
@@ -95,8 +93,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
-
-    await this.readyPromise;
 
     await this.ensureActivityMetrics(resource);
     const metrics = this.getOrCreateActivityMetrics(resource);
@@ -127,7 +123,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     await this.ensureActivityMetrics(resource);
     const metrics = this.getOrCreateActivityMetrics(resource);
@@ -241,7 +236,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const now = Date.now();
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
@@ -300,7 +294,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     await this.ensureActivityMetrics(resource);
     const metrics = this.getOrCreateActivityMetrics(resource);
@@ -337,7 +330,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     await this.deleteResourceItems(resource);
     this.activityMetrics.delete(resource);
@@ -353,7 +345,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
 
@@ -426,7 +417,6 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 

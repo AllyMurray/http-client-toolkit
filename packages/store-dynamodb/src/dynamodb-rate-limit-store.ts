@@ -35,7 +35,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
   private readonly rawClient: DynamoDBClient | undefined;
   private readonly isClientManaged: boolean;
   private readonly tableName: string;
-  private readonly readyPromise: Promise<void>;
   private defaultConfig: RateLimitConfig;
   private resourceConfigs: Map<string, RateLimitConfig>;
   private isDestroyed = false;
@@ -65,15 +64,12 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       this.isClientManaged = true;
     }
 
-    this.readyPromise = Promise.resolve();
   }
 
   async canProceed(resource: string): Promise<boolean> {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
-
-    await this.readyPromise;
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const now = Date.now();
@@ -91,7 +87,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     if (config.limit <= 0) {
@@ -175,7 +170,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const now = Date.now();
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
@@ -209,7 +203,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const now = Date.now();
@@ -233,7 +226,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     await this.deleteResourceItems(resource);
   }
@@ -243,7 +235,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
 
@@ -310,7 +301,6 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
-    await this.readyPromise;
 
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 
