@@ -1,13 +1,13 @@
 ---
 title: Caching
-description: Configure HTTP response caching with TTL and eviction strategies
+description: Configure HTTP response caching with TTL, cache headers, and eviction strategies
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 # Caching
 
-HTTP Client Toolkit provides response caching through the `CacheStore` interface. Cached responses are returned immediately without making a network request, reducing latency and API usage.
+HTTP Client Toolkit provides response caching through the `CacheStore` interface. The client respects standard HTTP cache headers (`Cache-Control`, `ETag`, `Last-Modified`, `Expires`) per RFC 9111 to make smart caching decisions — honoring server-specified freshness, performing lightweight revalidation, and supporting resilience patterns like `stale-while-revalidate`.
 
 ## How It Works
 
@@ -15,13 +15,27 @@ When `client.get(url)` is called:
 
 1. The URL and parameters are hashed into a deterministic key
 2. The cache store is checked for a matching entry
-3. If a valid (non-expired) entry exists, it's returned immediately
-4. Otherwise, the request proceeds through the rest of the pipeline
-5. The response is cached with the configured TTL
+3. **Fresh** entries are returned immediately without a network request
+4. **Stale** entries trigger a conditional request (`If-None-Match` / `If-Modified-Since`) for efficient revalidation
+5. New responses are wrapped in a metadata envelope and cached with a TTL derived from the response headers
+
+## Freshness
+
+The client determines cache freshness following RFC 9111 priority:
+
+1. `Cache-Control: max-age=N` — freshness lifetime is N seconds
+2. `Expires` header minus `Date` header
+3. Heuristic: 10% of (`Date` minus `Last-Modified`)
+4. No freshness info — falls back to `defaultCacheTTL`
+
+```
+Server: Cache-Control: max-age=300
+→ Entry is fresh for 5 minutes, then stale
+```
 
 ## Configuring TTL
 
-Set the default cache TTL (in seconds) when creating the client:
+Set the default cache TTL (in seconds) when creating the client. This is used as a fallback when response headers don't specify freshness:
 
 ```typescript
 const client = new HttpClient(
@@ -39,6 +53,83 @@ All built-in store backends follow the same TTL rules:
 | `ttlSeconds > 0` | Expires after N seconds |
 | `ttlSeconds === 0` | Never expires (permanent) |
 | `ttlSeconds < 0` | Immediately expired |
+
+## Conditional Requests (304 Revalidation)
+
+When a cached entry becomes stale, the client sends conditional headers to the origin server:
+
+- **`If-None-Match`** — sent when the cached response had an `ETag`
+- **`If-Modified-Since`** — sent when the cached response had a `Last-Modified`
+
+If the server responds with `304 Not Modified`, the cached value is refreshed with updated metadata — no body is transferred.
+
+```
+Client → Server: GET /data  If-None-Match: "abc123"
+Server → Client: 304 Not Modified  Cache-Control: max-age=300
+→ Cached value reused, freshness reset to 5 minutes
+```
+
+## Stale-While-Revalidate
+
+When a response includes `stale-while-revalidate`, the client serves the stale cached value immediately and refreshes the cache in the background:
+
+```typescript
+// Server sends: Cache-Control: max-age=60, stale-while-revalidate=120
+// After 60s: entry is stale
+// Between 60s–180s: stale value served instantly, background fetch updates cache
+// After 180s: full re-fetch required
+```
+
+This gives users instant responses while keeping the cache fresh. Background revalidation failures are silently ignored — the stale entry remains until it falls out of the window.
+
+In tests, use `client.flushRevalidations()` to wait for all background revalidations to complete before making assertions.
+
+## Stale-If-Error
+
+When a response includes `stale-if-error`, the client serves a stale cached value if the origin server returns a 5xx error or the network fails:
+
+```typescript
+// Server sends: Cache-Control: max-age=60, stale-if-error=300
+// After 60s: entry is stale
+// If origin returns 500/503 or network fails within 300s of going stale:
+//   → stale value returned instead of throwing
+// After 360s: stale-if-error window expires, errors propagate normally
+```
+
+Only server errors (5xx) and network failures trigger the fallback. Client errors (4xx) are always propagated.
+
+## Overrides
+
+The `cacheOverrides` option lets you selectively bypass certain cache directives:
+
+```typescript
+const client = new HttpClient(
+  { cache: new InMemoryCacheStore() },
+  {
+    cacheOverrides: {
+      ignoreNoStore: true,   // Cache even when no-store is set
+      ignoreNoCache: true,   // Skip revalidation even when no-cache is set
+      minimumTTL: 60,        // Floor: cache for at least 60 seconds
+      maximumTTL: 3600,      // Cap: cache for at most 1 hour
+    },
+  },
+);
+```
+
+| Override | Effect |
+|----------|--------|
+| `ignoreNoStore` | Caches responses that have `Cache-Control: no-store` |
+| `ignoreNoCache` | Returns cached values without revalidation even when `no-cache` is set |
+| `minimumTTL` | Floor on the header-derived store TTL (seconds) |
+| `maximumTTL` | Cap on the header-derived store TTL (seconds) |
+
+## Private Cache Semantics
+
+HttpClient operates as a **private cache** (a client library, not a shared proxy), so:
+
+- `Cache-Control: private` responses are cacheable (we are the private cache)
+- `s-maxage` is parsed but ignored for freshness calculations
+- `proxy-revalidate` is parsed but ignored
 
 ## Store Options
 
@@ -103,7 +194,3 @@ cache.destroy();
 ```
 
 DynamoDB stores don't use timers, so no explicit cleanup is needed.
-
-## HTTP Cache Headers
-
-For smarter caching based on server-provided `Cache-Control`, `ETag`, `Last-Modified`, and `Expires` headers, see the [Cache Headers (RFC 9111)](/http-client-toolkit/guides/cache-headers/) guide.
