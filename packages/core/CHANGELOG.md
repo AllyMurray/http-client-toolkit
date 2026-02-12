@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 0.5.0
+
+### Minor Changes
+
+- ecb6c9c: Add `fetchFn`, `requestInterceptor`, and `responseInterceptor` options to HttpClient for customising the HTTP lifecycle
+
 ## 0.4.0
 
 ### Minor Changes

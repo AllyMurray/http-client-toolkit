@@ -1,5 +1,12 @@
 # @http-client-toolkit/store-memory
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [ecb6c9c]
+  - @http-client-toolkit/core@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes
