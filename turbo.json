@@ -21,6 +21,9 @@
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["coverage/**"]
     },
+    "@http-client-toolkit/store-dynamodb#test": {
+      "outputs": []
+    },
     "test:run": {
       "dependsOn": ["^build", "@repo/vitest-config#build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
