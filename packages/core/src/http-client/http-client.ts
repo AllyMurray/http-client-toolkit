@@ -76,6 +76,33 @@ export interface HttpClientStores {
 
 export interface HttpClientOptions {
   /**
+   * Custom fetch implementation. Defaults to `globalThis.fetch`.
+   * Use this to intercept/transform at the fetch level — e.g., resolving
+   * pre-signed URLs or following redirects before the response enters
+   * the caching layer.
+   */
+  fetchFn?: (url: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * Pre-request hook. Runs before every outbound request, allowing
+   * modification of the request init (e.g., injecting auth headers,
+   * adding tracing headers). Called with the URL and current RequestInit;
+   * must return a (possibly modified) RequestInit.
+   */
+  requestInterceptor?: (
+    url: string,
+    init: RequestInit,
+  ) => Promise<RequestInit> | RequestInit;
+  /**
+   * Post-response hook. Runs after receiving the raw Response but before
+   * response body parsing, transformation, and caching. Use this for
+   * logging, modifying headers, or replacing the Response entirely.
+   * Distinct from `responseTransformer` which operates on parsed data.
+   */
+  responseInterceptor?: (
+    response: Response,
+    url: string,
+  ) => Promise<Response> | Response;
+  /**
    * Default cache TTL in seconds
    */
   defaultCacheTTL?: number;
@@ -161,6 +188,9 @@ export class HttpClient implements HttpClientContract {
   > &
     Pick<
       HttpClientOptions,
+      | 'fetchFn'
+      | 'requestInterceptor'
+      | 'responseInterceptor'
       | 'responseTransformer'
       | 'errorHandler'
       | 'responseHandler'
@@ -172,6 +202,9 @@ export class HttpClient implements HttpClientContract {
   constructor(stores: HttpClientStores = {}, options: HttpClientOptions = {}) {
     this.stores = stores;
     this.options = {
+      fetchFn: options.fetchFn,
+      requestInterceptor: options.requestInterceptor,
+      responseInterceptor: options.responseInterceptor,
       defaultCacheTTL: options.defaultCacheTTL ?? 3600,
       throwOnRateLimit: options.throwOnRateLimit ?? true,
       maxWaitTime: options.maxWaitTime ?? 60000,
@@ -558,7 +591,18 @@ export class HttpClient implements HttpClientContract {
     }
 
     try {
-      const response = await fetch(url, { headers: fetchHeaders });
+      let revalInit: RequestInit = { headers: fetchHeaders };
+      if (this.options.requestInterceptor) {
+        revalInit = await this.options.requestInterceptor(url, revalInit);
+      }
+
+      const revalFetchFn = this.options.fetchFn ?? globalThis.fetch;
+      let response = await revalFetchFn(url, revalInit);
+
+      if (this.options.responseInterceptor) {
+        response = await this.options.responseInterceptor(response, url);
+      }
+
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
       if (response.status === 304) {
@@ -817,7 +861,7 @@ export class HttpClient implements HttpClientContract {
 
       // 4. Execute the actual HTTP request
       // Start from user-provided headers, then layer conditional headers on top
-      const fetchInit: RequestInit = { signal };
+      let fetchInit: RequestInit = { signal };
       const fetchHeaders = new Headers(headers);
       if (staleEntry) {
         if (staleEntry.metadata.etag) {
@@ -834,7 +878,16 @@ export class HttpClient implements HttpClientContract {
         fetchInit.headers = fetchHeaders;
       }
 
-      const response = await fetch(url, fetchInit);
+      if (this.options.requestInterceptor) {
+        fetchInit = await this.options.requestInterceptor(url, fetchInit);
+      }
+
+      const fetchFn = this.options.fetchFn ?? globalThis.fetch;
+      let response = await fetchFn(url, fetchInit);
+
+      if (this.options.responseInterceptor) {
+        response = await this.options.responseInterceptor(response, url);
+      }
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
       // Handle 304 Not Modified — must be checked BEFORE !response.ok
