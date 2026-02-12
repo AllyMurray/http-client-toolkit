@@ -7,6 +7,7 @@ import {
   PutCommand,
   QueryCommand,
   ScanCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -99,6 +100,28 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
       await expect(store.record('missing-table', 'user')).rejects.toThrow(
         'was not found. Create the table using your infrastructure',
       );
+    });
+
+    it('should retry acquire on structured conditional transaction cancellation', async () => {
+      ddbMock
+        .on(QueryCommand)
+        .resolvesOnce({ Items: [] })
+        .resolvesOnce({ Items: [] });
+
+      const conditionalCancelError = new Error('Transaction cancelled');
+      conditionalCancelError.name = 'TransactionCanceledException';
+      (
+        conditionalCancelError as unknown as { cancellationReasons: unknown }
+      ).cancellationReasons = [{ Code: 'ConditionalCheckFailed' }];
+
+      ddbMock
+        .on(TransactWriteCommand)
+        .rejectsOnce(conditionalCancelError)
+        .resolvesOnce({});
+
+      const acquired = await store.acquire('retry-resource', 'background');
+      expect(acquired).toBe(true);
+      expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(2);
     });
   });
 

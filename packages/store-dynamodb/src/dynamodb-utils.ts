@@ -105,3 +105,40 @@ export async function queryItemsAllPages(
 
   return items;
 }
+
+export function isConditionalTransactionFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const maybeError = error as {
+    name?: unknown;
+    message?: unknown;
+    CancellationReasons?: unknown;
+    cancellationReasons?: unknown;
+  };
+
+  if (maybeError.name !== 'TransactionCanceledException') {
+    return false;
+  }
+
+  const cancellationReasons =
+    maybeError.CancellationReasons ?? maybeError.cancellationReasons;
+  if (Array.isArray(cancellationReasons)) {
+    return cancellationReasons.some((reason) => {
+      if (!reason || typeof reason !== 'object') {
+        return false;
+      }
+
+      return (
+        'Code' in reason &&
+        (reason as { Code?: unknown }).Code === 'ConditionalCheckFailed'
+      );
+    });
+  }
+
+  return (
+    typeof maybeError.message === 'string' &&
+    maybeError.message.includes('ConditionalCheckFailed')
+  );
+}

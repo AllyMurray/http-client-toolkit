@@ -8,6 +8,7 @@ import {
   QueryCommand,
   ScanCommand,
   BatchWriteCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -90,6 +91,26 @@ describe('DynamoDBRateLimitStore', () => {
 
       await store.reset('test');
       expect(ddbMock.calls()).toHaveLength(3);
+    });
+
+    it('should retry acquire on conditional transaction cancellation reasons', async () => {
+      const conditionalCancelError = new Error('Transaction cancelled');
+      conditionalCancelError.name = 'TransactionCanceledException';
+      (
+        conditionalCancelError as unknown as { CancellationReasons: unknown }
+      ).CancellationReasons = [
+        { Code: 'ConditionalCheckFailed' },
+        { Code: 'None' },
+      ];
+
+      ddbMock
+        .on(TransactWriteCommand)
+        .rejectsOnce(conditionalCancelError)
+        .resolvesOnce({});
+
+      const acquired = await store.acquire('retry-resource');
+      expect(acquired).toBe(true);
+      expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(2);
     });
 
     it('should handle reset with pagination', async () => {

@@ -22,6 +22,7 @@ import {
 import { z } from 'zod';
 import {
   batchDeleteWithRetries,
+  isConditionalTransactionFailure,
   queryCountAllPages,
   queryItemsAllPages,
 } from './dynamodb-utils.js';
@@ -206,16 +207,7 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       } catch (error: unknown) {
         throwIfDynamoTableMissing(error, this.tableName);
 
-        const isConditionalTransactionFailure =
-          error &&
-          typeof error === 'object' &&
-          'name' in error &&
-          error.name === 'TransactionCanceledException' &&
-          'message' in error &&
-          typeof error.message === 'string' &&
-          error.message.includes('ConditionalCheckFailed');
-
-        if (isConditionalTransactionFailure) {
+        if (isConditionalTransactionFailure(error)) {
           continue;
         }
 
