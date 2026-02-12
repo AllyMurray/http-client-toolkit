@@ -1,6 +1,8 @@
 import nock from 'nock';
 import { HttpClient } from './http-client.js';
+import { isCacheEntry, type CacheEntry } from '../cache/index.js';
 import { HttpClientError } from '../errors/http-client-error.js';
+import { hashRequest } from '../stores/index.js';
 
 const baseUrl = 'https://api.example.com';
 const alternateBaseUrl = 'https://api-alt.example.com';
@@ -167,6 +169,34 @@ describe('HttpClient', () => {
     const result = await httpClient.get<undefined>(`${baseUrl}/empty`);
 
     expect(result).toBeUndefined();
+  });
+
+  test('should parse JSON-like body when Content-Type is absent', async () => {
+    nock(baseUrl).get('/no-content-type').reply(200, '{"id":1}');
+
+    // nock sets Content-Type by default for objects; raw string avoids it
+    const result = await httpClient.get<{ id: number }>(
+      `${baseUrl}/no-content-type`,
+    );
+    expect(result).toEqual({ id: 1 });
+  });
+
+  test('should return JSON primitive when response is a non-object JSON value', async () => {
+    nock(baseUrl)
+      .get('/json-primitive')
+      .reply(200, '42', { 'Content-Type': 'application/json' });
+
+    const result = await httpClient.get<number>(`${baseUrl}/json-primitive`);
+    expect(result).toBe(42);
+  });
+
+  test('should return raw body when JSON parsing fails on JSON-like content', async () => {
+    nock(baseUrl)
+      .get('/bad-json')
+      .reply(200, '{invalid json', { 'Content-Type': 'application/json' });
+
+    const result = await httpClient.get<string>(`${baseUrl}/bad-json`);
+    expect(result).toBe('{invalid json');
   });
 
   test('should abort rate-limit wait when signal is aborted', async () => {
@@ -677,6 +707,37 @@ describe('HttpClient', () => {
     expect(calls.fail).toBe(1);
   });
 
+  test('should wrap HttpClientError input in generateClientError unchanged', () => {
+    const client = new HttpClient() as unknown as {
+      generateClientError: (err: unknown) => Error;
+    };
+
+    const original = new HttpClientError('already processed', 409);
+    expect(client.generateClientError(original)).toBe(original);
+  });
+
+  test('should handle non-Error object with message in generateClientError', () => {
+    const client = new HttpClient() as unknown as {
+      generateClientError: (err: unknown) => Error;
+    };
+
+    const result = client.generateClientError({
+      message: 'plain object error',
+    });
+    expect(result).toBeInstanceOf(HttpClientError);
+    expect(result.message).toContain('plain object error');
+  });
+
+  test('should handle non-Error non-message value in generateClientError', () => {
+    const client = new HttpClient() as unknown as {
+      generateClientError: (err: unknown) => Error;
+    };
+
+    const result = client.generateClientError(42);
+    expect(result).toBeInstanceOf(HttpClientError);
+    expect(result.message).toContain('Unknown error');
+  });
+
   test('should exercise private header parsing helpers', () => {
     const client = new HttpClient(
       {},
@@ -714,9 +775,15 @@ describe('HttpClient', () => {
       'x-a',
     ]);
     expect(privateClient.getHeaderValue(undefined, ['x-test'])).toBeUndefined();
+    expect(
+      privateClient.getHeaderValue({ 'x-test': 'string-val' }, ['x-test']),
+    ).toBe('string-val');
     expect(privateClient.getHeaderValue({ 'x-test': ['10'] }, ['x-test'])).toBe(
       '10',
     );
+    expect(
+      privateClient.getHeaderValue({ other: 'val' }, ['x-missing']),
+    ).toBeUndefined();
     expect(privateClient.parseIntegerHeader('-1')).toBeUndefined();
     expect(privateClient.parseIntegerHeader('abc')).toBeUndefined();
 
@@ -850,6 +917,37 @@ describe('HttpClient', () => {
     expect(result.ok).toBe(true);
   });
 
+  test('should use atomic acquire when rate-limit store provides it', async () => {
+    nock(baseUrl).get('/atomic-acquire').reply(200, { ok: true });
+
+    const acquireStore = {
+      async canProceed() {
+        return true;
+      },
+      async acquire() {
+        return true;
+      },
+      async record() {},
+      async getStatus() {
+        return { remaining: 1, resetTime: new Date(), limit: 60 };
+      },
+      async reset() {},
+      async getWaitTime() {
+        return 0;
+      },
+    } as const;
+
+    const client = new HttpClient(
+      { rateLimit: acquireStore },
+      { throwOnRateLimit: false },
+    );
+
+    const result = await client.get<{ ok: boolean }>(
+      `${baseUrl}/atomic-acquire`,
+    );
+    expect(result.ok).toBe(true);
+  });
+
   test('should exercise remaining private rate-limit edge branches', async () => {
     const allowRateLimitStoreStub = {
       async canProceed() {
@@ -903,5 +1001,781 @@ describe('HttpClient', () => {
     await expect(
       waitingPrivate.enforceServerCooldown(`${baseUrl}/max-wait-exceeded`),
     ).rejects.toThrow(/maxWaitTime/);
+  });
+
+  describe('cache header support', () => {
+    function makeCacheStore() {
+      const store = new Map<string, { value: unknown; ttl: number }>();
+      return {
+        async get(hash: string) {
+          const entry = store.get(hash);
+          return entry?.value;
+        },
+        async set(hash: string, value: unknown, ttl: number) {
+          store.set(hash, { value, ttl });
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear() {
+          store.clear();
+        },
+        _store: store,
+      };
+    }
+
+    test('respects max-age and stores CacheEntry envelope', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/data')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=60' });
+
+      await client.get(`${baseUrl}/data`);
+
+      const hash = hashRequest(`${baseUrl}/data`, {});
+      const stored = await cache.get(hash);
+      expect(isCacheEntry(stored)).toBe(true);
+      expect((stored as CacheEntry).value).toEqual({ id: 1 });
+    });
+
+    test('returns fresh cached entry without network request', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/fresh')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
+
+      const result1 = await client.get(`${baseUrl}/fresh`);
+      // No second nock — if it fetches, nock will throw
+      const result2 = await client.get(`${baseUrl}/fresh`);
+
+      expect(result1).toEqual({ id: 1 });
+      expect(result2).toEqual({ id: 1 });
+    });
+
+    test('does not cache when no-store is set', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/no-store')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'no-store' });
+
+      await client.get(`${baseUrl}/no-store`);
+
+      const hash = hashRequest(`${baseUrl}/no-store`, {});
+      expect(await cache.get(hash)).toBeUndefined();
+    });
+
+    test('caches despite no-store when ignoreNoStore is true', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          cacheHeaderOverrides: { ignoreNoStore: true },
+        },
+      );
+
+      nock(baseUrl)
+        .get('/ignore-no-store')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'no-store, max-age=60' });
+
+      await client.get(`${baseUrl}/ignore-no-store`);
+
+      const hash = hashRequest(`${baseUrl}/ignore-no-store`, {});
+      const stored = await cache.get(hash);
+      expect(isCacheEntry(stored)).toBe(true);
+    });
+
+    test('sends conditional request with If-None-Match for stale entry', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/etag-data')
+        .reply(
+          200,
+          { id: 1 },
+          { 'Cache-Control': 'max-age=1', ETag: '"abc123"' },
+        );
+
+      await client.get(`${baseUrl}/etag-data`);
+
+      // Advance past freshness
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/etag-data')
+        .matchHeader('If-None-Match', '"abc123"')
+        .reply(304, '', { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/etag-data`);
+      expect(result).toEqual({ id: 1 });
+    });
+
+    test('sends conditional request with If-Modified-Since for stale entry', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl).get('/lm-data').reply(
+        200,
+        { id: 2 },
+        {
+          'Cache-Control': 'max-age=1',
+          'Last-Modified': 'Mon, 01 Jan 2024 00:00:00 GMT',
+        },
+      );
+
+      await client.get(`${baseUrl}/lm-data`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/lm-data')
+        .matchHeader('If-Modified-Since', 'Mon, 01 Jan 2024 00:00:00 GMT')
+        .reply(304, '', { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/lm-data`);
+      expect(result).toEqual({ id: 2 });
+    });
+
+    test('re-fetches when stale entry has no validators', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      // No ETag or Last-Modified
+      nock(baseUrl)
+        .get('/no-validators')
+        .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=1' });
+
+      await client.get(`${baseUrl}/no-validators`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/no-validators')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/no-validators`);
+      expect(result).toEqual({ v: 2 });
+    });
+
+    test('returns stale value immediately for stale-while-revalidate', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl).get('/swr').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"swr1"',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr`);
+
+      // Advance past freshness but within SWR window
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      // Background revalidation will happen
+      nock(baseUrl)
+        .get('/swr')
+        .matchHeader('If-None-Match', '"swr1"')
+        .reply(304, '', { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/swr`);
+      expect(result).toEqual({ v: 1 }); // Stale value returned immediately
+
+      await client.flushRevalidations();
+    });
+
+    test('background revalidation updates cache on 200', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl).get('/swr-200').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"old"',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr-200`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/swr-200')
+        .reply(
+          200,
+          { v: 2 },
+          { 'Cache-Control': 'max-age=300', ETag: '"new"' },
+        );
+
+      await client.get(`${baseUrl}/swr-200`);
+      await client.flushRevalidations();
+
+      // Cache should now have the new value
+      const hash = hashRequest(`${baseUrl}/swr-200`, {});
+      const stored = (await cache.get(hash)) as CacheEntry;
+      expect(stored.value).toEqual({ v: 2 });
+    });
+
+    test('background revalidation sends If-Modified-Since and applies responseTransformer', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          responseTransformer: (data: unknown) => {
+            const obj = data as Record<string, unknown>;
+            return { transformed: obj['v'] };
+          },
+        },
+      );
+
+      nock(baseUrl).get('/swr-lm').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          'Last-Modified': 'Mon, 01 Jan 2024 00:00:00 GMT',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr-lm`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/swr-lm')
+        .matchHeader('If-Modified-Since', 'Mon, 01 Jan 2024 00:00:00 GMT')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=300' });
+
+      await client.get(`${baseUrl}/swr-lm`);
+      await client.flushRevalidations();
+
+      const hash = hashRequest(`${baseUrl}/swr-lm`, {});
+      const stored = (await cache.get(hash)) as CacheEntry;
+      expect(stored.value).toEqual({ transformed: 2 });
+    });
+
+    test('background revalidation applies responseHandler on 200', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          responseHandler: (data: unknown) => {
+            const obj = data as Record<string, unknown>;
+            return { handled: obj['v'] };
+          },
+        },
+      );
+
+      nock(baseUrl).get('/swr-handler').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"h1"',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr-handler`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/swr-handler')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=300', ETag: '"h2"' });
+
+      await client.get(`${baseUrl}/swr-handler`);
+      await client.flushRevalidations();
+
+      const hash = hashRequest(`${baseUrl}/swr-handler`, {});
+      const stored = (await cache.get(hash)) as CacheEntry;
+      expect(stored.value).toEqual({ handled: 2 });
+    });
+
+    test('background revalidation swallows errors silently', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl).get('/swr-fail').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"e1"',
+        },
+      );
+
+      await client.get(`${baseUrl}/swr-fail`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl).get('/swr-fail').replyWithError('Network error');
+
+      const result = await client.get(`${baseUrl}/swr-fail`);
+      expect(result).toEqual({ v: 1 });
+
+      // Should not throw
+      await client.flushRevalidations();
+    });
+
+    test('serves stale on 5xx when stale-if-error is set', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/sie')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=1, stale-if-error=300' },
+        );
+
+      await client.get(`${baseUrl}/sie`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl).get('/sie').reply(500, { message: 'Server error' });
+
+      const result = await client.get(`${baseUrl}/sie`);
+      expect(result).toEqual({ v: 1 });
+    });
+
+    test('serves stale on network failure when stale-if-error is set', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/sie-net')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=1, stale-if-error=300' },
+        );
+
+      await client.get(`${baseUrl}/sie-net`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      // Real fetch throws TypeError on network failures.
+      // nock's replyWithError creates a regular Error, so we mock fetch directly.
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValue(new TypeError('fetch failed'));
+
+      try {
+        const result = await client.get(`${baseUrl}/sie-net`);
+        expect(result).toEqual({ v: 1 });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    test('no-cache forces revalidation', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/no-cache')
+        .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache', ETag: '"nc1"' });
+
+      await client.get(`${baseUrl}/no-cache`);
+
+      // Even though entry is "fresh", no-cache forces revalidation
+      nock(baseUrl)
+        .get('/no-cache')
+        .matchHeader('If-None-Match', '"nc1"')
+        .reply(304, '', { 'Cache-Control': 'no-cache', ETag: '"nc1"' });
+
+      const result = await client.get(`${baseUrl}/no-cache`);
+      expect(result).toEqual({ v: 1 });
+    });
+
+    test('ignoreNoCache skips revalidation', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          cacheHeaderOverrides: { ignoreNoCache: true },
+        },
+      );
+
+      nock(baseUrl)
+        .get('/ignore-no-cache')
+        .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache, max-age=3600' });
+
+      await client.get(`${baseUrl}/ignore-no-cache`);
+
+      // No second nock — should return cached value without fetching
+      const result = await client.get(`${baseUrl}/ignore-no-cache`);
+      expect(result).toEqual({ v: 1 });
+    });
+
+    test('clamps TTL with minimumTTL', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          cacheHeaderOverrides: { minimumTTL: 300 },
+        },
+      );
+
+      nock(baseUrl)
+        .get('/min-ttl')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
+
+      await client.get(`${baseUrl}/min-ttl`);
+
+      const hash = hashRequest(`${baseUrl}/min-ttl`, {});
+      const entry = cache._store.get(hash);
+      expect(entry?.ttl).toBe(300);
+    });
+
+    test('clamps TTL with maximumTTL', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          cacheHeaderOverrides: { maximumTTL: 60 },
+        },
+      );
+
+      nock(baseUrl)
+        .get('/max-ttl')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
+
+      await client.get(`${baseUrl}/max-ttl`);
+
+      const hash = hashRequest(`${baseUrl}/max-ttl`, {});
+      const entry = cache._store.get(hash);
+      expect(entry?.ttl).toBe(60);
+    });
+
+    test('preserves original behavior when respectCacheHeaders is false', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: false });
+
+      nock(baseUrl)
+        .get('/legacy')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=60' });
+
+      await client.get(`${baseUrl}/legacy`);
+
+      const hash = hashRequest(`${baseUrl}/legacy`, {});
+      const stored = await cache.get(hash);
+      // Should be raw value, not a CacheEntry envelope
+      expect(isCacheEntry(stored)).toBe(false);
+      expect(stored).toEqual({ id: 1 });
+    });
+
+    test('treats legacy raw cache entries as cache miss when respectCacheHeaders is on', async () => {
+      const cache = makeCacheStore();
+
+      // Pre-seed cache with a raw (non-envelope) value
+      const hash = hashRequest(`${baseUrl}/legacy-miss`, {});
+      await cache.set(hash, { id: 'old' }, 3600);
+
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/legacy-miss')
+        .reply(200, { id: 'new' }, { 'Cache-Control': 'max-age=300' });
+
+      const result = await client.get(`${baseUrl}/legacy-miss`);
+      expect(result).toEqual({ id: 'new' });
+
+      // Should now be stored as CacheEntry
+      const stored = await cache.get(hash);
+      expect(isCacheEntry(stored)).toBe(true);
+    });
+
+    test('304 response completes dedup for waiting callers', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      let dedupCompleted = false;
+      const dedupeStub = {
+        async waitFor() {
+          return undefined;
+        },
+        async register() {
+          return 'job-1';
+        },
+        async complete() {
+          dedupCompleted = true;
+        },
+        async fail() {},
+        async isInProgress() {
+          return true;
+        },
+      } as const;
+
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache, dedupe: dedupeStub },
+        { respectCacheHeaders: true },
+      );
+
+      nock(baseUrl)
+        .get('/304-dedup')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"d1"' });
+
+      await client.get(`${baseUrl}/304-dedup`);
+      dedupCompleted = false;
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/304-dedup')
+        .reply(304, '', { 'Cache-Control': 'max-age=60' });
+
+      await client.get(`${baseUrl}/304-dedup`);
+      expect(dedupCompleted).toBe(true);
+    });
+
+    test('must-revalidate forces revalidation when stale', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl).get('/must-reval').reply(
+        200,
+        { v: 1 },
+        {
+          'Cache-Control': 'max-age=1, must-revalidate',
+          ETag: '"mr1"',
+        },
+      );
+
+      await client.get(`${baseUrl}/must-reval`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/must-reval')
+        .matchHeader('If-None-Match', '"mr1"')
+        .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/must-reval`);
+      expect(result).toEqual({ v: 2 });
+    });
+
+    test('stale-if-error does not swallow 4xx errors', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const cache = makeCacheStore();
+      const client = new HttpClient({ cache }, { respectCacheHeaders: true });
+
+      nock(baseUrl)
+        .get('/sie-4xx')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=1, stale-if-error=300' },
+        );
+
+      await client.get(`${baseUrl}/sie-4xx`);
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl).get('/sie-4xx').reply(404);
+
+      await expect(client.get(`${baseUrl}/sie-4xx`)).rejects.toThrow(
+        HttpClientError,
+      );
+    });
+
+    test('applies responseTransformer with respectCacheHeaders', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          responseTransformer: (data: unknown) => {
+            const obj = data as Record<string, unknown>;
+            return { transformed: obj['raw'] };
+          },
+        },
+      );
+
+      nock(baseUrl)
+        .get('/transform-cache')
+        .reply(200, { raw: 'value' }, { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/transform-cache`);
+      expect(result).toEqual({ transformed: 'value' });
+
+      // Cached value should also be transformed
+      const result2 = await client.get(`${baseUrl}/transform-cache`);
+      expect(result2).toEqual({ transformed: 'value' });
+    });
+
+    test('clampTTL applies both min and max', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        {
+          respectCacheHeaders: true,
+          cacheHeaderOverrides: { minimumTTL: 100, maximumTTL: 200 },
+        },
+      );
+
+      // TTL of 50 should be clamped to 100 (minimum)
+      nock(baseUrl)
+        .get('/clamp-min')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=50' });
+
+      await client.get(`${baseUrl}/clamp-min`);
+      const hash1 = hashRequest(`${baseUrl}/clamp-min`, {});
+      expect(cache._store.get(hash1)?.ttl).toBe(100);
+
+      // TTL of 500 should be clamped to 200 (maximum)
+      nock(baseUrl)
+        .get('/clamp-max')
+        .reply(200, { id: 2 }, { 'Cache-Control': 'max-age=500' });
+
+      await client.get(`${baseUrl}/clamp-max`);
+      const hash2 = hashRequest(`${baseUrl}/clamp-max`, {});
+      expect(cache._store.get(hash2)?.ttl).toBe(200);
+    });
+
+    test('uses defaultCacheTTL when no cache headers present', async () => {
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache },
+        { respectCacheHeaders: true, defaultCacheTTL: 900 },
+      );
+
+      nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
+
+      await client.get(`${baseUrl}/no-headers`);
+
+      const hash = hashRequest(`${baseUrl}/no-headers`, {});
+      expect(cache._store.get(hash)?.ttl).toBe(900);
+    });
+
+    test('flushRevalidations resolves when no pending revalidations', async () => {
+      const client = new HttpClient({}, { respectCacheHeaders: true });
+      await expect(client.flushRevalidations()).resolves.toBeUndefined();
+    });
+
+    test('stale-if-error completes dedupe on fallback', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      let dedupCompleted = false;
+      const dedupeStub = {
+        async waitFor() {
+          return undefined;
+        },
+        async register() {
+          return 'job-1';
+        },
+        async complete() {
+          dedupCompleted = true;
+        },
+        async fail() {},
+        async isInProgress() {
+          return true;
+        },
+      } as const;
+
+      const cache = makeCacheStore();
+      const client = new HttpClient(
+        { cache, dedupe: dedupeStub },
+        { respectCacheHeaders: true },
+      );
+
+      nock(baseUrl)
+        .get('/sie-dedup')
+        .reply(
+          200,
+          { v: 1 },
+          { 'Cache-Control': 'max-age=1, stale-if-error=300' },
+        );
+
+      await client.get(`${baseUrl}/sie-dedup`);
+      dedupCompleted = false;
+
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl).get('/sie-dedup').reply(500, { message: 'Server error' });
+
+      const result = await client.get(`${baseUrl}/sie-dedup`);
+      expect(result).toEqual({ v: 1 });
+      expect(dedupCompleted).toBe(true);
+    });
+
+    test('isServerErrorOrNetworkFailure helper covers branches', () => {
+      const client = new HttpClient();
+      const helper = (
+        client as unknown as {
+          isServerErrorOrNetworkFailure: (error: unknown) => boolean;
+        }
+      ).isServerErrorOrNetworkFailure;
+
+      expect(helper({ response: { status: 500 } })).toBe(true);
+      expect(helper({ response: { status: 503 } })).toBe(true);
+      expect(helper({ response: { status: 400 } })).toBe(false);
+      expect(helper(new TypeError('fetch failed'))).toBe(true);
+      expect(helper(new Error('other'))).toBe(false);
+      expect(helper('string error')).toBe(false);
+      expect(helper({ response: { status: 'not-a-number' } })).toBe(false);
+    });
   });
 });
