@@ -107,6 +107,40 @@ export async function queryItemsAllPages(
   return items;
 }
 
+export async function queryCountUpTo(
+  docClient: DynamoDBDocumentClient,
+  input: QueryCommandInput,
+  maxCount: number,
+): Promise<{ count: number; reachedLimit: boolean }> {
+  if (maxCount <= 0) {
+    return { count: 0, reachedLimit: true };
+  }
+
+  let total = 0;
+  let lastEvaluatedKey: DynamoItem | undefined;
+
+  do {
+    const remaining = maxCount - total;
+    const result = await docClient.send(
+      new QueryCommand({
+        ...input,
+        Select: 'COUNT',
+        Limit: remaining,
+        ExclusiveStartKey: lastEvaluatedKey,
+      }),
+    );
+
+    total += result.Count ?? 0;
+    if (total >= maxCount) {
+      return { count: maxCount, reachedLimit: true };
+    }
+
+    lastEvaluatedKey = result.LastEvaluatedKey as DynamoItem | undefined;
+  } while (lastEvaluatedKey);
+
+  return { count: total, reachedLimit: false };
+}
+
 export function isConditionalTransactionFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
     return false;

@@ -156,10 +156,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
       // canProceed calls:
       // With 0 user activity and some background activity, calculator gives
       // "No user activity yet" strategy: userReserved=minUserReserved=10, backgroundMax=190
-      ddbMock
-        .on(QueryCommand)
-        .resolvesOnce({ Count: 0 }) // user usage
-        .resolvesOnce({ Count: 190 }); // background at max (190)
+      ddbMock.on(QueryCommand).resolvesOnce({ Count: 190 }); // background at max (190)
 
       const canProceed = await store.canProceed('test-resource', 'background');
       expect(canProceed).toBe(false);
@@ -249,7 +246,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
         }
       ).activityMetrics.set('gsi-resource', metrics);
 
-      store.setResourceConfig('gsi-resource', { limit: 2, windowMs: 5000 });
+      store.setResourceConfig('gsi-resource', { limit: 50, windowMs: 5000 });
       (
         store as unknown as { lastCapacityUpdate: Map<string, number> }
       ).lastCapacityUpdate.delete('gsi-resource');
@@ -257,8 +254,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
       // canProceed: getCurrentUsage(user) + getCurrentUsage(background)
       ddbMock
         .on(QueryCommand)
-        .resolvesOnce({ Count: 0 }) // user
-        .resolvesOnce({ Count: 140 }) // background at max
+        .resolvesOnce({ Count: 40 }) // background at max for this config
         // GSI query for oldest
         .resolvesOnce({
           Items: [
@@ -586,6 +582,37 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
 
       const status = await store.getStatus('empty-metrics');
       expect(status.adaptive?.recentUserActivity).toBe(0);
+    });
+
+    it('should cap loaded metrics history to bounded size', async () => {
+      const now = Date.now();
+      const userItems = Array.from({ length: 120 }, (_, i) => ({
+        timestamp: now - i,
+      }));
+
+      ddbMock
+        .on(QueryCommand)
+        .resolvesOnce({ Items: userItems })
+        .resolvesOnce({ Items: [] })
+        .resolvesOnce({ Count: 0 })
+        .resolvesOnce({ Count: 0 });
+
+      await store.getStatus('capped-metrics');
+
+      const metrics = (
+        store as unknown as {
+          activityMetrics: Map<
+            string,
+            {
+              recentUserRequests: Array<number>;
+              recentBackgroundRequests: Array<number>;
+            }
+          >;
+        }
+      ).activityMetrics.get('capped-metrics');
+
+      expect(metrics?.recentUserRequests.length).toBe(100);
+      expect(metrics?.recentBackgroundRequests.length).toBe(0);
     });
   });
 });

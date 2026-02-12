@@ -20,6 +20,7 @@ import {
   batchDeleteWithRetries,
   isConditionalTransactionFailure,
   queryCountAllPages,
+  queryCountUpTo,
 } from './dynamodb-utils.js';
 import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import { DEFAULT_TABLE_NAME } from './table.js';
@@ -78,11 +79,12 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
-    const currentCount = await this.countRequestsInWindow(
+    const hasCapacity = await this.hasCapacityInWindow(
       resource,
       windowStart,
+      config.limit,
     );
-    return currentCount < config.limit;
+    return hasCapacity;
   }
 
   async acquire(resource: string): Promise<boolean> {
@@ -244,12 +246,13 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
-    const currentCount = await this.countRequestsInWindow(
+    const hasCapacity = await this.hasCapacityInWindow(
       resource,
       windowStart,
+      config.limit,
     );
 
-    if (currentCount < config.limit) {
+    if (hasCapacity) {
       return 0;
     }
 
@@ -371,6 +374,32 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
         },
         Select: 'COUNT',
       });
+    } catch (error: unknown) {
+      throwIfDynamoTableMissing(error, this.tableName);
+      throw error;
+    }
+  }
+
+  private async hasCapacityInWindow(
+    resource: string,
+    windowStart: number,
+    limit: number,
+  ): Promise<boolean> {
+    try {
+      const { reachedLimit } = await queryCountUpTo(
+        this.docClient,
+        {
+          TableName: this.tableName,
+          KeyConditionExpression: 'pk = :pk AND sk >= :skStart',
+          ExpressionAttributeValues: {
+            ':pk': `RATELIMIT#${resource}`,
+            ':skStart': `TS#${windowStart}`,
+          },
+        },
+        limit,
+      );
+
+      return !reachedLimit;
     } catch (error: unknown) {
       throwIfDynamoTableMissing(error, this.tableName);
       throw error;

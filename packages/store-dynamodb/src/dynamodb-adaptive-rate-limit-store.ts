@@ -25,6 +25,7 @@ import {
   batchDeleteWithRetries,
   isConditionalTransactionFailure,
   queryCountAllPages,
+  queryCountUpTo,
   queryItemsAllPages,
 } from './dynamodb-utils.js';
 import { throwIfDynamoTableMissing } from './table-missing-error.js';
@@ -58,6 +59,7 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
   private activityMetrics = new Map<string, ActivityMetrics>();
   private lastCapacityUpdate = new Map<string, number>();
   private cachedCapacity = new Map<string, DynamicCapacityResult>();
+  private readonly maxMetricSamples: number;
 
   constructor({
     client,
@@ -71,6 +73,10 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     this.defaultConfig = defaultConfig;
     this.resourceConfigs = resourceConfigs;
     this.capacityCalculator = new AdaptiveCapacityCalculator(adaptiveConfig);
+    this.maxMetricSamples = Math.max(
+      100,
+      this.capacityCalculator.config.highActivityThreshold * 20,
+    );
 
     if (client instanceof DynamoDBDocumentClient) {
       this.docClient = client;
@@ -105,16 +111,26 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       return false;
     }
 
-    const currentUserRequests = await this.getCurrentUsage(resource, 'user');
-    const currentBackgroundRequests = await this.getCurrentUsage(
-      resource,
-      'background',
-    );
-
     if (priority === 'user') {
-      return currentUserRequests < capacity.userReserved;
+      if (capacity.userReserved <= 0) {
+        return false;
+      }
+
+      return this.hasPriorityCapacityInWindow(
+        resource,
+        'user',
+        capacity.userReserved,
+      );
     } else {
-      return currentBackgroundRequests < capacity.backgroundMax;
+      if (capacity.backgroundMax <= 0) {
+        return false;
+      }
+
+      return this.hasPriorityCapacityInWindow(
+        resource,
+        'background',
+        capacity.backgroundMax,
+      );
     }
   }
 
@@ -196,11 +212,9 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
         );
 
         if (priority === 'user') {
-          metrics.recentUserRequests.push(now);
-          this.cleanupOldRequests(metrics.recentUserRequests);
+          this.pushRecentRequest(metrics.recentUserRequests, now);
         } else {
-          metrics.recentBackgroundRequests.push(now);
-          this.cleanupOldRequests(metrics.recentBackgroundRequests);
+          this.pushRecentRequest(metrics.recentBackgroundRequests, now);
         }
 
         metrics.userActivityTrend =
@@ -262,11 +276,9 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     const metrics = this.getOrCreateActivityMetrics(resource);
 
     if (priority === 'user') {
-      metrics.recentUserRequests.push(now);
-      this.cleanupOldRequests(metrics.recentUserRequests);
+      this.pushRecentRequest(metrics.recentUserRequests, now);
     } else {
-      metrics.recentBackgroundRequests.push(now);
-      this.cleanupOldRequests(metrics.recentBackgroundRequests);
+      this.pushRecentRequest(metrics.recentBackgroundRequests, now);
     }
 
     metrics.userActivityTrend = this.capacityCalculator.calculateActivityTrend(
@@ -559,12 +571,17 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     }
 
     const metrics: ActivityMetrics = {
-      recentUserRequests: userItems.map((item) => item['timestamp'] as number),
-      recentBackgroundRequests: backgroundItems.map(
-        (item) => item['timestamp'] as number,
-      ),
+      recentUserRequests: userItems
+        .map((item) => item['timestamp'] as number)
+        .slice(-this.maxMetricSamples),
+      recentBackgroundRequests: backgroundItems
+        .map((item) => item['timestamp'] as number)
+        .slice(-this.maxMetricSamples),
       userActivityTrend: 'none',
     };
+
+    this.cleanupOldRequests(metrics.recentUserRequests);
+    this.cleanupOldRequests(metrics.recentBackgroundRequests);
 
     metrics.userActivityTrend = this.capacityCalculator.calculateActivityTrend(
       metrics.recentUserRequests,
@@ -598,6 +615,37 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     }
   }
 
+  private async hasPriorityCapacityInWindow(
+    resource: string,
+    priority: RequestPriority,
+    limit: number,
+  ): Promise<boolean> {
+    const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
+    const now = Date.now();
+    const windowStart = now - config.windowMs;
+
+    try {
+      const { reachedLimit } = await queryCountUpTo(
+        this.docClient,
+        {
+          TableName: this.tableName,
+          IndexName: 'gsi1',
+          KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :skStart',
+          ExpressionAttributeValues: {
+            ':gsi1pk': `RATELIMIT#${resource}#${priority}`,
+            ':skStart': `TS#${windowStart}`,
+          },
+        },
+        limit,
+      );
+
+      return !reachedLimit;
+    } catch (error: unknown) {
+      throwIfDynamoTableMissing(error, this.tableName);
+      throw error;
+    }
+  }
+
   private cleanupOldRequests(requests: Array<number>): void {
     const cutoff =
       Date.now() - this.capacityCalculator.config.monitoringWindowMs;
@@ -606,6 +654,16 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       requests.splice(0, idx);
     } else if (idx === -1 && requests.length > 0) {
       requests.length = 0;
+    }
+  }
+
+  private pushRecentRequest(requests: Array<number>, timestamp: number): void {
+    requests.push(timestamp);
+    this.cleanupOldRequests(requests);
+
+    const overflow = requests.length - this.maxMetricSamples;
+    if (overflow > 0) {
+      requests.splice(0, overflow);
     }
   }
 
