@@ -573,6 +573,25 @@ describe('DynamoDBDedupeStore', () => {
     });
   });
 
+  describe('input validation', () => {
+    it('should reject empty hash values', async () => {
+      await expect(store.waitFor('')).rejects.toThrow('hash must not be empty');
+      await expect(store.register('')).rejects.toThrow(
+        'hash must not be empty',
+      );
+      await expect(store.complete('', 'value')).rejects.toThrow(
+        'hash must not be empty',
+      );
+    });
+
+    it('should reject oversized hash values', async () => {
+      const oversizedHash = 'x'.repeat(513);
+      await expect(store.register(oversizedHash)).rejects.toThrow(
+        'hash exceeds maximum length',
+      );
+    });
+  });
+
   describe('timeout handling', () => {
     it('should mark expired jobs as failed during poll', async () => {
       const shortStore = new DynamoDBDedupeStore({

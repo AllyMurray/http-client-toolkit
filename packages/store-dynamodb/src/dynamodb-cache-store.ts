@@ -10,7 +10,10 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { CacheStore } from '@http-client-toolkit/core';
-import { batchDeleteWithRetries } from './dynamodb-utils.js';
+import {
+  assertDynamoKeyPart,
+  batchDeleteWithRetries,
+} from './dynamodb-utils.js';
 import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import { DEFAULT_TABLE_NAME } from './table.js';
 
@@ -58,6 +61,8 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
+    this.assertValidHash(hash);
+
     const pk = `CACHE#${hash}`;
 
     let result;
@@ -99,6 +104,8 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
+
+    this.assertValidHash(hash);
 
     const now = Date.now();
     const nowEpoch = Math.floor(now / 1000);
@@ -154,6 +161,8 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
+
+    this.assertValidHash(hash);
 
     const pk = `CACHE#${hash}`;
 
@@ -224,5 +233,9 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
 
   destroy(): void {
     this.close();
+  }
+
+  private assertValidHash(hash: string): void {
+    assertDynamoKeyPart(hash, 'hash');
   }
 }

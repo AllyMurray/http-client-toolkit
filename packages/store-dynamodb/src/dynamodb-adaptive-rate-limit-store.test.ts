@@ -501,6 +501,27 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
     });
   });
 
+  describe('input validation', () => {
+    it('should reject empty resource values', async () => {
+      await expect(store.canProceed('')).rejects.toThrow(
+        'resource must not be empty',
+      );
+      await expect(store.record('', 'user')).rejects.toThrow(
+        'resource must not be empty',
+      );
+      expect(() => store.getResourceConfig('')).toThrow(
+        'resource must not be empty',
+      );
+    });
+
+    it('should reject oversized resource values', async () => {
+      const oversizedResource = 'x'.repeat(513);
+      await expect(store.acquire(oversizedResource)).rejects.toThrow(
+        'resource exceeds maximum length',
+      );
+    });
+  });
+
   describe('ensureActivityMetrics', () => {
     it('should load metrics from GSI on first access', async () => {
       const now = Date.now();

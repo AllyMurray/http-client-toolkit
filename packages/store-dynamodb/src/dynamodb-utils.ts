@@ -8,6 +8,7 @@ import {
 type DynamoItem = Record<string, unknown>;
 
 const MAX_BATCH_WRITE_RETRIES = 8;
+const MAX_DYNAMO_KEY_PART_BYTES = 512;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -141,4 +142,25 @@ export function isConditionalTransactionFailure(error: unknown): boolean {
     typeof maybeError.message === 'string' &&
     maybeError.message.includes('ConditionalCheckFailed')
   );
+}
+
+export function assertDynamoKeyPart(
+  value: string,
+  label: string,
+  maxBytes = MAX_DYNAMO_KEY_PART_BYTES,
+): void {
+  if (value.length === 0) {
+    throw new Error(`${label} must not be empty`);
+  }
+
+  for (let i = 0; i < value.length; i++) {
+    const charCode = value.charCodeAt(i);
+    if (charCode < 0x20 || charCode === 0x7f) {
+      throw new Error(`${label} contains unsupported control characters`);
+    }
+  }
+
+  if (Buffer.byteLength(value, 'utf8') > maxBytes) {
+    throw new Error(`${label} exceeds maximum length of ${maxBytes} bytes`);
+  }
 }

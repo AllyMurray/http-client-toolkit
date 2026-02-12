@@ -320,4 +320,25 @@ describe('DynamoDBRateLimitStore', () => {
       await expect(store.clear()).rejects.toThrow();
     });
   });
+
+  describe('input validation', () => {
+    it('should reject empty resource values', async () => {
+      await expect(store.canProceed('')).rejects.toThrow(
+        'resource must not be empty',
+      );
+      await expect(store.record('')).rejects.toThrow(
+        'resource must not be empty',
+      );
+      expect(() =>
+        store.setResourceConfig('', { limit: 1, windowMs: 1000 }),
+      ).toThrow('resource must not be empty');
+    });
+
+    it('should reject oversized resource values', async () => {
+      const oversizedResource = 'x'.repeat(513);
+      await expect(store.acquire(oversizedResource)).rejects.toThrow(
+        'resource exceeds maximum length',
+      );
+    });
+  });
 });

@@ -16,6 +16,7 @@ import {
   DEFAULT_RATE_LIMIT,
 } from '@http-client-toolkit/core';
 import {
+  assertDynamoKeyPart,
   batchDeleteWithRetries,
   isConditionalTransactionFailure,
   queryCountAllPages,
@@ -71,6 +72,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
+    this.assertValidResource(resource);
+
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const now = Date.now();
     const windowStart = now - config.windowMs;
@@ -86,6 +89,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
+
+    this.assertValidResource(resource);
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     if (config.limit <= 0) {
@@ -160,6 +165,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
+    this.assertValidResource(resource);
+
     const now = Date.now();
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const ttl = Math.floor((now + config.windowMs) / 1000);
@@ -192,6 +199,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
+    this.assertValidResource(resource);
+
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
     const now = Date.now();
     const windowStart = now - config.windowMs;
@@ -214,6 +223,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
 
+    this.assertValidResource(resource);
+
     await this.deleteResourceItems(resource);
   }
 
@@ -221,6 +232,8 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
     }
+
+    this.assertValidResource(resource);
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
 
@@ -275,10 +288,12 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
   }
 
   setResourceConfig(resource: string, config: RateLimitConfig): void {
+    this.assertValidResource(resource);
     this.resourceConfigs.set(resource, config);
   }
 
   getResourceConfig(resource: string): RateLimitConfig {
+    this.assertValidResource(resource);
     return this.resourceConfigs.get(resource) ?? this.defaultConfig;
   }
 
@@ -407,5 +422,9 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
           | undefined;
       } while (lastEvaluatedKey);
     }
+  }
+
+  private assertValidResource(resource: string): void {
+    assertDynamoKeyPart(resource, 'resource');
   }
 }

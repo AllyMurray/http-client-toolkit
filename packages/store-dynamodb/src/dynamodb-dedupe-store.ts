@@ -12,7 +12,10 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { DedupeStore } from '@http-client-toolkit/core';
-import { batchDeleteWithRetries } from './dynamodb-utils.js';
+import {
+  assertDynamoKeyPart,
+  batchDeleteWithRetries,
+} from './dynamodb-utils.js';
 import { throwIfDynamoTableMissing } from './table-missing-error.js';
 import { DEFAULT_TABLE_NAME } from './table.js';
 
@@ -65,6 +68,8 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
+
+    this.assertValidHash(hash);
 
     const existingPromise = this.jobPromises.get(hash);
     if (existingPromise) {
@@ -257,6 +262,8 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
+    this.assertValidHash(hash);
+
     const pk = `DEDUPE#${hash}`;
     const maxAttempts = 3;
 
@@ -334,6 +341,8 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
+    this.assertValidHash(hash);
+
     let serializedResult: string;
     if (value === undefined) {
       serializedResult = '__UNDEFINED__';
@@ -397,6 +406,8 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       throw new Error('Dedupe store has been destroyed');
     }
 
+    this.assertValidHash(hash);
+
     const pk = `DEDUPE#${hash}`;
 
     try {
@@ -433,6 +444,8 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
+
+    this.assertValidHash(hash);
 
     const pk = `DEDUPE#${hash}`;
 
@@ -553,5 +566,9 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     } catch {
       return undefined;
     }
+  }
+
+  private assertValidHash(hash: string): void {
+    assertDynamoKeyPart(hash, 'hash');
   }
 }

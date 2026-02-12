@@ -365,6 +365,23 @@ describe('DynamoDBCacheStore', () => {
     });
   });
 
+  describe('input validation', () => {
+    it('should reject empty hash values', async () => {
+      await expect(store.get('')).rejects.toThrow('hash must not be empty');
+      await expect(store.set('', 'value', 10)).rejects.toThrow(
+        'hash must not be empty',
+      );
+      await expect(store.delete('')).rejects.toThrow('hash must not be empty');
+    });
+
+    it('should reject oversized hash values', async () => {
+      const oversizedHash = 'x'.repeat(513);
+      await expect(store.get(oversizedHash)).rejects.toThrow(
+        'hash exceeds maximum length',
+      );
+    });
+  });
+
   describe('DynamoDB key structure', () => {
     it('should use CACHE# prefix for pk and sk', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
