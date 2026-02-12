@@ -1,6 +1,10 @@
 {
   "name": "@http-client-toolkit/store-dynamodb",
   "description": "DynamoDB store implementations for HTTP client toolkit caching, deduplication, and rate limiting",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AllyMurray/http-client-toolkit.git"
+  },
   "type": "module",
   "version": "0.0.1",
   "main": "./lib/index.cjs",
@@ -55,6 +59,15 @@
   ],
   "engines": {
     "node": ">= 20.0.0"
+  },
+  "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
+  },
+  "author": {
+    "name": "Ally Murray",
+    "email": "allymurray88@gmail.com",
+    "organization": false
   },
   "license": "ISC",
   "publishConfig": {
