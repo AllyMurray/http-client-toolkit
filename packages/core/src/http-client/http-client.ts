@@ -1,4 +1,3 @@
-import axios, { AxiosError } from 'axios';
 import { HttpClientError } from '../errors/http-client-error.js';
 import {
   CacheStore,
@@ -112,8 +111,20 @@ interface RateLimitHeaderConfig {
   combined: Array<string>;
 }
 
+interface ParsedResponseBody {
+  data: unknown;
+}
+
+type ErrorWithResponse = {
+  message: string;
+  response: {
+    status: number;
+    data: unknown;
+    headers: Headers;
+  };
+};
+
 export class HttpClient implements HttpClientContract {
-  private _http;
   private stores: HttpClientStores;
   private serverCooldowns = new Map<string, number>();
   private options: Required<
@@ -130,7 +141,6 @@ export class HttpClient implements HttpClientContract {
     };
 
   constructor(stores: HttpClientStores = {}, options: HttpClientOptions = {}) {
-    this._http = axios.create();
     this.stores = stores;
     this.options = {
       defaultCacheTTL: options.defaultCacheTTL ?? 3600,
@@ -250,10 +260,20 @@ export class HttpClient implements HttpClientContract {
   }
 
   private getHeaderValue(
-    headers: Record<string, unknown> | undefined,
+    headers: Headers | Record<string, unknown> | undefined,
     names: Array<string>,
   ): string | undefined {
     if (!headers) {
+      return undefined;
+    }
+
+    if (headers instanceof Headers) {
+      for (const rawName of names) {
+        const value = headers.get(rawName);
+        if (value !== null) {
+          return value;
+        }
+      }
       return undefined;
     }
 
@@ -347,7 +367,7 @@ export class HttpClient implements HttpClientContract {
 
   private applyServerRateLimitHints(
     url: string,
-    headers: Record<string, unknown> | undefined,
+    headers: Headers | Record<string, unknown> | undefined,
     statusCode?: number,
   ): void {
     if (!headers) {
@@ -494,12 +514,67 @@ export class HttpClient implements HttpClientContract {
       return err;
     }
 
-    const error = err as AxiosError<{ message?: string }>;
-    const statusCode = error.response?.status;
-    const errorMessage = error.response?.data?.message;
-    const message = `${error.message}${errorMessage ? `, ${errorMessage}` : ''}`;
+    const responseError = err as Partial<ErrorWithResponse>;
+    const statusCode =
+      typeof responseError.response?.status === 'number'
+        ? responseError.response.status
+        : undefined;
+
+    const responseData = responseError.response?.data;
+    const derivedResponseMessage =
+      typeof responseData === 'object' && responseData !== null
+        ? (responseData as { message?: unknown }).message
+        : undefined;
+    const responseMessage =
+      typeof derivedResponseMessage === 'string'
+        ? derivedResponseMessage
+        : undefined;
+
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : typeof (err as { message?: unknown }).message === 'string'
+          ? (err as { message: string }).message
+          : 'Unknown error';
+    const message = `${errorMessage}${responseMessage ? `, ${responseMessage}` : ''}`;
 
     return new HttpClientError(message, statusCode);
+  }
+
+  private async parseResponseBody(
+    response: Response,
+  ): Promise<ParsedResponseBody> {
+    if (response.status === 204 || response.status === 205) {
+      return { data: undefined };
+    }
+
+    const rawBody = await response.text();
+    if (!rawBody) {
+      return { data: undefined };
+    }
+
+    const contentType =
+      response.headers.get('content-type')?.toLowerCase() ?? '';
+    const shouldAttemptJsonParsing =
+      contentType.includes('application/json') ||
+      contentType.includes('+json') ||
+      rawBody.trimStart().startsWith('{') ||
+      rawBody.trimStart().startsWith('[');
+
+    if (!shouldAttemptJsonParsing) {
+      return { data: rawBody };
+    }
+
+    try {
+      const parsed = JSON.parse(rawBody) as unknown;
+      if (typeof parsed === 'object' && parsed !== null) {
+        return { data: parsed };
+      }
+
+      return { data: parsed };
+    } catch {
+      return { data: rawBody };
+    }
   }
 
   async get<Result>(
@@ -554,15 +629,25 @@ export class HttpClient implements HttpClientContract {
       }
 
       // 4. Execute the actual HTTP request
-      const response = await this._http.get(url, { signal });
-      this.applyServerRateLimitHints(
-        url,
-        response.headers as Record<string, unknown>,
-        response.status,
-      );
+      const response = await fetch(url, { signal });
+      this.applyServerRateLimitHints(url, response.headers, response.status);
+
+      const parsedBody = await this.parseResponseBody(response);
+
+      if (!response.ok) {
+        const error: ErrorWithResponse = {
+          message: `Request failed with status ${response.status}`,
+          response: {
+            status: response.status,
+            data: parsedBody.data,
+            headers: response.headers,
+          },
+        };
+        throw error;
+      }
 
       // 5. Apply response transformer if provided
-      let data = response.data;
+      let data: unknown = parsedBody.data;
       if (this.options.responseTransformer && data) {
         data = this.options.responseTransformer(data);
       }
@@ -592,15 +677,6 @@ export class HttpClient implements HttpClientContract {
 
       return result;
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response) {
-        this.applyServerRateLimitHints(
-          url,
-          axiosError.response.headers as Record<string, unknown>,
-          axiosError.response.status,
-        );
-      }
-
       // Mark deduplication as failed
       if (this.stores.dedupe) {
         await this.stores.dedupe.fail(hash, error as Error);
@@ -608,6 +684,11 @@ export class HttpClient implements HttpClientContract {
 
       // Allow callers to detect aborts distinctly – do not wrap AbortError.
       if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+
+      // Already a processed error from the !response.ok branch above
+      if (error instanceof HttpClientError) {
         throw error;
       }
 

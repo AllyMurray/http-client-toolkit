@@ -82,6 +82,45 @@ describe('HttpClient', () => {
     await expect(client.get(`${baseUrl}/error`)).rejects.toThrow(CustomError);
   });
 
+  test('should pass HTTP response context to custom errorHandler once', async () => {
+    nock(baseUrl)
+      .get('/rate-limited')
+      .reply(429, { message: 'Too many requests' });
+
+    class CustomError extends Error {
+      constructor(message: string) {
+        super(message);
+        this.name = 'CustomError';
+      }
+    }
+
+    let invocations = 0;
+    const client = new HttpClient(
+      {},
+      {
+        errorHandler: (error) => {
+          invocations += 1;
+          const response = (
+            error as { response?: { status?: number; data?: unknown } }
+          ).response;
+          const bodyMessage =
+            typeof response?.data === 'object' && response.data !== null
+              ? (response.data as { message?: unknown }).message
+              : undefined;
+
+          return new CustomError(
+            `status=${response?.status}; message=${typeof bodyMessage === 'string' ? bodyMessage : 'n/a'}`,
+          );
+        },
+      },
+    );
+
+    await expect(client.get(`${baseUrl}/rate-limited`)).rejects.toThrow(
+      /status=429; message=Too many requests/,
+    );
+    expect(invocations).toBe(1);
+  });
+
   test('should throw HttpClientError on HTTP errors by default', async () => {
     nock(baseUrl)
       .get('/server-error')
@@ -110,6 +149,24 @@ describe('HttpClient', () => {
     await expect(httpClient.get(`${baseUrl}/failed-request`)).rejects.toThrow(
       HttpClientError,
     );
+  });
+
+  test('should support successful text responses', async () => {
+    nock(baseUrl)
+      .get('/plain-text')
+      .reply(200, 'hello world', { 'Content-Type': 'text/plain' });
+
+    const result = await httpClient.get<string>(`${baseUrl}/plain-text`);
+
+    expect(result).toBe('hello world');
+  });
+
+  test('should support successful no-content responses', async () => {
+    nock(baseUrl).get('/empty').reply(204);
+
+    const result = await httpClient.get<undefined>(`${baseUrl}/empty`);
+
+    expect(result).toBeUndefined();
   });
 
   test('should abort rate-limit wait when signal is aborted', async () => {
