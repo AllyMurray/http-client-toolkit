@@ -306,11 +306,10 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     const metrics = this.getOrCreateActivityMetrics(resource);
     const capacity = this.calculateCurrentCapacity(resource, metrics);
 
-    const currentUserUsage = await this.getCurrentUsage(resource, 'user');
-    const currentBackgroundUsage = await this.getCurrentUsage(
-      resource,
-      'background',
-    );
+    const [currentUserUsage, currentBackgroundUsage] = await Promise.all([
+      this.getCurrentUsage(resource, 'user'),
+      this.getCurrentUsage(resource, 'background'),
+    ]);
 
     const config = this.resourceConfigs.get(resource) ?? this.defaultConfig;
 
@@ -537,37 +536,33 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     const now = Date.now();
     const windowStart = now - this.capacityCalculator.config.monitoringWindowMs;
 
-    let userItems;
+    let userItems: Array<Record<string, unknown>>;
+    let backgroundItems: Array<Record<string, unknown>>;
     try {
-      userItems = await queryItemsAllPages(this.docClient, {
-        TableName: this.tableName,
-        IndexName: 'gsi1',
-        KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :skStart',
-        ExpressionAttributeValues: {
-          ':gsi1pk': `RATELIMIT#${resource}#user`,
-          ':skStart': `TS#${windowStart}`,
-        },
-        ProjectionExpression: '#ts',
-        ExpressionAttributeNames: { '#ts': 'timestamp' },
-      });
-    } catch (error: unknown) {
-      throwIfDynamoTableMissing(error, this.tableName);
-      throw error;
-    }
-
-    let backgroundItems;
-    try {
-      backgroundItems = await queryItemsAllPages(this.docClient, {
-        TableName: this.tableName,
-        IndexName: 'gsi1',
-        KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :skStart',
-        ExpressionAttributeValues: {
-          ':gsi1pk': `RATELIMIT#${resource}#background`,
-          ':skStart': `TS#${windowStart}`,
-        },
-        ProjectionExpression: '#ts',
-        ExpressionAttributeNames: { '#ts': 'timestamp' },
-      });
+      [userItems, backgroundItems] = await Promise.all([
+        queryItemsAllPages(this.docClient, {
+          TableName: this.tableName,
+          IndexName: 'gsi1',
+          KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :skStart',
+          ExpressionAttributeValues: {
+            ':gsi1pk': `RATELIMIT#${resource}#user`,
+            ':skStart': `TS#${windowStart}`,
+          },
+          ProjectionExpression: '#ts',
+          ExpressionAttributeNames: { '#ts': 'timestamp' },
+        }),
+        queryItemsAllPages(this.docClient, {
+          TableName: this.tableName,
+          IndexName: 'gsi1',
+          KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :skStart',
+          ExpressionAttributeValues: {
+            ':gsi1pk': `RATELIMIT#${resource}#background`,
+            ':skStart': `TS#${windowStart}`,
+          },
+          ProjectionExpression: '#ts',
+          ExpressionAttributeNames: { '#ts': 'timestamp' },
+        }),
+      ]);
     } catch (error: unknown) {
       throwIfDynamoTableMissing(error, this.tableName);
       throw error;
