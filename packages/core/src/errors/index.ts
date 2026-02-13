@@ -1,1 +1,4 @@
-export { HttpClientError } from './http-client-error.js';
+export {
+  HttpClientError,
+  type HttpClientErrorOptions,
+} from './http-client-error.js';
