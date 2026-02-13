@@ -1,5 +1,14 @@
 # @http-client-toolkit/core
 
+## 0.7.0
+
+### Minor Changes
+
+- bbf2912: Improve public error handling API:
+  - **`HttpErrorContext.url`**: Error handlers now receive the requested URL, enabling logging and error reporting without extra bookkeeping.
+  - **`HttpClientError.data` / `HttpClientError.headers`**: The default error path (when no `errorHandler` is provided) now includes the parsed response body and headers on the thrown error.
+  - **JSDoc**: Added documentation to all `HttpErrorContext` fields and clarified the distinction between `responseTransformer` and `responseHandler`.
+
 ## 0.6.0
 
 ### Minor Changes

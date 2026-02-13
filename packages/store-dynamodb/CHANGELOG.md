@@ -1,5 +1,12 @@
 # @http-client-toolkit/store-dynamodb
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [bbf2912]
+  - @http-client-toolkit/core@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
