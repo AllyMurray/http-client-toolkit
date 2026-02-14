@@ -1,3 +1,4 @@
+import type { RetryOptions } from '../http-client/http-client.js';
 import { RequestPriority } from '../stores/rate-limit-store.js';
 
 export interface HttpClientContract {
@@ -27,6 +28,11 @@ export interface HttpClientContract {
        * response's Vary header and checks them on subsequent lookups.
        */
       headers?: Record<string, string>;
+      /**
+       * Per-request retry configuration. Pass `false` to disable retries for
+       * this specific request even if retries are enabled at the constructor level.
+       */
+      retry?: RetryOptions | false;
     },
   ): Promise<Result>;
 }
