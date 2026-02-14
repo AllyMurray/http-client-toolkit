@@ -10,7 +10,12 @@ const alternateBaseUrl = 'https://api-alt.example.com';
 describe('HttpClient', () => {
   let httpClient: HttpClient;
   beforeEach(() => {
+    nock.cleanAll();
     httpClient = new HttpClient();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   test('should return a successful response', async () => {
@@ -3220,7 +3225,7 @@ describe('HttpClient', () => {
             },
             attempt: number,
             url: string,
-          ) => { shouldRetry: boolean; retryAfterMs?: number };
+          ) => { shouldRetry: boolean; context: unknown };
         };
 
         const retryConfig = client.resolveRetryConfig({})!;
@@ -3230,7 +3235,7 @@ describe('HttpClient', () => {
           1,
           `${baseUrl}/test`,
         );
-        expect(result).toEqual({ shouldRetry: false });
+        expect(result.shouldRetry).toBe(false);
       });
 
       test('throws last error when all retries exhausted on network failure', async () => {
