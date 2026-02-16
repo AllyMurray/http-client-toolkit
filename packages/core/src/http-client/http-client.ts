@@ -665,11 +665,7 @@ export class HttpClient implements HttpClientContract {
     }
   }
 
-  private clampTTL(
-    ttl: number,
-    overridesParam?: CacheOverrideOptions,
-  ): number {
-    const overrides = overridesParam ?? this.options.cacheOverrides;
+  private clampTTL(ttl: number, overrides?: CacheOverrideOptions): number {
     if (!overrides) return ttl;
     let clamped = ttl;
     if (overrides.minimumTTL !== undefined) {

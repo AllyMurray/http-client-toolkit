@@ -64,10 +64,14 @@ const client = new HttpClient({
 
 **Request options (`client.get`)**
 
-| Property   | Type                     | Default        | Description                         |
-| ---------- | ------------------------ | -------------- | ----------------------------------- |
-| `signal`   | `AbortSignal`            | -              | Cancels wait + request when aborted |
-| `priority` | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores  |
+| Property         | Type                     | Default        | Description                                                         |
+| ---------------- | ------------------------ | -------------- | ------------------------------------------------------------------- |
+| `signal`         | `AbortSignal`            | -              | Cancels wait + request when aborted                                 |
+| `priority`       | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores                                  |
+| `headers`        | `Record<string, string>` | -              | Custom request headers (also used for Vary-based cache matching)    |
+| `retry`          | `RetryOptions \| false`  | -              | Per-request retry config; `false` disables retries for this call    |
+| `cacheTTL`       | `number`                 | -              | Per-request default cache TTL in seconds (overrides constructor)    |
+| `cacheOverrides` | `CacheOverrideOptions`   | -              | Per-request cache overrides (shallow-merged with constructor-level) |
 
 **Stores:**
 
