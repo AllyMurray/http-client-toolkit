@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 0.10.0
+
+### Minor Changes
+
+- b15eafc: Merge `HttpClient` constructor into a single options object — stores (`cache`, `dedupe`, `rateLimit`) and behavioral options are now passed together instead of as two separate arguments. Also rename `defaultCacheTTL` to `cacheTTL` for clarity.
+
 ## 0.9.0
 
 ### Minor Changes
