@@ -12,6 +12,7 @@ A modular HTTP client toolkit with pluggable caching, deduplication, and rate li
 | [`@http-client-toolkit/store-memory`](https://www.npmjs.com/package/@http-client-toolkit/store-memory) | In-memory store implementations |
 | [`@http-client-toolkit/store-sqlite`](https://www.npmjs.com/package/@http-client-toolkit/store-sqlite) | SQLite-backed store implementations |
 | [`@http-client-toolkit/store-dynamodb`](https://www.npmjs.com/package/@http-client-toolkit/store-dynamodb) | DynamoDB-backed store implementations |
+| [`@http-client-toolkit/dashboard`](https://www.npmjs.com/package/@http-client-toolkit/dashboard) | Dashboard UI for monitoring stores |
 
 ## Quick Start
 
