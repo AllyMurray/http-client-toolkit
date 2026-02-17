@@ -39,6 +39,10 @@ export default defineConfig({
 							label: 'Response Transformation',
 							slug: 'guides/response-transformation',
 						},
+						{
+							label: 'Recommended Usage',
+							slug: 'guides/recommended-usage',
+						},
 					],
 				},
 				{

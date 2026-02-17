@@ -56,6 +56,10 @@ const client = new HttpClient({
 });
 ```
 
+## Recommended Usage
+
+Create a thin wrapper module per third-party API so callers don't configure anything and per-request tuning lives in one place. See the [Recommended Usage guide](https://allymurray.github.io/http-client-toolkit/guides/recommended-usage/) for a full walkthrough.
+
 ## API
 
 ### `new HttpClient(stores?, options?)`
@@ -91,6 +95,8 @@ const client = new HttpClient({
 | `responseTransformer` | `(data: unknown) => unknown` | -        | Transform raw response data             |
 | `responseHandler`     | `(data: unknown) => unknown` | -        | Validate/process transformed data       |
 | `errorHandler`        | `(error: unknown) => Error`  | -        | Convert errors to domain-specific types |
+| `cacheOverrides`      | `CacheOverrideOptions`       | -        | Override cache header behaviors          |
+| `retry`               | `RetryOptions \| false`      | -        | Retry config; `false` disables globally  |
 | `rateLimitHeaders`    | `RateLimitHeaderConfig`      | defaults | Configure standard/custom header names  |
 
 ### Request Flow

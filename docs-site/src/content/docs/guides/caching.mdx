@@ -147,6 +147,47 @@ const client = new HttpClient(
 | `minimumTTL` | Floor on the header-derived store TTL (seconds) |
 | `maximumTTL` | Cap on the header-derived store TTL (seconds) |
 
+## Per-Request Cache Configuration
+
+Both `cacheTTL` and `cacheOverrides` can be set per request, overriding the constructor defaults. This is useful when different endpoints have different caching needs.
+
+```typescript
+// Override TTL for a specific request
+await client.get(url, { cacheTTL: 120 });
+
+// Override cache behavior for a specific request
+await client.get(url, {
+  cacheOverrides: { ignoreNoStore: true, minimumTTL: 60 },
+});
+
+// Combine both
+await client.get(url, {
+  cacheTTL: 300,
+  cacheOverrides: { maximumTTL: 600 },
+});
+```
+
+Per-request `cacheOverrides` are **shallow-merged** with the constructor-level overrides — specified fields override, unspecified fields fall back to the constructor defaults:
+
+```typescript
+const client = new HttpClient(
+  { cache: new InMemoryCacheStore() },
+  {
+    defaultCacheTTL: 300,
+    cacheOverrides: { minimumTTL: 60, maximumTTL: 3600 },
+  },
+);
+
+// minimumTTL overridden to 120, maximumTTL stays 3600
+await client.get(url, {
+  cacheOverrides: { minimumTTL: 120 },
+});
+```
+
+:::tip
+For a clean way to organise per-request config, see the [Recommended Usage](/http-client-toolkit/guides/recommended-usage/) guide.
+:::
+
 ## Private Cache Semantics
 
 HttpClient operates as a **private cache** (a client library, not a shared proxy), so:
