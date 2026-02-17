@@ -6,30 +6,47 @@ import type {
 } from '../../adapters/types.js';
 import { sendJson } from '../response-helpers.js';
 
-export interface DashboardContext {
+export interface ClientContext {
+  name: string;
   cache?: CacheStoreAdapter;
   dedup?: DedupeStoreAdapter;
   rateLimit?: RateLimitStoreAdapter;
+}
+
+export interface MultiClientContext {
+  clients: Map<string, ClientContext>;
   pollIntervalMs: number;
 }
 
-export function handleHealth(res: ServerResponse, ctx: DashboardContext): void {
+function clientStoreInfo(client: ClientContext) {
+  return {
+    cache: client.cache
+      ? { type: client.cache.type, capabilities: client.cache.capabilities }
+      : null,
+    dedup: client.dedup
+      ? { type: client.dedup.type, capabilities: client.dedup.capabilities }
+      : null,
+    rateLimit: client.rateLimit
+      ? {
+          type: client.rateLimit.type,
+          capabilities: client.rateLimit.capabilities,
+        }
+      : null,
+  };
+}
+
+export function handleHealth(
+  res: ServerResponse,
+  ctx: MultiClientContext,
+): void {
+  const clients: Record<string, ReturnType<typeof clientStoreInfo>> = {};
+  for (const [name, client] of ctx.clients) {
+    clients[name] = clientStoreInfo(client);
+  }
+
   sendJson(res, {
     status: 'ok',
-    stores: {
-      cache: ctx.cache
-        ? { type: ctx.cache.type, capabilities: ctx.cache.capabilities }
-        : null,
-      dedup: ctx.dedup
-        ? { type: ctx.dedup.type, capabilities: ctx.dedup.capabilities }
-        : null,
-      rateLimit: ctx.rateLimit
-        ? {
-            type: ctx.rateLimit.type,
-            capabilities: ctx.rateLimit.capabilities,
-          }
-        : null,
-    },
+    clients,
     pollIntervalMs: ctx.pollIntervalMs,
   });
 }

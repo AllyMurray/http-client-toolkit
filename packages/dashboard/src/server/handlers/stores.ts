@@ -1,35 +1,39 @@
 import type { ServerResponse } from 'http';
-import type { DashboardContext } from './health.js';
+import type { MultiClientContext } from './health.js';
 import { sendJson } from '../response-helpers.js';
 
-export function handleStores(res: ServerResponse, ctx: DashboardContext): void {
-  const stores: Array<{
+export function handleClients(
+  res: ServerResponse,
+  ctx: MultiClientContext,
+): void {
+  const clients: Array<{
     name: string;
-    type: string;
-    capabilities: Record<string, boolean>;
+    stores: {
+      cache: { type: string; capabilities: Record<string, boolean> } | null;
+      dedup: { type: string; capabilities: Record<string, boolean> } | null;
+      rateLimit: { type: string; capabilities: Record<string, boolean> } | null;
+    };
   }> = [];
 
-  if (ctx.cache) {
-    stores.push({
-      name: 'cache',
-      type: ctx.cache.type,
-      capabilities: ctx.cache.capabilities,
-    });
-  }
-  if (ctx.dedup) {
-    stores.push({
-      name: 'dedup',
-      type: ctx.dedup.type,
-      capabilities: ctx.dedup.capabilities,
-    });
-  }
-  if (ctx.rateLimit) {
-    stores.push({
-      name: 'rateLimit',
-      type: ctx.rateLimit.type,
-      capabilities: ctx.rateLimit.capabilities,
+  for (const [name, client] of ctx.clients) {
+    clients.push({
+      name,
+      stores: {
+        cache: client.cache
+          ? { type: client.cache.type, capabilities: client.cache.capabilities }
+          : null,
+        dedup: client.dedup
+          ? { type: client.dedup.type, capabilities: client.dedup.capabilities }
+          : null,
+        rateLimit: client.rateLimit
+          ? {
+              type: client.rateLimit.type,
+              capabilities: client.rateLimit.capabilities,
+            }
+          : null,
+      },
     });
   }
 
-  sendJson(res, { stores });
+  sendJson(res, { clients });
 }
