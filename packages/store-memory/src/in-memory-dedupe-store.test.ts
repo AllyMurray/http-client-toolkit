@@ -383,6 +383,62 @@ describe('InMemoryDedupeStore', () => {
     });
   });
 
+  describe('listJobs', () => {
+    it('should return an empty array when no jobs exist', () => {
+      const jobs = store.listJobs();
+      expect(jobs).toEqual([]);
+    });
+
+    it('should list pending jobs', async () => {
+      await store.register('hash1');
+      await store.register('hash2');
+
+      const jobs = store.listJobs();
+      expect(jobs).toHaveLength(2);
+      expect(jobs[0]!.hash).toBe('hash1');
+      expect(jobs[0]!.status).toBe('pending');
+      expect(jobs[0]!.jobId).toBeTruthy();
+      expect(jobs[0]!.createdAt).toBeGreaterThan(0);
+    });
+
+    it('should show completed status', async () => {
+      await store.register('hash1');
+      await store.complete('hash1', 'value');
+
+      const jobs = store.listJobs();
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.status).toBe('completed');
+    });
+
+    it('should show failed status', async () => {
+      await store.register('hash1');
+
+      const waitPromise = store.waitFor('hash1').catch(() => undefined);
+      await store.fail('hash1', new Error('Test error'));
+      await waitPromise;
+
+      const jobs = store.listJobs();
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.status).toBe('failed');
+    });
+
+    it('should support pagination', async () => {
+      for (let i = 0; i < 5; i++) {
+        await store.register(`hash${i}`);
+        await store.complete(`hash${i}`, `value${i}`);
+      }
+
+      const page1 = store.listJobs(0, 2);
+      expect(page1).toHaveLength(2);
+
+      const page2 = store.listJobs(2, 2);
+      expect(page2).toHaveLength(2);
+
+      const page3 = store.listJobs(4, 2);
+      expect(page3).toHaveLength(1);
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle completing non-existent jobs', async () => {
       await expect(

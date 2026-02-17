@@ -198,6 +198,41 @@ export class InMemoryDedupeStore<T = unknown> implements DedupeStore<T> {
   }
 
   /**
+   * List dedupe jobs with pagination
+   */
+  listJobs(
+    offset: number = 0,
+    limit: number = 50,
+  ): Array<{
+    hash: string;
+    jobId: string;
+    status: 'pending' | 'completed' | 'failed';
+    createdAt: number;
+  }> {
+    const entries: Array<{
+      hash: string;
+      jobId: string;
+      status: 'pending' | 'completed' | 'failed';
+      createdAt: number;
+    }> = [];
+
+    for (const [hash, job] of this.jobs) {
+      entries.push({
+        hash,
+        jobId: job.jobId,
+        status: job.completed
+          ? job.error
+            ? 'failed'
+            : 'completed'
+          : 'pending',
+        createdAt: job.createdAt,
+      });
+    }
+
+    return entries.slice(offset, offset + limit);
+  }
+
+  /**
    * Clean up expired jobs
    */
   cleanup(): void {

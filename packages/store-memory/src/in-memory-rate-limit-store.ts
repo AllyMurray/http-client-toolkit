@@ -172,6 +172,35 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   }
 
   /**
+   * List all tracked resources with their current status
+   */
+  listResources(): Array<{
+    resource: string;
+    requestCount: number;
+    limit: number;
+    windowMs: number;
+  }> {
+    const resources: Array<{
+      resource: string;
+      requestCount: number;
+      limit: number;
+      windowMs: number;
+    }> = [];
+
+    for (const [resource, info] of this.limits) {
+      this.cleanupExpiredRequests(info);
+      resources.push({
+        resource,
+        requestCount: info.requests.length,
+        limit: info.limit,
+        windowMs: info.windowMs,
+      });
+    }
+
+    return resources;
+  }
+
+  /**
    * Clear all rate limit data
    */
   clear(): void {
