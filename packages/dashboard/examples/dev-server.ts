@@ -5,22 +5,38 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-const cacheStore = new InMemoryCacheStore();
-const dedupeStore = new InMemoryDedupeStore();
-const rateLimitStore = new InMemoryRateLimitStore();
+// User API client stores
+const userCacheStore = new InMemoryCacheStore();
+const userDedupeStore = new InMemoryDedupeStore();
+const userRateLimitStore = new InMemoryRateLimitStore();
+
+// Product API client stores
+const productCacheStore = new InMemoryCacheStore();
+const productRateLimitStore = new InMemoryRateLimitStore();
 
 // Seed some test data
-await cacheStore.set('user-123', { name: 'Alice' }, 300);
-await cacheStore.set('user-456', { name: 'Bob' }, 600);
-await cacheStore.set('products-list', [{ id: 1, name: 'Widget' }], 120);
-await rateLimitStore.record('api.example.com');
-await rateLimitStore.record('api.example.com');
-await rateLimitStore.record('api.github.com');
+await userCacheStore.set('user-123', { name: 'Alice' }, 300);
+await userCacheStore.set('user-456', { name: 'Bob' }, 600);
+await userRateLimitStore.record('api.users.example.com');
+await userRateLimitStore.record('api.users.example.com');
+
+await productCacheStore.set('products-list', [{ id: 1, name: 'Widget' }], 120);
+await productRateLimitStore.record('api.products.example.com');
 
 const { server } = await startDashboard({
-  cacheStore,
-  dedupeStore,
-  rateLimitStore,
+  clients: [
+    {
+      name: 'user-api',
+      cacheStore: userCacheStore,
+      dedupeStore: userDedupeStore,
+      rateLimitStore: userRateLimitStore,
+    },
+    {
+      name: 'product-api',
+      cacheStore: productCacheStore,
+      rateLimitStore: productRateLimitStore,
+    },
+  ],
   port: 4000,
 });
 
