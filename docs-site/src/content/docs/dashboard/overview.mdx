@@ -59,6 +59,53 @@ server.listen(4000, () => {
 
 The middleware signature is `(req, res, next?) => void`, so it works with plain `http.createServer`, Express, Connect, and similar frameworks.
 
+## Web Standards Handler
+
+Use `createDashboardHandler()` for frameworks and runtimes that use the Web Standards `Request`/`Response` API — such as Hono, Bun, and Deno:
+
+```typescript
+import { createDashboardHandler } from '@http-client-toolkit/dashboard';
+
+const handler = createDashboardHandler({
+  cacheStore,
+  dedupeStore,
+  rateLimitStore,
+});
+```
+
+The handler signature is `(request: Request) => Promise<Response>`, so it plugs directly into any Web Standards-compatible server:
+
+<Tabs>
+  <TabItem label="Hono">
+    ```typescript
+    import { Hono } from 'hono';
+
+    const app = new Hono();
+    app.all('/dashboard/*', (c) => handler(c.req.raw));
+    ```
+  </TabItem>
+  <TabItem label="Bun">
+    ```typescript
+    Bun.serve({ fetch: handler });
+    ```
+  </TabItem>
+  <TabItem label="Deno">
+    ```typescript
+    Deno.serve(handler);
+    ```
+  </TabItem>
+</Tabs>
+
+:::tip
+When mounting at a sub-path, set the `basePath` option so the handler can strip it during routing:
+```typescript
+const handler = createDashboardHandler({
+  cacheStore,
+  basePath: '/dashboard',
+});
+```
+:::
+
 ## Standalone Server
 
 For convenience, `startDashboard()` spins up its own HTTP server:
