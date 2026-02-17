@@ -4,12 +4,14 @@ import { DataTable } from './DataTable.js';
 import { EmptyState } from './EmptyState.js';
 import { StatsCard } from './StatsCard.js';
 import { api } from '../api/client.js';
-import type { CacheEntry, HealthResponse } from '../api/types.js';
+import type { CacheEntry, ClientStoreInfo } from '../api/types.js';
 import { useCacheEntries } from '../hooks/useCacheEntries.js';
 import { useCacheStats } from '../hooks/useCacheStats.js';
 
 interface CacheViewProps {
-  health: HealthResponse;
+  clientName: string;
+  stores: ClientStoreInfo;
+  pollIntervalMs: number;
 }
 
 function formatExpiry(expiresAt: number): string {
@@ -28,12 +30,16 @@ function formatSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function CacheView({ health }: CacheViewProps) {
-  const storeInfo = health.stores.cache;
-  const pollInterval = health.pollIntervalMs;
-  const stats = useCacheStats(pollInterval, !!storeInfo);
+export function CacheView({
+  clientName,
+  stores,
+  pollIntervalMs,
+}: CacheViewProps) {
+  const storeInfo = stores.cache;
+  const stats = useCacheStats(clientName, pollIntervalMs, !!storeInfo);
   const entries = useCacheEntries(
-    pollInterval,
+    clientName,
+    pollIntervalMs,
     storeInfo?.capabilities.canList ?? false,
   );
   const [confirmClear, setConfirmClear] = useState(false);
@@ -48,13 +54,13 @@ export function CacheView({ health }: CacheViewProps) {
   }
 
   const handleDelete = async (hash: string) => {
-    await api.deleteCacheEntry(hash);
+    await api.deleteCacheEntry(clientName, hash);
     entries.refresh();
     stats.refresh();
   };
 
   const handleClear = async () => {
-    await api.clearCache();
+    await api.clearCache(clientName);
     setConfirmClear(false);
     entries.refresh();
     stats.refresh();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CacheView } from './components/CacheView.js';
 import { Dashboard } from './components/Dashboard.js';
 import { DedupeView } from './components/DedupeView.js';
@@ -6,18 +6,50 @@ import { Layout } from './components/Layout.js';
 import { RateLimitView } from './components/RateLimitView.js';
 import { useStores } from './hooks/useStores.js';
 
-function getInitialView(): string {
+function parseHash(): { client: string | undefined; view: string } {
   const hash = window.location.hash.replace('#', '');
-  return hash || 'overview';
+  if (!hash) return { client: undefined, view: 'overview' };
+  const slashIndex = hash.indexOf('/');
+  if (slashIndex === -1) return { client: hash, view: 'overview' };
+  return {
+    client: hash.slice(0, slashIndex),
+    view: hash.slice(slashIndex + 1) || 'overview',
+  };
 }
 
 export function App() {
-  const [currentView, setCurrentView] = useState(getInitialView);
   const { health, error, loading } = useStores();
+  const [selectedClient, setSelectedClient] = useState<string | undefined>();
+  const [currentView, setCurrentView] = useState('overview');
+
+  const clientNames = health ? Object.keys(health.clients) : [];
+
+  // Initialize from hash or auto-select first client
+  useEffect(() => {
+    if (!health) return;
+    const names = Object.keys(health.clients);
+    if (names.length === 0) return;
+
+    const { client, view } = parseHash();
+    if (client && names.includes(client)) {
+      setSelectedClient(client);
+      setCurrentView(view);
+    } else if (!selectedClient || !names.includes(selectedClient)) {
+      setSelectedClient(names[0]);
+      setCurrentView(view);
+    }
+  }, [health]);
 
   const handleNavigate = (view: string) => {
     setCurrentView(view);
-    window.location.hash = view;
+    if (selectedClient) {
+      window.location.hash = `${selectedClient}/${view}`;
+    }
+  };
+
+  const handleSelectClient = (name: string) => {
+    setSelectedClient(name);
+    window.location.hash = `${name}/${currentView}`;
   };
 
   if (loading) {
@@ -46,16 +78,47 @@ export function App() {
     );
   }
 
+  if (!selectedClient || !health.clients[selectedClient]) {
+    return null;
+  }
+
+  const stores = health.clients[selectedClient];
+  const pollIntervalMs = health.pollIntervalMs;
+
   const renderView = () => {
     switch (currentView) {
       case 'cache':
-        return <CacheView health={health} />;
+        return (
+          <CacheView
+            clientName={selectedClient}
+            stores={stores}
+            pollIntervalMs={pollIntervalMs}
+          />
+        );
       case 'dedup':
-        return <DedupeView health={health} />;
+        return (
+          <DedupeView
+            clientName={selectedClient}
+            stores={stores}
+            pollIntervalMs={pollIntervalMs}
+          />
+        );
       case 'rate-limit':
-        return <RateLimitView health={health} />;
+        return (
+          <RateLimitView
+            clientName={selectedClient}
+            stores={stores}
+            pollIntervalMs={pollIntervalMs}
+          />
+        );
       default:
-        return <Dashboard health={health} />;
+        return (
+          <Dashboard
+            clientName={selectedClient}
+            stores={stores}
+            pollIntervalMs={pollIntervalMs}
+          />
+        );
     }
   };
 
@@ -63,9 +126,12 @@ export function App() {
     <Layout
       currentView={currentView}
       onNavigate={handleNavigate}
-      hasCache={!!health.stores.cache}
-      hasDedup={!!health.stores.dedup}
-      hasRateLimit={!!health.stores.rateLimit}
+      hasCache={!!stores.cache}
+      hasDedup={!!stores.dedup}
+      hasRateLimit={!!stores.rateLimit}
+      clientNames={clientNames}
+      selectedClient={selectedClient}
+      onSelectClient={handleSelectClient}
     >
       {renderView()}
     </Layout>

@@ -2,14 +2,16 @@ import { DataTable } from './DataTable.js';
 import { EmptyState } from './EmptyState.js';
 import { StatsCard } from './StatsCard.js';
 import { api } from '../api/client.js';
-import type { RateLimitResource, HealthResponse } from '../api/types.js';
+import type { RateLimitResource, ClientStoreInfo } from '../api/types.js';
 import {
   useRateLimitStats,
   useRateLimitResources,
 } from '../hooks/useRateLimit.js';
 
 interface RateLimitViewProps {
-  health: HealthResponse;
+  clientName: string;
+  stores: ClientStoreInfo;
+  pollIntervalMs: number;
 }
 
 function formatWindow(ms: number): string {
@@ -29,12 +31,16 @@ function utilizationBadge(requestCount: number, limit: number) {
   return <span className={`badge ${variant}`}>{Math.round(ratio * 100)}%</span>;
 }
 
-export function RateLimitView({ health }: RateLimitViewProps) {
-  const storeInfo = health.stores.rateLimit;
-  const pollInterval = health.pollIntervalMs;
-  const stats = useRateLimitStats(pollInterval, !!storeInfo);
+export function RateLimitView({
+  clientName,
+  stores,
+  pollIntervalMs,
+}: RateLimitViewProps) {
+  const storeInfo = stores.rateLimit;
+  const stats = useRateLimitStats(clientName, pollIntervalMs, !!storeInfo);
   const resources = useRateLimitResources(
-    pollInterval,
+    clientName,
+    pollIntervalMs,
     storeInfo?.capabilities.canList ?? false,
   );
 
@@ -48,7 +54,7 @@ export function RateLimitView({ health }: RateLimitViewProps) {
   }
 
   const handleReset = async (name: string) => {
-    await api.resetRateLimitResource(name);
+    await api.resetRateLimitResource(clientName, name);
     resources.refresh();
     stats.refresh();
   };

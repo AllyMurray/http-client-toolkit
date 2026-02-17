@@ -6,6 +6,9 @@ interface LayoutProps {
   hasCache: boolean;
   hasDedup: boolean;
   hasRateLimit: boolean;
+  clientNames: Array<string>;
+  selectedClient: string;
+  onSelectClient: (name: string) => void;
   children: ReactNode;
 }
 
@@ -15,12 +18,33 @@ export function Layout({
   hasCache,
   hasDedup,
   hasRateLimit,
+  clientNames,
+  selectedClient,
+  onSelectClient,
   children,
 }: LayoutProps) {
   return (
     <div className="app">
       <nav className="sidebar">
         <div className="sidebar-brand">HTTP Client Toolkit</div>
+
+        {clientNames.length > 1 && (
+          <>
+            <div className="sidebar-title">Clients</div>
+            <div className="client-selector">
+              {clientNames.map((name) => (
+                <button
+                  key={name}
+                  className={`client-item ${selectedClient === name ? 'active' : ''}`}
+                  onClick={() => onSelectClient(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="sidebar-title">Dashboard</div>
 
         <button

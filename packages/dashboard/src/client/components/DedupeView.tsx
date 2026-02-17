@@ -1,11 +1,13 @@
 import { DataTable } from './DataTable.js';
 import { EmptyState } from './EmptyState.js';
 import { StatsCard } from './StatsCard.js';
-import type { DedupeJob, HealthResponse } from '../api/types.js';
+import type { DedupeJob, ClientStoreInfo } from '../api/types.js';
 import { useDedupeStats, useDedupeJobs } from '../hooks/useDedup.js';
 
 interface DedupeViewProps {
-  health: HealthResponse;
+  clientName: string;
+  stores: ClientStoreInfo;
+  pollIntervalMs: number;
 }
 
 function formatAge(createdAt: number): string {
@@ -26,12 +28,16 @@ function statusBadge(status: string) {
   return <span className={`badge ${variant}`}>{status}</span>;
 }
 
-export function DedupeView({ health }: DedupeViewProps) {
-  const storeInfo = health.stores.dedup;
-  const pollInterval = health.pollIntervalMs;
-  const stats = useDedupeStats(pollInterval, !!storeInfo);
+export function DedupeView({
+  clientName,
+  stores,
+  pollIntervalMs,
+}: DedupeViewProps) {
+  const storeInfo = stores.dedup;
+  const stats = useDedupeStats(clientName, pollIntervalMs, !!storeInfo);
   const jobs = useDedupeJobs(
-    pollInterval,
+    clientName,
+    pollIntervalMs,
     storeInfo?.capabilities.canList ?? false,
   );
 

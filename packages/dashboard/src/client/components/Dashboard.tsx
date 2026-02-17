@@ -1,11 +1,13 @@
 import { StoreInfo } from './StoreInfo.js';
-import type { HealthResponse } from '../api/types.js';
+import type { ClientStoreInfo } from '../api/types.js';
 import { useCacheStats } from '../hooks/useCacheStats.js';
 import { useDedupeStats } from '../hooks/useDedup.js';
 import { useRateLimitStats } from '../hooks/useRateLimit.js';
 
 interface DashboardProps {
-  health: HealthResponse;
+  clientName: string;
+  stores: ClientStoreInfo;
+  pollIntervalMs: number;
 }
 
 function OverviewStat({
@@ -25,13 +27,21 @@ function OverviewStat({
   );
 }
 
-export function Dashboard({ health }: DashboardProps) {
-  const pollInterval = health.pollIntervalMs;
-  const cacheStats = useCacheStats(pollInterval, !!health.stores.cache);
-  const dedupeStats = useDedupeStats(pollInterval, !!health.stores.dedup);
+export function Dashboard({
+  clientName,
+  stores,
+  pollIntervalMs,
+}: DashboardProps) {
+  const cacheStats = useCacheStats(clientName, pollIntervalMs, !!stores.cache);
+  const dedupeStats = useDedupeStats(
+    clientName,
+    pollIntervalMs,
+    !!stores.dedup,
+  );
   const rateLimitStats = useRateLimitStats(
-    pollInterval,
-    !!health.stores.rateLimit,
+    clientName,
+    pollIntervalMs,
+    !!stores.rateLimit,
   );
 
   return (
@@ -41,13 +51,13 @@ export function Dashboard({ health }: DashboardProps) {
         <p className="page-subtitle">Real-time store monitoring</p>
       </div>
 
-      {health.stores.cache && (
+      {stores.cache && (
         <div className="overview-section">
           <div className="overview-section-header">
             <h2 className="overview-section-title">Cache</h2>
             <StoreInfo
-              type={health.stores.cache.type}
-              capabilities={health.stores.cache.capabilities}
+              type={stores.cache.type}
+              capabilities={stores.cache.capabilities}
             />
           </div>
           {cacheStats.data && (
@@ -98,13 +108,13 @@ export function Dashboard({ health }: DashboardProps) {
         </div>
       )}
 
-      {health.stores.dedup && (
+      {stores.dedup && (
         <div className="overview-section">
           <div className="overview-section-header">
             <h2 className="overview-section-title">Dedup</h2>
             <StoreInfo
-              type={health.stores.dedup.type}
-              capabilities={health.stores.dedup.capabilities}
+              type={stores.dedup.type}
+              capabilities={stores.dedup.capabilities}
             />
           </div>
           {dedupeStats.data && (
@@ -142,13 +152,13 @@ export function Dashboard({ health }: DashboardProps) {
         </div>
       )}
 
-      {health.stores.rateLimit && (
+      {stores.rateLimit && (
         <div className="overview-section">
           <div className="overview-section-header">
             <h2 className="overview-section-title">Rate Limit</h2>
             <StoreInfo
-              type={health.stores.rateLimit.type}
-              capabilities={health.stores.rateLimit.capabilities}
+              type={stores.rateLimit.type}
+              capabilities={stores.rateLimit.capabilities}
             />
           </div>
           {rateLimitStats.data && (
