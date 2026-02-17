@@ -29,7 +29,7 @@ Client errors (`400`, `401`, `403`, `404`, `422`) are **not** retried by default
     ```typescript
     import { HttpClient } from '@http-client-toolkit/core';
 
-    const client = new HttpClient(stores, {
+    const client = new HttpClient({
       retry: {
         maxRetries: 3,    // Up to 3 retry attempts (4 total requests)
         baseDelay: 1000,  // 1 second initial delay
@@ -74,7 +74,7 @@ When a `429` response includes a `Retry-After` header, the server's hint is used
 Override the default retry logic with `retryCondition`:
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   retry: {
     retryCondition: (context, attempt) => {
       // Retry 404s (not retried by default)
@@ -93,7 +93,7 @@ const client = new HttpClient(stores, {
 Use `onRetry` to log or track retry attempts:
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   retry: {
     onRetry: (context, attempt, delay) => {
       console.warn(
@@ -108,7 +108,7 @@ const client = new HttpClient(stores, {
 
 ```typescript
 // Globally disabled
-const client = new HttpClient(stores, { retry: false });
+const client = new HttpClient({ retry: false });
 
 // Per-request disabled (even if constructor enables retries)
 const data = await client.get(url, { retry: false });

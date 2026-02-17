@@ -41,20 +41,16 @@ import {
 } from '@http-client-toolkit/store-memory';
 
 // 1. Create one client per API with shared defaults
-const client = new HttpClient(
-  {
-    cache: new InMemoryCacheStore(),
-    dedupe: new InMemoryDedupeStore(),
-    rateLimit: new InMemoryRateLimitStore({
-      defaultConfig: { limit: 100, windowMs: 60_000 },
-    }),
-  },
-  {
-    defaultCacheTTL: 300,
-    retry: { maxRetries: 2 },
-    cacheOverrides: { minimumTTL: 60 },
-  },
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 100, windowMs: 60_000 },
+  }),
+  cacheTTL: 300,
+  retry: { maxRetries: 2 },
+  cacheOverrides: { minimumTTL: 60 },
+});
 
 // 2. Define response types
 interface GitHubUser {

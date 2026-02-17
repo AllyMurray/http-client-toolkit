@@ -25,7 +25,7 @@ The client determines cache freshness following RFC 9111 priority:
 1. `Cache-Control: max-age=N` — freshness lifetime is N seconds
 2. `Expires` header minus `Date` header
 3. Heuristic: 10% of (`Date` minus `Last-Modified`)
-4. No freshness info — falls back to `defaultCacheTTL`
+4. No freshness info — falls back to `cacheTTL`
 
 ```
 Server: Cache-Control: max-age=300
@@ -34,13 +34,13 @@ Server: Cache-Control: max-age=300
 
 ## Configuring TTL
 
-Set the default cache TTL (in seconds) when creating the client. This is used as a fallback when response headers don't specify freshness:
+Set the cache TTL (in seconds) when creating the client. This is used when response headers don't specify freshness:
 
 ```typescript
-const client = new HttpClient(
-  { cache: new InMemoryCacheStore() },
-  { defaultCacheTTL: 300 }, // 5 minutes
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  cacheTTL: 300, // 5 minutes
+});
 ```
 
 ### TTL Semantics
@@ -127,17 +127,15 @@ Since this is a private client cache, only one entry is stored per URL. A Vary m
 The `cacheOverrides` option lets you selectively bypass certain cache directives:
 
 ```typescript
-const client = new HttpClient(
-  { cache: new InMemoryCacheStore() },
-  {
-    cacheOverrides: {
-      ignoreNoStore: true,   // Cache even when no-store is set
-      ignoreNoCache: true,   // Skip revalidation even when no-cache is set
-      minimumTTL: 60,        // Floor: cache for at least 60 seconds
-      maximumTTL: 3600,      // Cap: cache for at most 1 hour
-    },
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  cacheOverrides: {
+    ignoreNoStore: true,   // Cache even when no-store is set
+    ignoreNoCache: true,   // Skip revalidation even when no-cache is set
+    minimumTTL: 60,        // Floor: cache for at least 60 seconds
+    maximumTTL: 3600,      // Cap: cache for at most 1 hour
   },
-);
+});
 ```
 
 | Override | Effect |
@@ -170,13 +168,11 @@ await client.get(url, {
 Per-request `cacheOverrides` are **shallow-merged** with the constructor-level overrides — specified fields override, unspecified fields fall back to the constructor defaults:
 
 ```typescript
-const client = new HttpClient(
-  { cache: new InMemoryCacheStore() },
-  {
-    defaultCacheTTL: 300,
-    cacheOverrides: { minimumTTL: 60, maximumTTL: 3600 },
-  },
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  cacheTTL: 300,
+  cacheOverrides: { minimumTTL: 60, maximumTTL: 3600 },
+});
 
 // minimumTTL overridden to 120, maximumTTL stays 3600
 await client.get(url, {

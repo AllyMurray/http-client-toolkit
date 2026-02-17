@@ -24,7 +24,7 @@ Use `responseTransformer` to normalize API data before it reaches your applicati
 ```typescript
 import camelcaseKeys from 'camelcase-keys';
 
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   responseTransformer: (data) => camelcaseKeys(data as Record<string, unknown>, { deep: true }),
 });
 
@@ -37,7 +37,7 @@ const client = new HttpClient(stores, {
 Use `responseHandler` to validate the shape of the response, unwrap nested data, or throw on unexpected formats:
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   responseHandler: (data) => {
     if (!data || typeof data !== 'object') {
       throw new Error('Unexpected response shape');
@@ -53,7 +53,7 @@ const client = new HttpClient(stores, {
 import camelcaseKeys from 'camelcase-keys';
 import { z } from 'zod';
 
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   // First: normalize keys
   responseTransformer: (data) =>
     camelcaseKeys(data as Record<string, unknown>, { deep: true }),
@@ -78,7 +78,7 @@ The response pipeline runs **before** the result is cached. This means cached en
 Use `errorHandler` to convert HTTP errors (non-2xx responses) into domain-specific types. Note that `errorHandler` is only called for HTTP errors — errors thrown by `responseTransformer` or `responseHandler` (e.g. validation failures) are wrapped in `HttpClientError` directly.
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   responseTransformer: (data) => transform(data),
   responseHandler: (data) => validate(data),
   errorHandler: (context) => {
