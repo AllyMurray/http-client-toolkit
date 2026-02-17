@@ -7,7 +7,7 @@ import {
   detectRateLimitAdapter,
 } from '../adapters/detect.js';
 import { validateDashboardOptions, type DashboardOptions } from '../config.js';
-import type { DashboardContext } from './handlers/health.js';
+import type { ClientContext, MultiClientContext } from './handlers/health.js';
 import { extractParam } from './request-helpers.js';
 
 export type DashboardFetchHandler = (request: Request) => Promise<Response>;
@@ -118,84 +118,70 @@ function serveStaticWeb(pathname: string): Response {
 
 // --- API routing ---
 
+const CLIENT_ROUTE_REGEX = /^\/api\/clients\/([a-zA-Z0-9_-]+)(\/.*)?$/;
+
+function clientStoreInfo(client: ClientContext) {
+  return {
+    cache: client.cache
+      ? { type: client.cache.type, capabilities: client.cache.capabilities }
+      : null,
+    dedup: client.dedup
+      ? { type: client.dedup.type, capabilities: client.dedup.capabilities }
+      : null,
+    rateLimit: client.rateLimit
+      ? {
+          type: client.rateLimit.type,
+          capabilities: client.rateLimit.capabilities,
+        }
+      : null,
+  };
+}
+
 async function routeApi(
   request: Request,
   pathname: string,
   query: URLSearchParams,
-  ctx: DashboardContext,
+  ctx: MultiClientContext,
 ): Promise<Response | null> {
   const method = request.method.toUpperCase();
 
-  // Health
+  // Health (aggregate)
   if (pathname === '/api/health' && method === 'GET') {
+    const clients: Record<string, ReturnType<typeof clientStoreInfo>> = {};
+    for (const [name, client] of ctx.clients) {
+      clients[name] = clientStoreInfo(client);
+    }
     return jsonResponse({
       status: 'ok',
-      stores: {
-        cache: ctx.cache
-          ? { type: ctx.cache.type, capabilities: ctx.cache.capabilities }
-          : null,
-        dedup: ctx.dedup
-          ? { type: ctx.dedup.type, capabilities: ctx.dedup.capabilities }
-          : null,
-        rateLimit: ctx.rateLimit
-          ? {
-              type: ctx.rateLimit.type,
-              capabilities: ctx.rateLimit.capabilities,
-            }
-          : null,
-      },
+      clients,
       pollIntervalMs: ctx.pollIntervalMs,
     });
   }
 
-  // Stores
-  if (pathname === '/api/stores' && method === 'GET') {
-    const stores: Array<{
+  // List clients
+  if (pathname === '/api/clients' && method === 'GET') {
+    const clientList: Array<{
       name: string;
-      type: string;
-      capabilities: Record<string, boolean>;
+      stores: ReturnType<typeof clientStoreInfo>;
     }> = [];
-    if (ctx.cache) {
-      stores.push({
-        name: 'cache',
-        type: ctx.cache.type,
-        capabilities: ctx.cache.capabilities,
-      });
+    for (const [name, client] of ctx.clients) {
+      clientList.push({ name, stores: clientStoreInfo(client) });
     }
-    if (ctx.dedup) {
-      stores.push({
-        name: 'dedup',
-        type: ctx.dedup.type,
-        capabilities: ctx.dedup.capabilities,
-      });
-    }
-    if (ctx.rateLimit) {
-      stores.push({
-        name: 'rateLimit',
-        type: ctx.rateLimit.type,
-        capabilities: ctx.rateLimit.capabilities,
-      });
-    }
-    return jsonResponse({ stores });
+    return jsonResponse({ clients: clientList });
   }
 
-  // Cache routes
-  if (pathname.startsWith('/api/cache')) {
-    if (!ctx.cache) return errorResponse('Cache store not configured', 404);
-    return routeCache(pathname, method, ctx.cache, query);
-  }
+  // Per-client routes: /api/clients/:name/...
+  const clientMatch = pathname.match(CLIENT_ROUTE_REGEX);
+  if (clientMatch) {
+    const clientName = clientMatch[1]!;
+    const subPath = clientMatch[2] ?? '';
+    const client = ctx.clients.get(clientName);
 
-  // Dedup routes
-  if (pathname.startsWith('/api/dedup')) {
-    if (!ctx.dedup) return errorResponse('Dedup store not configured', 404);
-    return routeDedup(pathname, method, ctx.dedup, query);
-  }
+    if (!client) {
+      return errorResponse(`Unknown client: ${clientName}`, 404);
+    }
 
-  // Rate limit routes
-  if (pathname.startsWith('/api/rate-limit')) {
-    if (!ctx.rateLimit)
-      return errorResponse('Rate limit store not configured', 404);
-    return routeRateLimit(request, pathname, method, ctx.rateLimit);
+    return routeClientApi(request, subPath, method, client, query);
   }
 
   // Unknown API route
@@ -206,35 +192,64 @@ async function routeApi(
   return null;
 }
 
+async function routeClientApi(
+  request: Request,
+  subPath: string,
+  method: string,
+  client: ClientContext,
+  query: URLSearchParams,
+): Promise<Response> {
+  // Cache routes
+  if (subPath.startsWith('/cache')) {
+    if (!client.cache) return errorResponse('Cache store not configured', 404);
+    return routeCache(subPath, method, client.cache, query);
+  }
+
+  // Dedup routes
+  if (subPath.startsWith('/dedup')) {
+    if (!client.dedup) return errorResponse('Dedup store not configured', 404);
+    return routeDedup(subPath, method, client.dedup, query);
+  }
+
+  // Rate limit routes
+  if (subPath.startsWith('/rate-limit')) {
+    if (!client.rateLimit)
+      return errorResponse('Rate limit store not configured', 404);
+    return routeRateLimit(request, subPath, method, client.rateLimit);
+  }
+
+  return errorResponse('Not found', 404);
+}
+
 async function routeCache(
   pathname: string,
   method: string,
-  adapter: NonNullable<DashboardContext['cache']>,
+  adapter: NonNullable<ClientContext['cache']>,
   query: URLSearchParams,
 ): Promise<Response> {
   try {
-    if (pathname === '/api/cache/stats' && method === 'GET') {
+    if (pathname === '/cache/stats' && method === 'GET') {
       const stats = await adapter.getStats();
       return jsonResponse({ stats, capabilities: adapter.capabilities });
     }
 
-    if (pathname === '/api/cache/entries' && method === 'GET') {
+    if (pathname === '/cache/entries' && method === 'GET') {
       const page = parseInt(query.get('page') ?? '0', 10);
       const limit = parseInt(query.get('limit') ?? '50', 10);
       return jsonResponse(await adapter.listEntries(page, limit));
     }
 
-    if (pathname === '/api/cache/entries' && method === 'DELETE') {
+    if (pathname === '/cache/entries' && method === 'DELETE') {
       await adapter.clearAll();
       return jsonResponse({ cleared: true });
     }
 
     const isSingleEntry =
-      pathname.startsWith('/api/cache/entries/') &&
-      pathname.split('/').length === 5;
+      pathname.startsWith('/cache/entries/') &&
+      pathname.split('/').length === 4;
 
     if (isSingleEntry && method === 'GET') {
-      const hash = extractParam(pathname, '/api/cache/entries/:hash');
+      const hash = extractParam(pathname, '/cache/entries/:hash');
       if (!hash) return errorResponse('Not found', 404);
       const entry = await adapter.getEntry(hash);
       if (entry === undefined) return errorResponse('Not found', 404);
@@ -242,7 +257,7 @@ async function routeCache(
     }
 
     if (isSingleEntry && method === 'DELETE') {
-      const hash = extractParam(pathname, '/api/cache/entries/:hash');
+      const hash = extractParam(pathname, '/cache/entries/:hash');
       if (!hash) return errorResponse('Not found', 404);
       await adapter.deleteEntry(hash);
       return jsonResponse({ deleted: true });
@@ -261,27 +276,26 @@ async function routeCache(
 async function routeDedup(
   pathname: string,
   method: string,
-  adapter: NonNullable<DashboardContext['dedup']>,
+  adapter: NonNullable<ClientContext['dedup']>,
   query: URLSearchParams,
 ): Promise<Response> {
   try {
-    if (pathname === '/api/dedup/stats' && method === 'GET') {
+    if (pathname === '/dedup/stats' && method === 'GET') {
       const stats = await adapter.getStats();
       return jsonResponse({ stats, capabilities: adapter.capabilities });
     }
 
-    if (pathname === '/api/dedup/jobs' && method === 'GET') {
+    if (pathname === '/dedup/jobs' && method === 'GET') {
       const page = parseInt(query.get('page') ?? '0', 10);
       const limit = parseInt(query.get('limit') ?? '50', 10);
       return jsonResponse(await adapter.listJobs(page, limit));
     }
 
     const isSingleJob =
-      pathname.startsWith('/api/dedup/jobs/') &&
-      pathname.split('/').length === 5;
+      pathname.startsWith('/dedup/jobs/') && pathname.split('/').length === 4;
 
     if (isSingleJob && method === 'GET') {
-      const hash = extractParam(pathname, '/api/dedup/jobs/:hash');
+      const hash = extractParam(pathname, '/dedup/jobs/:hash');
       if (!hash) return errorResponse('Not found', 404);
       const job = await adapter.getJob(hash);
       if (!job) return errorResponse('Not found', 404);
@@ -302,25 +316,22 @@ async function routeRateLimit(
   request: Request,
   pathname: string,
   method: string,
-  adapter: NonNullable<DashboardContext['rateLimit']>,
+  adapter: NonNullable<ClientContext['rateLimit']>,
 ): Promise<Response> {
   try {
-    if (pathname === '/api/rate-limit/stats' && method === 'GET') {
+    if (pathname === '/rate-limit/stats' && method === 'GET') {
       const stats = await adapter.getStats();
       return jsonResponse({ stats, capabilities: adapter.capabilities });
     }
 
-    if (pathname === '/api/rate-limit/resources' && method === 'GET') {
+    if (pathname === '/rate-limit/resources' && method === 'GET') {
       const resources = await adapter.listResources();
       return jsonResponse({ resources });
     }
 
-    // Config update: PUT /api/rate-limit/resources/:name/config
+    // Config update: PUT /rate-limit/resources/:name/config
     if (pathname.endsWith('/config') && method === 'PUT') {
-      const name = extractParam(
-        pathname,
-        '/api/rate-limit/resources/:name/config',
-      );
+      const name = extractParam(pathname, '/rate-limit/resources/:name/config');
       if (!name) return errorResponse('Not found', 404);
       const body = (await request.json()) as {
         limit: number;
@@ -330,24 +341,21 @@ async function routeRateLimit(
       return jsonResponse({ updated: true });
     }
 
-    // Reset: POST /api/rate-limit/resources/:name/reset
+    // Reset: POST /rate-limit/resources/:name/reset
     if (pathname.endsWith('/reset') && method === 'POST') {
-      const name = extractParam(
-        pathname,
-        '/api/rate-limit/resources/:name/reset',
-      );
+      const name = extractParam(pathname, '/rate-limit/resources/:name/reset');
       if (!name) return errorResponse('Not found', 404);
       await adapter.resetResource(name);
       return jsonResponse({ reset: true });
     }
 
-    // Single resource: GET /api/rate-limit/resources/:name
+    // Single resource: GET /rate-limit/resources/:name
     const isSingleResource =
-      pathname.startsWith('/api/rate-limit/resources/') &&
-      pathname.split('/').length === 5;
+      pathname.startsWith('/rate-limit/resources/') &&
+      pathname.split('/').length === 4;
 
     if (isSingleResource && method === 'GET') {
-      const name = extractParam(pathname, '/api/rate-limit/resources/:name');
+      const name = extractParam(pathname, '/rate-limit/resources/:name');
       if (!name) return errorResponse('Not found', 404);
       const status = await adapter.getResourceStatus(name);
       return jsonResponse({ resource: name, ...status });
@@ -370,12 +378,24 @@ export function createDashboardHandler(
 ): DashboardFetchHandler {
   const opts = validateDashboardOptions(options);
 
-  const ctx: DashboardContext = {
-    cache: opts.cacheStore ? detectCacheAdapter(opts.cacheStore) : undefined,
-    dedup: opts.dedupeStore ? detectDedupeAdapter(opts.dedupeStore) : undefined,
-    rateLimit: opts.rateLimitStore
-      ? detectRateLimitAdapter(opts.rateLimitStore)
-      : undefined,
+  const clients = new Map<string, ClientContext>();
+  for (const clientConfig of opts.clients) {
+    clients.set(clientConfig.name, {
+      name: clientConfig.name,
+      cache: clientConfig.cacheStore
+        ? detectCacheAdapter(clientConfig.cacheStore)
+        : undefined,
+      dedup: clientConfig.dedupeStore
+        ? detectDedupeAdapter(clientConfig.dedupeStore)
+        : undefined,
+      rateLimit: clientConfig.rateLimitStore
+        ? detectRateLimitAdapter(clientConfig.rateLimitStore)
+        : undefined,
+    });
+  }
+
+  const ctx: MultiClientContext = {
+    clients,
     pollIntervalMs: opts.pollIntervalMs,
   };
 
