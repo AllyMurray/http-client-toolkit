@@ -16,17 +16,13 @@ The sliding window rate limiter tracks request timestamps per resource:
 import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
 
-const client = new HttpClient(
-  {
-    rateLimit: new InMemoryRateLimitStore({
-      defaultConfig: { limit: 60, windowMs: 60_000 }, // 60 requests per minute
-    }),
-  },
-  {
-    throwOnRateLimit: true, // Default: throw when rate limited
-    maxWaitTime: 60_000,    // Max time to wait if throwOnRateLimit is false
-  },
-);
+const client = new HttpClient({
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 60, windowMs: 60_000 }, // 60 requests per minute
+  }),
+  throwOnRateLimit: true, // Default: throw when rate limited
+  maxWaitTime: 60_000,    // Max time to wait if throwOnRateLimit is false
+});
 ```
 
 ### Per-Resource Configuration
@@ -114,16 +110,14 @@ The client only enforces reset-based cooldowns when:
 Map non-standard header names for specific APIs:
 
 ```typescript
-const client = new HttpClient(
-  { rateLimit },
-  {
-    rateLimitHeaders: {
-      retryAfter: ['RetryAfterSeconds'],
-      remaining: ['Remaining-Requests'],
-      reset: ['Window-Reset-Seconds'],
-    },
+const client = new HttpClient({
+  rateLimit,
+  rateLimitHeaders: {
+    retryAfter: ['RetryAfterSeconds'],
+    remaining: ['Remaining-Requests'],
+    reset: ['Window-Reset-Seconds'],
   },
-);
+});
 ```
 
 ## Throw vs. Wait
@@ -133,23 +127,21 @@ Control what happens when a rate limit is hit:
 <Tabs>
   <TabItem label="Throw (default)">
     ```typescript
-    const client = new HttpClient(
-      { rateLimit },
-      { throwOnRateLimit: true },
-    );
+    const client = new HttpClient({
+      rateLimit,
+      throwOnRateLimit: true,
+    });
 
     // Throws HttpClientError when rate limited
     ```
   </TabItem>
   <TabItem label="Wait">
     ```typescript
-    const client = new HttpClient(
-      { rateLimit },
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 30_000, // Wait up to 30 seconds
-      },
-    );
+    const client = new HttpClient({
+      rateLimit,
+      throwOnRateLimit: false,
+      maxWaitTime: 30_000, // Wait up to 30 seconds
+    });
 
     // Waits for the rate limit window to open, then retries
     // Throws if maxWaitTime is exceeded

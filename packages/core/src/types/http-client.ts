@@ -85,8 +85,9 @@ export interface HttpClientContract {
        */
       retry?: RetryOptions | false;
       /**
-       * Per-request default cache TTL in seconds. Overrides the constructor-level
-       * `defaultCacheTTL` for this specific request.
+       * Per-request cache TTL in seconds. Overrides the constructor-level
+       * `cacheTTL` for this specific request. Only used when the response
+       * has no cache headers.
        */
       cacheTTL?: number;
       /**

@@ -6,11 +6,11 @@ A modular HTTP client toolkit with pluggable caching, deduplication, and rate li
 
 ## Packages
 
-| Package | Description |
-| --- | --- |
-| [`@http-client-toolkit/core`](https://www.npmjs.com/package/@http-client-toolkit/core) | HTTP client and store interfaces |
-| [`@http-client-toolkit/store-memory`](https://www.npmjs.com/package/@http-client-toolkit/store-memory) | In-memory store implementations |
-| [`@http-client-toolkit/store-sqlite`](https://www.npmjs.com/package/@http-client-toolkit/store-sqlite) | SQLite-backed store implementations |
+| Package                                                                                                    | Description                           |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| [`@http-client-toolkit/core`](https://www.npmjs.com/package/@http-client-toolkit/core)                     | HTTP client and store interfaces      |
+| [`@http-client-toolkit/store-memory`](https://www.npmjs.com/package/@http-client-toolkit/store-memory)     | In-memory store implementations       |
+| [`@http-client-toolkit/store-sqlite`](https://www.npmjs.com/package/@http-client-toolkit/store-sqlite)     | SQLite-backed store implementations   |
 | [`@http-client-toolkit/store-dynamodb`](https://www.npmjs.com/package/@http-client-toolkit/store-dynamodb) | DynamoDB-backed store implementations |
 | [`@http-client-toolkit/dashboard`](https://www.npmjs.com/package/@http-client-toolkit/dashboard) | Dashboard UI for monitoring stores |
 
@@ -28,14 +28,12 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-const client = new HttpClient(
-  {
-    cache: new InMemoryCacheStore(),
-    dedupe: new InMemoryDedupeStore(),
-    rateLimit: new InMemoryRateLimitStore(),
-  },
-  { defaultCacheTTL: 300 },
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+  cacheTTL: 300,
+});
 
 const data = await client.get<{ name: string }>(
   'https://api.example.com/user/1',

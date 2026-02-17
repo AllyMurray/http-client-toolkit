@@ -53,7 +53,7 @@ class ApiError extends Error {
   }
 }
 
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   errorHandler: (context) => {
     console.error(`Request to ${context.url} failed`);
 
@@ -90,7 +90,7 @@ try {
 Set `throwOnRateLimit: false` to wait instead of throwing:
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   throwOnRateLimit: false,
   maxWaitTime: 30_000, // Wait up to 30 seconds
 });

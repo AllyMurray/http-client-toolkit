@@ -34,7 +34,7 @@ All three are optional and compose with existing options like `responseTransform
 Runs before every outbound request. Use it to inject headers, add tracing context, or modify the request init.
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     const headers = new Headers(init.headers);
@@ -84,7 +84,7 @@ The interceptor receives the URL and current `RequestInit`, and must return a (p
 Runs after the raw `Response` is received but **before** body parsing, transformation, and caching. Use it for logging, modifying headers, or replacing the response entirely.
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   responseInterceptor: (response, url) => {
     console.log(`${response.status} ${url}`);
     return response;
@@ -129,7 +129,7 @@ This is distinct from `responseTransformer`, which operates on **parsed** data. 
 Replace `globalThis.fetch` entirely. Use this when you need control over the transport layer — e.g. resolving pre-signed URLs, using an HTTP agent, or instrumenting with OpenTelemetry.
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   fetchFn: async (url, init) => {
     const response = await fetch(url, init);
     // Resolve S3 pre-signed URL before the response enters the cache
@@ -149,7 +149,7 @@ When `fetchFn` is not provided, the client uses `globalThis.fetch`.
 The hooks compose naturally. Here's a complete example with auth injection, custom fetch, and response logging:
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   // 1. Inject auth before every request
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
@@ -191,7 +191,7 @@ Interceptors **do** run during background revalidation (`stale-while-revalidate`
 Errors thrown by interceptors are wrapped in `HttpClientError` and propagate normally. Note that `errorHandler` is **not** called for interceptor errors — it only handles HTTP errors (non-2xx responses). Interceptor errors are non-HTTP errors and are always wrapped by the toolkit.
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     if (!token) {

@@ -74,13 +74,25 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export interface HttpClientStores {
+interface HttpClientStores {
   cache?: CacheStore;
   dedupe?: DedupeStore;
   rateLimit?: RateLimitStore | AdaptiveRateLimitStore;
 }
 
 export interface HttpClientOptions {
+  /**
+   * Cache store instance for HTTP response caching.
+   */
+  cache?: CacheStore;
+  /**
+   * Deduplication store instance for in-flight request deduplication.
+   */
+  dedupe?: DedupeStore;
+  /**
+   * Rate limit store instance for request throttling.
+   */
+  rateLimit?: RateLimitStore | AdaptiveRateLimitStore;
   /**
    * Custom fetch implementation. Defaults to `globalThis.fetch`.
    * Use this to intercept/transform at the fetch level — e.g., resolving
@@ -109,9 +121,11 @@ export interface HttpClientOptions {
     url: string,
   ) => Promise<Response> | Response;
   /**
-   * Default cache TTL in seconds
+   * Cache TTL in seconds. Used when the response has no cache headers
+   * (`Cache-Control`, `Expires`, `Last-Modified`). When headers are
+   * present, the server-specified freshness takes precedence.
    */
-  defaultCacheTTL?: number;
+  cacheTTL?: number;
   /**
    * Whether to throw errors on rate limit violations
    */
@@ -185,10 +199,7 @@ export class HttpClient implements HttpClientContract {
   private serverCooldowns = new Map<string, number>();
   private pendingRevalidations: Array<Promise<void>> = [];
   private options: Required<
-    Pick<
-      HttpClientOptions,
-      'defaultCacheTTL' | 'throwOnRateLimit' | 'maxWaitTime'
-    >
+    Pick<HttpClientOptions, 'cacheTTL' | 'throwOnRateLimit' | 'maxWaitTime'>
   > &
     Pick<
       HttpClientOptions,
@@ -204,13 +215,17 @@ export class HttpClient implements HttpClientContract {
       rateLimitHeaders: RateLimitHeaderConfig;
     };
 
-  constructor(stores: HttpClientStores = {}, options: HttpClientOptions = {}) {
-    this.stores = stores;
+  constructor(options: HttpClientOptions = {}) {
+    this.stores = {
+      cache: options.cache,
+      dedupe: options.dedupe,
+      rateLimit: options.rateLimit,
+    };
     this.options = {
       fetchFn: options.fetchFn,
       requestInterceptor: options.requestInterceptor,
       responseInterceptor: options.responseInterceptor,
-      defaultCacheTTL: options.defaultCacheTTL ?? 3600,
+      cacheTTL: options.cacheTTL ?? 3600,
       throwOnRateLimit: options.throwOnRateLimit ?? true,
       maxWaitTime: options.maxWaitTime ?? 60000,
       responseTransformer: options.responseTransformer,
@@ -589,7 +604,7 @@ export class HttpClient implements HttpClientContract {
     entry: CacheEntry<unknown>,
     requestHeaders?: Record<string, string>,
     cacheConfig?: {
-      defaultCacheTTL: number;
+      cacheTTL: number;
       cacheOverrides?: CacheOverrideOptions;
     },
   ): Promise<void> {
@@ -616,8 +631,7 @@ export class HttpClient implements HttpClientContract {
 
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
-      const resolvedTTL =
-        cacheConfig?.defaultCacheTTL ?? this.options.defaultCacheTTL;
+      const resolvedTTL = cacheConfig?.cacheTTL ?? this.options.cacheTTL;
       const resolvedOverrides =
         cacheConfig?.cacheOverrides ?? this.options.cacheOverrides;
 
@@ -680,16 +694,16 @@ export class HttpClient implements HttpClientContract {
   private resolveCacheConfig(
     perRequestTTL?: number,
     perRequestOverrides?: CacheOverrideOptions,
-  ): { defaultCacheTTL: number; cacheOverrides?: CacheOverrideOptions } {
-    const defaultCacheTTL = perRequestTTL ?? this.options.defaultCacheTTL;
+  ): { cacheTTL: number; cacheOverrides?: CacheOverrideOptions } {
+    const cacheTTL = perRequestTTL ?? this.options.cacheTTL;
 
     if (!perRequestOverrides) {
-      return { defaultCacheTTL, cacheOverrides: this.options.cacheOverrides };
+      return { cacheTTL, cacheOverrides: this.options.cacheOverrides };
     }
 
     const base = this.options.cacheOverrides ?? {};
     return {
-      defaultCacheTTL,
+      cacheTTL,
       cacheOverrides: {
         ...base,
         ...perRequestOverrides,
@@ -1162,10 +1176,7 @@ export class HttpClient implements HttpClientContract {
       if (fetchResult.notModified) {
         const { refreshedEntry } = fetchResult;
         const ttl = this.clampTTL(
-          calculateStoreTTL(
-            refreshedEntry.metadata,
-            cacheConfig.defaultCacheTTL,
-          ),
+          calculateStoreTTL(refreshedEntry.metadata, cacheConfig.cacheTTL),
           cacheConfig.cacheOverrides,
         );
 
@@ -1220,7 +1231,7 @@ export class HttpClient implements HttpClientContract {
             entry.metadata.varyValues = captureVaryValues(varyFields, headers);
           }
           const ttl = this.clampTTL(
-            calculateStoreTTL(entry.metadata, cacheConfig.defaultCacheTTL),
+            calculateStoreTTL(entry.metadata, cacheConfig.cacheTTL),
             cacheConfig.cacheOverrides,
           );
           await this.stores.cache.set(hash, entry, ttl);

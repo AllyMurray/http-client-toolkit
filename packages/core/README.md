@@ -28,14 +28,12 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-const client = new HttpClient(
-  {
-    cache: new InMemoryCacheStore(),
-    dedupe: new InMemoryDedupeStore(),
-    rateLimit: new InMemoryRateLimitStore(),
-  },
-  { defaultCacheTTL: 300 },
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+  cacheTTL: 300,
+});
 
 const data = await client.get<{ name: string }>(
   'https://api.example.com/user/1',
@@ -56,9 +54,13 @@ const client = new HttpClient({
 });
 ```
 
+## Recommended Usage
+
+Create a thin wrapper module per third-party API so callers don't configure anything and per-request tuning lives in one place. See the [Recommended Usage guide](https://allymurray.github.io/http-client-toolkit/guides/recommended-usage/) for a full walkthrough.
+
 ## API
 
-### `new HttpClient(stores?, options?)`
+### `new HttpClient(options?)`
 
 `HttpClient` exposes a single request method: `get(url, options?)`. The `url` must be an absolute URL.
 
@@ -70,28 +72,25 @@ const client = new HttpClient({
 | `priority`       | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores                                  |
 | `headers`        | `Record<string, string>` | -              | Custom request headers (also used for Vary-based cache matching)    |
 | `retry`          | `RetryOptions \| false`  | -              | Per-request retry config; `false` disables retries for this call    |
-| `cacheTTL`       | `number`                 | -              | Per-request default cache TTL in seconds (overrides constructor)    |
+| `cacheTTL`       | `number`                 | -              | Per-request cache TTL in seconds (overrides constructor)            |
 | `cacheOverrides` | `CacheOverrideOptions`   | -              | Per-request cache overrides (shallow-merged with constructor-level) |
 
-**Stores:**
+**Constructor options:**
 
-| Property    | Type                                       | Description           |
-| ----------- | ------------------------------------------ | --------------------- |
-| `cache`     | `CacheStore`                               | Response caching      |
-| `dedupe`    | `DedupeStore`                              | Request deduplication |
-| `rateLimit` | `RateLimitStore \| AdaptiveRateLimitStore` | Rate limiting         |
-
-**Options:**
-
-| Property              | Type                         | Default  | Description                             |
-| --------------------- | ---------------------------- | -------- | --------------------------------------- |
-| `defaultCacheTTL`     | `number`                     | `3600`   | Cache TTL in seconds                    |
-| `throwOnRateLimit`    | `boolean`                    | `true`   | Throw when rate limited vs. wait        |
-| `maxWaitTime`         | `number`                     | `60000`  | Max wait time (ms) before throwing      |
-| `responseTransformer` | `(data: unknown) => unknown` | -        | Transform raw response data             |
-| `responseHandler`     | `(data: unknown) => unknown` | -        | Validate/process transformed data       |
-| `errorHandler`        | `(error: unknown) => Error`  | -        | Convert errors to domain-specific types |
-| `rateLimitHeaders`    | `RateLimitHeaderConfig`      | defaults | Configure standard/custom header names  |
+| Property              | Type                                       | Default  | Description                             |
+| --------------------- | ------------------------------------------ | -------- | --------------------------------------- |
+| `cache`               | `CacheStore`                               | -        | Response caching                        |
+| `dedupe`              | `DedupeStore`                              | -        | Request deduplication                   |
+| `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore` | -        | Rate limiting                           |
+| `cacheTTL`            | `number`                                   | `3600`   | Cache TTL when response has no headers  |
+| `throwOnRateLimit`    | `boolean`                                  | `true`   | Throw when rate limited vs. wait        |
+| `maxWaitTime`         | `number`                                   | `60000`  | Max wait time (ms) before throwing      |
+| `responseTransformer` | `(data: unknown) => unknown`               | -        | Transform raw response data             |
+| `responseHandler`     | `(data: unknown) => unknown`               | -        | Validate/process transformed data       |
+| `errorHandler`        | `(error: unknown) => Error`                | -        | Convert errors to domain-specific types |
+| `cacheOverrides`      | `CacheOverrideOptions`                     | -        | Override cache header behaviors         |
+| `retry`               | `RetryOptions \| false`                    | -        | Retry config; `false` disables globally |
+| `rateLimitHeaders`    | `RateLimitHeaderConfig`                    | defaults | Configure standard/custom header names  |
 
 ### Request Flow
 
@@ -140,16 +139,13 @@ controller.abort();
 Map non-standard header names per API:
 
 ```typescript
-const client = new HttpClient(
-  {},
-  {
-    rateLimitHeaders: {
-      retryAfter: ['RetryAfterSeconds'],
-      remaining: ['Remaining-Requests'],
-      reset: ['Window-Reset-Seconds'],
-    },
+const client = new HttpClient({
+  rateLimitHeaders: {
+    retryAfter: ['RetryAfterSeconds'],
+    remaining: ['Remaining-Requests'],
+    reset: ['Window-Reset-Seconds'],
   },
-);
+});
 ```
 
 ### Exports

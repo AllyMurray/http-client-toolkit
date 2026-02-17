@@ -8,15 +8,15 @@ HTTP Client Toolkit — a TypeScript monorepo providing pluggable HTTP caching, 
 
 **pnpm** workspaces + **Turborepo** for build orchestration. All packages under `packages/`.
 
-| Package | Scope | Description |
-|---|---|---|
-| `packages/core` | `@http-client-toolkit/core` | Core HTTP client, interfaces, and adaptive rate limiting |
-| `packages/store-memory` | `@http-client-toolkit/store-memory` | In-memory store (Map-based, LRU eviction) |
-| `packages/store-sqlite` | `@http-client-toolkit/store-sqlite` | SQLite store via better-sqlite3 + Drizzle ORM |
-| `packages/store-dynamodb` | `@http-client-toolkit/store-dynamodb` | DynamoDB store via AWS SDK v3 |
-| `packages/eslint-config` | `@repo/eslint-config` | Shared ESLint flat config (private) |
-| `packages/tsup-config` | `@repo/tsup-config` | Shared tsup build config (private) |
-| `packages/vitest-config` | `@repo/vitest-config` | Shared Vitest config (private) |
+| Package                   | Scope                                 | Description                                              |
+| ------------------------- | ------------------------------------- | -------------------------------------------------------- |
+| `packages/core`           | `@http-client-toolkit/core`           | Core HTTP client, interfaces, and adaptive rate limiting |
+| `packages/store-memory`   | `@http-client-toolkit/store-memory`   | In-memory store (Map-based, LRU eviction)                |
+| `packages/store-sqlite`   | `@http-client-toolkit/store-sqlite`   | SQLite store via better-sqlite3 + Drizzle ORM            |
+| `packages/store-dynamodb` | `@http-client-toolkit/store-dynamodb` | DynamoDB store via AWS SDK v3                            |
+| `packages/eslint-config`  | `@repo/eslint-config`                 | Shared ESLint flat config (private)                      |
+| `packages/tsup-config`    | `@repo/tsup-config`                   | Shared tsup build config (private)                       |
+| `packages/vitest-config`  | `@repo/vitest-config`                 | Shared Vitest config (private)                           |
 
 ## Commands
 
@@ -36,6 +36,7 @@ Per-package: `pnpm --filter @http-client-toolkit/core test`
 ## Architecture
 
 The core `HttpClient` orchestrates three pluggable concerns:
+
 1. **Cache** — check cache → return hit or proceed
 2. **Dedup** — atomic `registerOrJoin()` → owner fetches, joiners wait
 3. **Rate limit** — basic sliding-window or adaptive priority-aware
@@ -52,6 +53,7 @@ The core `HttpClient` orchestrates three pluggable concerns:
 ### Store Implementation Pattern
 
 Each store backend implements the same interfaces. New backends follow this pattern:
+
 - Implement `CacheStore`, `DedupeStore`, and/or `RateLimitStore` from core
 - Use Zod for config validation
 - Export from a single `src/index.ts` entry point
@@ -77,29 +79,35 @@ Each store backend implements the same interfaces. New backends follow this patt
 ## Important Implementation Details
 
 ### Cache TTL Semantics (all backends)
+
 - `ttlSeconds > 0`: expires after N seconds
 - `ttlSeconds === 0`: never expires (permanent)
 - `ttlSeconds < 0`: already expired (immediate removal)
 
 ### Dedup Ownership
+
 - `registerOrJoin()` returns `{ jobId, isOwner }` — only the owner makes the HTTP call
 - Non-owners `waitFor()` the result; failed jobs resolve as `undefined` (not thrown)
 
 ### Rate Limiting
+
 - Sliding window: tracks request timestamps per resource
 - Server hints (429, 503, Retry-After) trigger origin-level cooldowns
 - Adaptive mode monitors user activity over configurable window (default 15min) with 4 strategies
 
 ### Request Hashing
+
 - Deterministic SHA-256 via `hashRequest(endpoint, params)`
 - Sorts keys, normalizes primitives (`10` and `"10"` hash identically)
 - `undefined` omitted, `null` preserved
 
 ### Memory Management
+
 - In-memory stores have cleanup timers — call `.destroy()` to prevent event-loop leaks
 - Timers use `unref()` so stores don't keep the process alive
 
 ### DynamoDB
+
 - Single table design: `pk`/`sk` partition + sort keys, GSI1 for queries
 - Native TTL on `ttl` attribute; max 400KB per item
 - Batch writes: exponential backoff with jitter, max 8 retries

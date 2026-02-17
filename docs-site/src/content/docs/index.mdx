@@ -43,14 +43,12 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-const client = new HttpClient(
-  {
-    cache: new InMemoryCacheStore(),
-    dedupe: new InMemoryDedupeStore(),
-    rateLimit: new InMemoryRateLimitStore(),
-  },
-  { defaultCacheTTL: 300 },
-);
+const client = new HttpClient({
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+  cacheTTL: 300,
+});
 
 const data = await client.get<{ name: string }>(
   'https://api.example.com/user/1',

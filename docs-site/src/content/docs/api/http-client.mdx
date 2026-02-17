@@ -15,27 +15,22 @@ import { HttpClient } from '@http-client-toolkit/core';
 ## Constructor
 
 ```typescript
-new HttpClient(stores?, options?)
+new HttpClient(options?)
 ```
-
-### Stores
-
-All stores are optional. Pass only the ones you need.
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `cache` | `CacheStore<T>` | Response caching |
-| `dedupe` | `DedupeStore<T>` | Request deduplication |
-| `rateLimit` | `RateLimitStore \| AdaptiveRateLimitStore` | Rate limiting |
 
 ### Options
 
+All fields are optional. Pass only what you need — stores, behavior, and hooks are all part of the same options object.
+
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
+| `cache` | `CacheStore<T>` | — | Response caching |
+| `dedupe` | `DedupeStore<T>` | — | Request deduplication |
+| `rateLimit` | `RateLimitStore \| AdaptiveRateLimitStore` | — | Rate limiting |
 | `fetchFn` | `(url: string, init?: RequestInit) => Promise<Response>` | `globalThis.fetch` | Custom fetch implementation |
 | `requestInterceptor` | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | — | Pre-request hook to modify the outgoing request |
 | `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response` | — | Post-response hook to inspect/modify the raw Response |
-| `defaultCacheTTL` | `number` | `3600` | Cache TTL in seconds |
+| `cacheTTL` | `number` | `3600` | Cache TTL in seconds. Used when response has no cache headers |
 | `throwOnRateLimit` | `boolean` | `true` | Throw when rate limited vs. wait |
 | `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
 | `responseTransformer` | `(data: unknown) => unknown` | — | Transform parsed response data before caching (e.g. snake_case to camelCase) |
@@ -67,6 +62,8 @@ The `url` must be an absolute URL (e.g. `https://api.example.com/items`).
 | `priority` | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores |
 | `headers` | `Record<string, string>` | — | Custom headers sent with the request; also used for Vary-based cache matching |
 | `retry` | `RetryOptions \| false` | — | Per-request retry override. Pass `false` to disable retries for this request |
+| `cacheTTL` | `number` | — | Per-request cache TTL in seconds (overrides constructor `cacheTTL`) |
+| `cacheOverrides` | `CacheOverrideOptions` | — | Per-request cache overrides (shallow-merged with constructor-level) |
 
 ## Request Flow
 
@@ -111,7 +108,7 @@ Cooldowns are enforced when:
 ### Custom Header Names
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   rateLimitHeaders: {
     retryAfter: ['RetryAfterSeconds'],
     remaining: ['Remaining-Requests'],
@@ -152,21 +149,17 @@ const client = new HttpClient({ cache: new InMemoryCacheStore() });
 ### Full Stack with Adaptive Rate Limiting
 
 ```typescript
-const client = new HttpClient(
-  {
-    cache: new SQLiteCacheStore({ database: db }),
-    dedupe: new SQLiteDedupeStore({ database: db }),
-    rateLimit: new SqliteAdaptiveRateLimitStore({
-      database: db,
-      defaultConfig: { limit: 200, windowMs: 3_600_000 },
-    }),
-  },
-  {
-    defaultCacheTTL: 600,
-    throwOnRateLimit: false,
-    maxWaitTime: 30_000,
-  },
-);
+const client = new HttpClient({
+  cache: new SQLiteCacheStore({ database: db }),
+  dedupe: new SQLiteDedupeStore({ database: db }),
+  rateLimit: new SqliteAdaptiveRateLimitStore({
+    database: db,
+    defaultConfig: { limit: 200, windowMs: 3_600_000 },
+  }),
+  cacheTTL: 600,
+  throwOnRateLimit: false,
+  maxWaitTime: 30_000,
+});
 ```
 
 ### With Cancellation
@@ -182,7 +175,7 @@ controller.abort();
 ### With Interceptors
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     const headers = new Headers(init.headers);
@@ -199,7 +192,7 @@ const client = new HttpClient(stores, {
 ### With Custom Fetch
 
 ```typescript
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   fetchFn: async (url, init) => {
     const response = await fetch(url, init);
     // Follow pre-signed URL redirects before caching
@@ -216,7 +209,7 @@ const client = new HttpClient(stores, {
 ```typescript
 import camelcaseKeys from 'camelcase-keys';
 
-const client = new HttpClient(stores, {
+const client = new HttpClient({
   responseTransformer: (data) =>
     camelcaseKeys(data as Record<string, unknown>, { deep: true }),
   responseHandler: (data) => {
