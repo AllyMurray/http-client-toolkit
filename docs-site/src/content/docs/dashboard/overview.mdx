@@ -4,9 +4,14 @@ description: Browser-based UI for monitoring and managing HTTP Client Toolkit st
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import overview from '../../../assets/dashboard/overview.png';
+import cacheView from '../../../assets/dashboard/cache-view.png';
+import rateLimitView from '../../../assets/dashboard/rate-limit-view.png';
+import productApiView from '../../../assets/dashboard/product-api-view.png';
 
+The dashboard package provides a browser-based UI for monitoring your cache, dedup, and rate limit stores in real time. It supports multiple named clients, works with all store backends (Memory, SQLite, DynamoDB), and auto-detects capabilities.
 
-The dashboard package provides a browser-based UI for monitoring your cache, dedup, and rate limit stores in real time. It works with all store backends (Memory, SQLite, DynamoDB) and auto-detects capabilities.
+<img src={overview.src} alt="Dashboard overview showing cache, dedup, and rate limit store summaries for the user-api client" style="border-radius: 8px; margin: 1.5rem 0;" />
 
 ## Installation
 
@@ -30,7 +35,7 @@ The dashboard package provides a browser-based UI for monitoring your cache, ded
 
 ## Embedded Middleware
 
-Mount the dashboard inside an existing HTTP server using `createDashboard()`. Pass in any combination of your store instances:
+Mount the dashboard inside an existing HTTP server using `createDashboard()`. Pass in one or more named clients, each with their own store instances:
 
 ```typescript
 import http from 'http';
@@ -41,14 +46,20 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-const cacheStore = new InMemoryCacheStore();
-const dedupeStore = new InMemoryDedupeStore();
-const rateLimitStore = new InMemoryRateLimitStore();
-
 const dashboard = createDashboard({
-  cacheStore,
-  dedupeStore,
-  rateLimitStore,
+  clients: [
+    {
+      name: 'user-api',
+      cacheStore: new InMemoryCacheStore(),
+      dedupeStore: new InMemoryDedupeStore(),
+      rateLimitStore: new InMemoryRateLimitStore(),
+    },
+    {
+      name: 'product-api',
+      cacheStore: new InMemoryCacheStore(),
+      rateLimitStore: new InMemoryRateLimitStore(),
+    },
+  ],
 });
 
 const server = http.createServer(dashboard);
@@ -67,9 +78,9 @@ Use `createDashboardHandler()` for frameworks and runtimes that use the Web Stan
 import { createDashboardHandler } from '@http-client-toolkit/dashboard';
 
 const handler = createDashboardHandler({
-  cacheStore,
-  dedupeStore,
-  rateLimitStore,
+  clients: [
+    { name: 'user-api', cacheStore, dedupeStore, rateLimitStore },
+  ],
 });
 ```
 
@@ -100,7 +111,7 @@ The handler signature is `(request: Request) => Promise<Response>`, so it plugs 
 When mounting at a sub-path, set the `basePath` option so the handler can strip it during routing:
 ```typescript
 const handler = createDashboardHandler({
-  cacheStore,
+  clients: [{ name: 'my-api', cacheStore }],
   basePath: '/dashboard',
 });
 ```
@@ -114,9 +125,9 @@ For convenience, `startDashboard()` spins up its own HTTP server:
 import { startDashboard } from '@http-client-toolkit/dashboard';
 
 const { server, close } = await startDashboard({
-  cacheStore,
-  dedupeStore,
-  rateLimitStore,
+  clients: [
+    { name: 'user-api', cacheStore, dedupeStore, rateLimitStore },
+  ],
   port: 4000,
   host: 'localhost',
 });
@@ -125,19 +136,54 @@ const { server, close } = await startDashboard({
 close();
 ```
 
+## Multi-Client Support
+
+When multiple clients are configured, the sidebar displays a client selector. Each client has its own independent stores, and the navigation adapts to show only the views available for the selected client.
+
+<img src={productApiView.src} alt="Dashboard showing product-api client with only Cache and Rate Limit views available" style="border-radius: 8px; margin: 1.5rem 0;" />
+
+Client names must be URL-safe (letters, numbers, hyphens, underscores) and unique within a dashboard instance.
+
+## Views
+
+### Cache
+
+View cached responses with stats for total items, memory usage, and expired entries. Supports paginated entry listing, individual deletion, and bulk clearing.
+
+<img src={cacheView.src} alt="Cache view showing stats cards and entry listing with pagination" style="border-radius: 8px; margin: 1.5rem 0;" />
+
+### Rate Limit
+
+Monitor request throttling with per-resource utilization, request counts, and window durations. Reset individual resource counters when supported by the backend.
+
+<img src={rateLimitView.src} alt="Rate limit view showing resource table with utilization badges and reset buttons" style="border-radius: 8px; margin: 1.5rem 0;" />
+
+### Dedup
+
+Track active deduplication jobs and total processed count. View individual job details when using a backend that supports listing.
+
 ## Configuration
+
+### `ClientConfig`
+
+Each client in the `clients` array accepts:
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `name` | `string` | Yes | URL-safe identifier for this client |
+| `cacheStore` | `CacheStore` | No | Cache store instance to monitor |
+| `dedupeStore` | `DedupeStore` | No | Dedup store instance to monitor |
+| `rateLimitStore` | `RateLimitStore` | No | Rate limit store instance to monitor |
+
+At least one store must be provided per client.
 
 ### `DashboardOptions`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `cacheStore` | `CacheStore` | — | Cache store instance to monitor |
-| `dedupeStore` | `DedupeStore` | — | Dedup store instance to monitor |
-| `rateLimitStore` | `RateLimitStore` | — | Rate limit store instance to monitor |
+| `clients` | `ClientConfig[]` | — | One or more named clients (required) |
 | `basePath` | `string` | `'/'` | URL prefix for the dashboard |
 | `pollIntervalMs` | `number` | `5000` | How often the UI polls for updates (ms) |
-
-At least one store must be provided.
 
 ### `StandaloneDashboardOptions`
 
@@ -165,25 +211,25 @@ DynamoDB and unknown store types fall back to a generic adapter with limited cap
 
 ## API Endpoints
 
-The dashboard exposes a REST API that the React SPA consumes. You can also call these endpoints directly.
+The dashboard exposes a REST API that the React SPA consumes. All store endpoints are scoped per client under `/api/clients/:name/`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/health` | Store types and capabilities |
-| `GET` | `/api/stores` | Connected stores summary |
-| `GET` | `/api/cache/stats` | Cache statistics |
-| `GET` | `/api/cache/entries?page=0&limit=50` | List cache entries |
-| `GET` | `/api/cache/entries/:hash` | Get a single cache entry |
-| `DELETE` | `/api/cache/entries/:hash` | Delete a cache entry |
-| `DELETE` | `/api/cache/entries` | Clear all cache entries |
-| `GET` | `/api/dedup/stats` | Dedup statistics |
-| `GET` | `/api/dedup/jobs?page=0&limit=50` | List dedup jobs |
-| `GET` | `/api/dedup/jobs/:hash` | Get a single dedup job |
-| `GET` | `/api/rate-limit/stats` | Rate limit statistics |
-| `GET` | `/api/rate-limit/resources` | List rate-limited resources |
-| `GET` | `/api/rate-limit/resources/:name` | Get resource status |
-| `PUT` | `/api/rate-limit/resources/:name/config` | Update resource config |
-| `POST` | `/api/rate-limit/resources/:name/reset` | Reset a resource counter |
+| `GET` | `/api/health` | Aggregate health with all clients and capabilities |
+| `GET` | `/api/clients` | List all clients and their store types |
+| `GET` | `/api/clients/:name/cache/stats` | Cache statistics |
+| `GET` | `/api/clients/:name/cache/entries?page=0&limit=50` | List cache entries |
+| `GET` | `/api/clients/:name/cache/entries/:hash` | Get a single cache entry |
+| `DELETE` | `/api/clients/:name/cache/entries/:hash` | Delete a cache entry |
+| `DELETE` | `/api/clients/:name/cache/entries` | Clear all cache entries |
+| `GET` | `/api/clients/:name/dedup/stats` | Dedup statistics |
+| `GET` | `/api/clients/:name/dedup/jobs?page=0&limit=50` | List dedup jobs |
+| `GET` | `/api/clients/:name/dedup/jobs/:hash` | Get a single dedup job |
+| `GET` | `/api/clients/:name/rate-limit/stats` | Rate limit statistics |
+| `GET` | `/api/clients/:name/rate-limit/resources` | List rate-limited resources |
+| `GET` | `/api/clients/:name/rate-limit/resources/:name` | Get resource status |
+| `PUT` | `/api/clients/:name/rate-limit/resources/:name/config` | Update resource config |
+| `POST` | `/api/clients/:name/rate-limit/resources/:name/reset` | Reset a resource counter |
 
 ## Future Improvements
 
