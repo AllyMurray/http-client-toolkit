@@ -856,7 +856,9 @@ export class HttpClient implements HttpClientContract {
     url: string,
     fetchHeaders: Headers,
     signal: AbortSignal | undefined,
-    retryConfig: NonNullable<ReturnType<HttpClient['resolveRetryConfig']>> | null,
+    retryConfig: NonNullable<
+      ReturnType<HttpClient['resolveRetryConfig']>
+    > | null,
     staleEntry: CacheEntry<unknown> | undefined,
   ): Promise<
     | { notModified: true; refreshedEntry: CacheEntry<unknown> }
@@ -889,11 +891,7 @@ export class HttpClient implements HttpClientContract {
         if (this.options.responseInterceptor) {
           response = await this.options.responseInterceptor(response, url);
         }
-        this.applyServerRateLimitHints(
-          url,
-          response.headers,
-          response.status,
-        );
+        this.applyServerRateLimitHints(url, response.headers, response.status);
 
         // Handle 304 Not Modified — must be checked BEFORE !response.ok
         if (response.status === 304 && staleEntry) {
