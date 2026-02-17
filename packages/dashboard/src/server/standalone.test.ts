@@ -23,7 +23,7 @@ describe('startDashboard', () => {
   it('should start a server and respond to health check', async () => {
     cacheStore = new InMemoryCacheStore();
     dashboard = await startDashboard({
-      cacheStore,
+      clients: [{ name: 'test-client', cacheStore }],
       port: 0, // Random available port
       host: '127.0.0.1',
     });
@@ -36,12 +36,13 @@ describe('startDashboard', () => {
 
     expect(res.status).toBe(200);
     expect(body.status).toBe('ok');
+    expect(body.clients['test-client']).toBeDefined();
   });
 
   it('should be closable', async () => {
     cacheStore = new InMemoryCacheStore();
     dashboard = await startDashboard({
-      cacheStore,
+      clients: [{ name: 'test-client', cacheStore }],
       port: 0,
       host: '127.0.0.1',
     });
