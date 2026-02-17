@@ -33,7 +33,7 @@ export async function handleRateLimitResource(
   pathname: string,
 ): Promise<void> {
   try {
-    const name = extractParam(pathname, '/api/rate-limit/resources/:name');
+    const name = extractParam(pathname, '/rate-limit/resources/:name');
     if (!name) {
       sendNotFound(res);
       return;
@@ -52,10 +52,7 @@ export async function handleUpdateRateLimitConfig(
   pathname: string,
 ): Promise<void> {
   try {
-    const name = extractParam(
-      pathname,
-      '/api/rate-limit/resources/:name/config',
-    );
+    const name = extractParam(pathname, '/rate-limit/resources/:name/config');
     if (!name) {
       sendNotFound(res);
       return;
@@ -74,10 +71,7 @@ export async function handleResetRateLimitResource(
   pathname: string,
 ): Promise<void> {
   try {
-    const name = extractParam(
-      pathname,
-      '/api/rate-limit/resources/:name/reset',
-    );
+    const name = extractParam(pathname, '/rate-limit/resources/:name/reset');
     if (!name) {
       sendNotFound(res);
       return;

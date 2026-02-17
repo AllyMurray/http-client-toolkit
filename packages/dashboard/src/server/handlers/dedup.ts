@@ -37,7 +37,7 @@ export async function handleDedupeJob(
   pathname: string,
 ): Promise<void> {
   try {
-    const hash = extractParam(pathname, '/api/dedup/jobs/:hash');
+    const hash = extractParam(pathname, '/dedup/jobs/:hash');
     if (!hash) {
       sendNotFound(res);
       return;

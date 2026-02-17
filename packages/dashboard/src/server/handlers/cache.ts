@@ -37,7 +37,7 @@ export async function handleCacheEntry(
   pathname: string,
 ): Promise<void> {
   try {
-    const hash = extractParam(pathname, '/api/cache/entries/:hash');
+    const hash = extractParam(pathname, '/cache/entries/:hash');
     if (!hash) {
       sendNotFound(res);
       return;
@@ -59,7 +59,7 @@ export async function handleDeleteCacheEntry(
   pathname: string,
 ): Promise<void> {
   try {
-    const hash = extractParam(pathname, '/api/cache/entries/:hash');
+    const hash = extractParam(pathname, '/cache/entries/:hash');
     if (!hash) {
       sendNotFound(res);
       return;
