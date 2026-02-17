@@ -252,6 +252,40 @@ export class SQLiteRateLimitStore implements RateLimitStore {
   }
 
   /**
+   * List all tracked resources with their current status
+   */
+  async listResources(): Promise<
+    Array<{
+      resource: string;
+      requestCount: number;
+      limit: number;
+      windowMs: number;
+    }>
+  > {
+    if (this.isDestroyed) {
+      throw new Error('Rate limit store has been destroyed');
+    }
+
+    const resourcesResult = await this.db
+      .select({
+        resource: rateLimitTable.resource,
+        requestCount: count(),
+      })
+      .from(rateLimitTable)
+      .groupBy(rateLimitTable.resource);
+
+    return resourcesResult.map(({ resource, requestCount }) => {
+      const config = this.resourceConfigs.get(resource) || this.defaultConfig;
+      return {
+        resource,
+        requestCount,
+        limit: config.limit,
+        windowMs: config.windowMs,
+      };
+    });
+  }
+
+  /**
    * Clean up all rate limit data
    */
   async clear(): Promise<void> {

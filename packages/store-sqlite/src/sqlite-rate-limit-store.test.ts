@@ -295,6 +295,44 @@ describe('SQLiteRateLimitStore', () => {
     });
   });
 
+  describe('listResources', () => {
+    it('should return an empty array when no resources tracked', async () => {
+      const resources = await store.listResources();
+      expect(resources).toEqual([]);
+    });
+
+    it('should list tracked resources', async () => {
+      await store.record('resource-a');
+      await store.record('resource-a');
+      await store.record('resource-b');
+
+      const resources = await store.listResources();
+      expect(resources).toHaveLength(2);
+
+      const resourceA = resources.find((r) => r.resource === 'resource-a');
+      const resourceB = resources.find((r) => r.resource === 'resource-b');
+
+      expect(resourceA).toBeDefined();
+      expect(resourceA!.requestCount).toBe(2);
+      expect(resourceA!.limit).toBe(defaultConfig.limit);
+      expect(resourceA!.windowMs).toBe(defaultConfig.windowMs);
+
+      expect(resourceB).toBeDefined();
+      expect(resourceB!.requestCount).toBe(1);
+    });
+
+    it('should reflect resource-specific configs', async () => {
+      store.setResourceConfig('custom', { limit: 100, windowMs: 5000 });
+      await store.record('custom');
+
+      const resources = await store.listResources();
+      const custom = resources.find((r) => r.resource === 'custom');
+      expect(custom).toBeDefined();
+      expect(custom!.limit).toBe(100);
+      expect(custom!.windowMs).toBe(5000);
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle zero limit', async () => {
       const zeroLimitStore = new SQLiteRateLimitStore({

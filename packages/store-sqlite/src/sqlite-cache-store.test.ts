@@ -308,6 +308,60 @@ describe('SQLiteCacheStore', () => {
     });
   });
 
+  describe('listEntries', () => {
+    it('should return an empty array when cache is empty', async () => {
+      const entries = await store.listEntries();
+      expect(entries).toEqual([]);
+    });
+
+    it('should list all non-expired entries', async () => {
+      await store.set('key1', 'value1', 60);
+      await store.set('key2', 'value2', 60);
+
+      const entries = await store.listEntries();
+      expect(entries).toHaveLength(2);
+      expect(entries[0]!.hash).toBe('key1');
+      expect(entries[1]!.hash).toBe('key2');
+      expect(entries[0]!.expiresAt).toBeGreaterThan(0);
+      expect(entries[0]!.createdAt).toBeGreaterThan(0);
+    });
+
+    it('should exclude expired entries', async () => {
+      await store.set('expired', 'value', 0.001);
+      await store.set('valid', 'value', 60);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const entries = await store.listEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.hash).toBe('valid');
+    });
+
+    it('should support pagination with offset and limit', async () => {
+      for (let i = 0; i < 5; i++) {
+        await store.set(`key${i}`, `value${i}`, 60);
+      }
+
+      const page1 = await store.listEntries(0, 2);
+      expect(page1).toHaveLength(2);
+
+      const page2 = await store.listEntries(2, 2);
+      expect(page2).toHaveLength(2);
+
+      const page3 = await store.listEntries(4, 2);
+      expect(page3).toHaveLength(1);
+    });
+
+    it('should include permanent entries (ttl=0)', async () => {
+      await store.set('permanent', 'value', 0);
+
+      const entries = await store.listEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.hash).toBe('permanent');
+      expect(entries[0]!.expiresAt).toBe(0);
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle very large values', async () => {
       const largeValue = 'x'.repeat(100000); // 100KB string
