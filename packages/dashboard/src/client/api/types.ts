@@ -1,17 +1,18 @@
-export interface StoreInfo {
-  name: string;
-  type: string;
-  capabilities: Record<string, boolean>;
+export interface ClientStoreInfo {
+  cache: { type: string; capabilities: Record<string, boolean> } | null;
+  dedup: { type: string; capabilities: Record<string, boolean> } | null;
+  rateLimit: { type: string; capabilities: Record<string, boolean> } | null;
 }
 
 export interface HealthResponse {
   status: string;
-  stores: {
-    cache: { type: string; capabilities: Record<string, boolean> } | null;
-    dedup: { type: string; capabilities: Record<string, boolean> } | null;
-    rateLimit: { type: string; capabilities: Record<string, boolean> } | null;
-  };
+  clients: Record<string, ClientStoreInfo>;
   pollIntervalMs: number;
+}
+
+export interface ClientInfo {
+  name: string;
+  stores: ClientStoreInfo;
 }
 
 export interface CacheEntry {

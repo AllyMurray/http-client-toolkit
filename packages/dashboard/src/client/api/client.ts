@@ -6,7 +6,7 @@ import type {
   DedupeJobsResponse,
   RateLimitStatsResponse,
   RateLimitResourcesResponse,
-  StoreInfo,
+  ClientInfo,
 } from './types.js';
 
 async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
@@ -18,57 +18,81 @@ async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function clientPath(clientName: string, path: string): string {
+  return `/api/clients/${encodeURIComponent(clientName)}${path}`;
+}
+
 export const api = {
   health: () => fetchApi<HealthResponse>('/api/health'),
-  stores: () => fetchApi<{ stores: Array<StoreInfo> }>('/api/stores'),
+  clients: () => fetchApi<{ clients: Array<ClientInfo> }>('/api/clients'),
 
   // Cache
-  cacheStats: () => fetchApi<CacheStatsResponse>('/api/cache/stats'),
-  cacheEntries: (page = 0, limit = 50) =>
+  cacheStats: (clientName: string) =>
+    fetchApi<CacheStatsResponse>(clientPath(clientName, '/cache/stats')),
+  cacheEntries: (clientName: string, page = 0, limit = 50) =>
     fetchApi<CacheEntriesResponse>(
-      `/api/cache/entries?page=${page}&limit=${limit}`,
+      clientPath(clientName, `/cache/entries?page=${page}&limit=${limit}`),
     ),
-  cacheEntry: (hash: string) =>
+  cacheEntry: (clientName: string, hash: string) =>
     fetchApi<{ hash: string; value: unknown }>(
-      `/api/cache/entries/${encodeURIComponent(hash)}`,
+      clientPath(clientName, `/cache/entries/${encodeURIComponent(hash)}`),
     ),
-  deleteCacheEntry: (hash: string) =>
+  deleteCacheEntry: (clientName: string, hash: string) =>
     fetchApi<{ deleted: boolean }>(
-      `/api/cache/entries/${encodeURIComponent(hash)}`,
+      clientPath(clientName, `/cache/entries/${encodeURIComponent(hash)}`),
       { method: 'DELETE' },
     ),
-  clearCache: () =>
-    fetchApi<{ cleared: boolean }>('/api/cache/entries', { method: 'DELETE' }),
+  clearCache: (clientName: string) =>
+    fetchApi<{ cleared: boolean }>(clientPath(clientName, '/cache/entries'), {
+      method: 'DELETE',
+    }),
 
   // Dedup
-  dedupeStats: () => fetchApi<DedupeStatsResponse>('/api/dedup/stats'),
-  dedupeJobs: (page = 0, limit = 50) =>
-    fetchApi<DedupeJobsResponse>(`/api/dedup/jobs?page=${page}&limit=${limit}`),
+  dedupeStats: (clientName: string) =>
+    fetchApi<DedupeStatsResponse>(clientPath(clientName, '/dedup/stats')),
+  dedupeJobs: (clientName: string, page = 0, limit = 50) =>
+    fetchApi<DedupeJobsResponse>(
+      clientPath(clientName, `/dedup/jobs?page=${page}&limit=${limit}`),
+    ),
 
   // Rate Limit
-  rateLimitStats: () =>
-    fetchApi<RateLimitStatsResponse>('/api/rate-limit/stats'),
-  rateLimitResources: () =>
-    fetchApi<RateLimitResourcesResponse>('/api/rate-limit/resources'),
-  rateLimitResource: (name: string) =>
+  rateLimitStats: (clientName: string) =>
+    fetchApi<RateLimitStatsResponse>(
+      clientPath(clientName, '/rate-limit/stats'),
+    ),
+  rateLimitResources: (clientName: string) =>
+    fetchApi<RateLimitResourcesResponse>(
+      clientPath(clientName, '/rate-limit/resources'),
+    ),
+  rateLimitResource: (clientName: string, name: string) =>
     fetchApi<{ resource: string; remaining: number; limit: number }>(
-      `/api/rate-limit/resources/${encodeURIComponent(name)}`,
+      clientPath(
+        clientName,
+        `/rate-limit/resources/${encodeURIComponent(name)}`,
+      ),
     ),
   updateRateLimitConfig: (
+    clientName: string,
     name: string,
     config: { limit: number; windowMs: number },
   ) =>
     fetchApi<{ updated: boolean }>(
-      `/api/rate-limit/resources/${encodeURIComponent(name)}/config`,
+      clientPath(
+        clientName,
+        `/rate-limit/resources/${encodeURIComponent(name)}/config`,
+      ),
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       },
     ),
-  resetRateLimitResource: (name: string) =>
+  resetRateLimitResource: (clientName: string, name: string) =>
     fetchApi<{ reset: boolean }>(
-      `/api/rate-limit/resources/${encodeURIComponent(name)}/reset`,
+      clientPath(
+        clientName,
+        `/rate-limit/resources/${encodeURIComponent(name)}/reset`,
+      ),
       { method: 'POST' },
     ),
 };
