@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 0.9.0
+
+### Minor Changes
+
+- 97853f2: Add per-request `cacheTTL` and `cacheOverrides` options to `get()` for overriding constructor-level cache configuration on individual requests
+
 ## 0.8.0
 
 ### Minor Changes
