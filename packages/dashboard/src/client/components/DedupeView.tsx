@@ -77,7 +77,10 @@ export function DedupeView({ health }: DedupeViewProps) {
 
   return (
     <div>
-      <h1 className="page-title">Dedup</h1>
+      <div className="page-header">
+        <h1 className="page-title">Dedup</h1>
+        <p className="page-subtitle">Request deduplication status</p>
+      </div>
 
       {stats.data && (
         <div className="stats-grid">
@@ -112,10 +115,10 @@ export function DedupeView({ health }: DedupeViewProps) {
         </div>
       )}
 
-      <div className="section">
-        <h2 className="section-title" style={{ marginBottom: '1rem' }}>
-          Jobs
-        </h2>
+      <div className="section-panel">
+        <div className="section-panel-header">
+          <h2 className="section-title">Jobs</h2>
+        </div>
         {storeInfo.capabilities.canList ? (
           <>
             <DataTable

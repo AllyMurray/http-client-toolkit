@@ -9,14 +9,7 @@ export function StoreInfo({ type, capabilities }: StoreInfoProps) {
     .map(([k]) => k.replace(/^can/, ''));
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: '0.5rem',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}
-    >
+    <div className="store-info">
       <span className="store-badge">{type}</span>
       {enabledCaps.map((cap) => (
         <span key={cap} className="badge badge-info">

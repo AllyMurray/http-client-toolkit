@@ -27,23 +27,25 @@ export function DataTable<T>({
   }
 
   return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          {columns.map((col) => (
-            <th key={col.key}>{col.header}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((item) => (
-          <tr key={keyExtractor(item)}>
+    <div className="data-table-wrapper">
+      <table className="data-table">
+        <thead>
+          <tr>
             {columns.map((col) => (
-              <td key={col.key}>{col.render(item)}</td>
+              <th key={col.key}>{col.header}</th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.map((item) => (
+            <tr key={keyExtractor(item)}>
+              {columns.map((col) => (
+                <td key={col.key}>{col.render(item)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

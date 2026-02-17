@@ -23,7 +23,9 @@ export function App() {
   if (loading) {
     return (
       <div className="loading" style={{ height: '100vh' }}>
-        Loading dashboard...
+        <span className="loading-dot" />
+        <span className="loading-dot" />
+        <span className="loading-dot" />
       </div>
     );
   }

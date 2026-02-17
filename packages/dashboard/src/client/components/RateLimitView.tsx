@@ -100,7 +100,10 @@ export function RateLimitView({ health }: RateLimitViewProps) {
 
   return (
     <div>
-      <h1 className="page-title">Rate Limit</h1>
+      <div className="page-header">
+        <h1 className="page-title">Rate Limit</h1>
+        <p className="page-subtitle">Request throttling and resource limits</p>
+      </div>
 
       {stats.data && (
         <div className="stats-grid">
@@ -134,10 +137,10 @@ export function RateLimitView({ health }: RateLimitViewProps) {
         </div>
       )}
 
-      <div className="section">
-        <h2 className="section-title" style={{ marginBottom: '1rem' }}>
-          Resources
-        </h2>
+      <div className="section-panel">
+        <div className="section-panel-header">
+          <h2 className="section-title">Resources</h2>
+        </div>
         {storeInfo.capabilities.canList ? (
           <DataTable
             columns={columns}

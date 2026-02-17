@@ -104,7 +104,10 @@ export function CacheView({ health }: CacheViewProps) {
 
   return (
     <div>
-      <h1 className="page-title">Cache</h1>
+      <div className="page-header">
+        <h1 className="page-title">Cache</h1>
+        <p className="page-subtitle">Cached responses and storage metrics</p>
+      </div>
 
       {stats.data && (
         <div className="stats-grid">
@@ -129,8 +132,8 @@ export function CacheView({ health }: CacheViewProps) {
         </div>
       )}
 
-      <div className="section">
-        <div className="section-header">
+      <div className="section-panel">
+        <div className="section-panel-header">
           <h2 className="section-title">Entries</h2>
           {storeInfo.capabilities.canClear && (
             <button
