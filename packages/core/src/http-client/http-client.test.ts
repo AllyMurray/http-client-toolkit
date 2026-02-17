@@ -31,15 +31,12 @@ describe('HttpClient', () => {
     const mockResponse = { snake_case_key: 'value' };
     nock(baseUrl).get('/transform').reply(200, mockResponse);
 
-    const client = new HttpClient(
-      {},
-      {
-        responseTransformer: (data: unknown) => {
-          const obj = data as Record<string, unknown>;
-          return { camelCaseKey: obj['snake_case_key'] };
-        },
+    const client = new HttpClient({
+      responseTransformer: (data: unknown) => {
+        const obj = data as Record<string, unknown>;
+        return { camelCaseKey: obj['snake_case_key'] };
       },
-    );
+    });
 
     const result = await client.get<{ camelCaseKey: string }>(
       `${baseUrl}/transform`,
@@ -51,18 +48,15 @@ describe('HttpClient', () => {
     const mockResponse = { error_code: 404, message: 'Not found' };
     nock(baseUrl).get('/handled').reply(200, mockResponse);
 
-    const client = new HttpClient(
-      {},
-      {
-        responseHandler: (data: unknown) => {
-          const obj = data as Record<string, unknown>;
-          if (obj['error_code'] === 404) {
-            throw new HttpClientError('Resource not found', 404);
-          }
-          return data;
-        },
+    const client = new HttpClient({
+      responseHandler: (data: unknown) => {
+        const obj = data as Record<string, unknown>;
+        if (obj['error_code'] === 404) {
+          throw new HttpClientError('Resource not found', 404);
+        }
+        return data;
       },
-    );
+    });
 
     await expect(client.get(`${baseUrl}/handled`)).rejects.toThrow(
       HttpClientError,
@@ -79,12 +73,9 @@ describe('HttpClient', () => {
       }
     }
 
-    const client = new HttpClient(
-      {},
-      {
-        errorHandler: () => new CustomError('Custom error occurred'),
-      },
-    );
+    const client = new HttpClient({
+      errorHandler: () => new CustomError('Custom error occurred'),
+    });
 
     await expect(client.get(`${baseUrl}/error`)).rejects.toThrow(CustomError);
   });
@@ -103,25 +94,22 @@ describe('HttpClient', () => {
 
     let invocations = 0;
     let capturedUrl: string | undefined;
-    const client = new HttpClient(
-      {},
-      {
-        errorHandler: (context) => {
-          invocations += 1;
-          capturedUrl = context.url;
-          // context is now typed — no casting needed
-          const bodyMessage =
-            typeof context.response.data === 'object' &&
-            context.response.data !== null
-              ? (context.response.data as { message?: string }).message
-              : undefined;
+    const client = new HttpClient({
+      errorHandler: (context) => {
+        invocations += 1;
+        capturedUrl = context.url;
+        // context is now typed — no casting needed
+        const bodyMessage =
+          typeof context.response.data === 'object' &&
+          context.response.data !== null
+            ? (context.response.data as { message?: string }).message
+            : undefined;
 
-          return new CustomError(
-            `status=${context.response.status}; message=${bodyMessage ?? 'n/a'}`,
-          );
-        },
+        return new CustomError(
+          `status=${context.response.status}; message=${bodyMessage ?? 'n/a'}`,
+        );
       },
-    );
+    });
 
     await expect(client.get(`${baseUrl}/rate-limited`)).rejects.toThrow(
       /status=429; message=Too many requests/,
@@ -132,15 +120,12 @@ describe('HttpClient', () => {
 
   test('should not call errorHandler for network errors', async () => {
     const errorHandler = vi.fn(() => new Error('should not be called'));
-    const client = new HttpClient(
-      {},
-      {
-        fetchFn: async () => {
-          throw new TypeError('fetch failed');
-        },
-        errorHandler,
+    const client = new HttpClient({
+      fetchFn: async () => {
+        throw new TypeError('fetch failed');
       },
-    );
+      errorHandler,
+    });
 
     await expect(client.get('http://example.com/fail')).rejects.toThrow(
       HttpClientError,
@@ -260,13 +245,11 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: rateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 5_000,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: rateLimitStoreStub,
+      throwOnRateLimit: false,
+      maxWaitTime: 5_000,
+    });
 
     const controller = new AbortController();
     controller.abort();
@@ -324,15 +307,12 @@ describe('HttpClient', () => {
       },
     );
 
-    const client = new HttpClient(
-      {},
-      {
-        rateLimitHeaders: {
-          remaining: ['Remaining-Requests'],
-          reset: ['Window-Reset-Seconds'],
-        },
+    const client = new HttpClient({
+      rateLimitHeaders: {
+        remaining: ['Remaining-Requests'],
+        reset: ['Window-Reset-Seconds'],
       },
-    );
+    });
 
     const result = await client.get<{ ok: boolean }>(
       `${baseUrl}/custom-headers`,
@@ -378,12 +358,10 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: adaptiveRateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: adaptiveRateLimitStoreStub,
+      throwOnRateLimit: false,
+    });
 
     const result = await client.get<{ ok: boolean }>(
       `${baseUrl}/priority-aware`,
@@ -413,13 +391,11 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: rateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 30,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: rateLimitStoreStub,
+      throwOnRateLimit: false,
+      maxWaitTime: 30,
+    });
 
     await expect(client.get(`${baseUrl}/never-allowed`)).rejects.toThrow(
       /maxWaitTime/,
@@ -441,12 +417,10 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: rateLimitStoreStub },
-      {
-        throwOnRateLimit: true,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: rateLimitStoreStub,
+      throwOnRateLimit: true,
+    });
 
     await expect(client.get(`${baseUrl}/blocked-immediately`)).rejects.toThrow(
       /Rate limit exceeded for resource/,
@@ -483,12 +457,10 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: basicRateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: basicRateLimitStoreStub,
+      throwOnRateLimit: false,
+    });
 
     const result = await client.get<{ ok: boolean }>(
       `${baseUrl}/basic-rate-limit`,
@@ -818,14 +790,11 @@ describe('HttpClient', () => {
   });
 
   test('should exercise private header parsing helpers', () => {
-    const client = new HttpClient(
-      {},
-      {
-        rateLimitHeaders: {
-          retryAfter: ['  retry-after  ', ''],
-        },
+    const client = new HttpClient({
+      rateLimitHeaders: {
+        retryAfter: ['  retry-after  ', ''],
       },
-    );
+    });
 
     const privateClient = client as unknown as {
       normalizeHeaderNames: (
@@ -928,13 +897,11 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: allowRateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 50,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: allowRateLimitStoreStub,
+      throwOnRateLimit: false,
+      maxWaitTime: 50,
+    });
 
     const privateClient = client as unknown as {
       serverCooldowns: Map<string, number>;
@@ -980,13 +947,11 @@ describe('HttpClient', () => {
 
     nock(baseUrl).get('/signal-wait').reply(200, { ok: true });
 
-    const client = new HttpClient(
-      { rateLimit: rateLimitStoreStub },
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 100,
-      },
-    );
+    const client = new HttpClient({
+      rateLimit: rateLimitStoreStub,
+      throwOnRateLimit: false,
+      maxWaitTime: 100,
+    });
 
     const controller = new AbortController();
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/signal-wait`, {
@@ -1016,10 +981,10 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient(
-      { rateLimit: acquireStore },
-      { throwOnRateLimit: false },
-    );
+    const client = new HttpClient({
+      rateLimit: acquireStore,
+      throwOnRateLimit: false,
+    });
 
     const result = await client.get<{ ok: boolean }>(
       `${baseUrl}/atomic-acquire`,
@@ -1042,12 +1007,10 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const strictClient = new HttpClient(
-      { rateLimit: allowRateLimitStoreStub },
-      {
-        throwOnRateLimit: true,
-      },
-    );
+    const strictClient = new HttpClient({
+      rateLimit: allowRateLimitStoreStub,
+      throwOnRateLimit: true,
+    });
 
     const strictPrivate = strictClient as unknown as {
       enforceStoreRateLimit: (
@@ -1060,13 +1023,10 @@ describe('HttpClient', () => {
       strictPrivate.enforceStoreRateLimit('items', 'user'),
     ).resolves.toBe(false);
 
-    const waitingClient = new HttpClient(
-      {},
-      {
-        throwOnRateLimit: false,
-        maxWaitTime: 0,
-      },
-    );
+    const waitingClient = new HttpClient({
+      throwOnRateLimit: false,
+      maxWaitTime: 0,
+    });
 
     const waitingPrivate = waitingClient as unknown as {
       serverCooldowns: Map<string, number>;
@@ -1151,12 +1111,10 @@ describe('HttpClient', () => {
 
     test('caches despite no-store when ignoreNoStore is true', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { ignoreNoStore: true },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { ignoreNoStore: true },
+      });
 
       nock(baseUrl)
         .get('/ignore-no-store')
@@ -1326,15 +1284,13 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          responseTransformer: (data: unknown) => {
-            const obj = data as Record<string, unknown>;
-            return { transformed: obj['v'] };
-          },
+      const client = new HttpClient({
+        cache,
+        responseTransformer: (data: unknown) => {
+          const obj = data as Record<string, unknown>;
+          return { transformed: obj['v'] };
         },
-      );
+      });
 
       nock(baseUrl).get('/swr-lm').reply(
         200,
@@ -1367,15 +1323,13 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          responseHandler: (data: unknown) => {
-            const obj = data as Record<string, unknown>;
-            return { handled: obj['v'] };
-          },
+      const client = new HttpClient({
+        cache,
+        responseHandler: (data: unknown) => {
+          const obj = data as Record<string, unknown>;
+          return { handled: obj['v'] };
         },
-      );
+      });
 
       nock(baseUrl).get('/swr-handler').reply(
         200,
@@ -1518,12 +1472,10 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { ignoreNoCache: true },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { ignoreNoCache: true },
+      });
 
       nock(baseUrl)
         .get('/ignore-no-cache')
@@ -1538,12 +1490,10 @@ describe('HttpClient', () => {
 
     test('clamps TTL with minimumTTL', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { minimumTTL: 300 },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { minimumTTL: 300 },
+      });
 
       nock(baseUrl)
         .get('/min-ttl')
@@ -1558,12 +1508,10 @@ describe('HttpClient', () => {
 
     test('clamps TTL with maximumTTL', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { maximumTTL: 60 },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { maximumTTL: 60 },
+      });
 
       nock(baseUrl)
         .get('/max-ttl')
@@ -1674,15 +1622,13 @@ describe('HttpClient', () => {
 
     test('applies responseTransformer to cached responses', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          responseTransformer: (data: unknown) => {
-            const obj = data as Record<string, unknown>;
-            return { transformed: obj['raw'] };
-          },
+      const client = new HttpClient({
+        cache,
+        responseTransformer: (data: unknown) => {
+          const obj = data as Record<string, unknown>;
+          return { transformed: obj['raw'] };
         },
-      );
+      });
 
       nock(baseUrl)
         .get('/transform-cache')
@@ -1698,12 +1644,10 @@ describe('HttpClient', () => {
 
     test('clampTTL applies both min and max', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
+      });
 
       // TTL of 50 should be clamped to 100 (minimum)
       nock(baseUrl)
@@ -1724,9 +1668,9 @@ describe('HttpClient', () => {
       expect(cache._store.get(hash2)?.ttl).toBe(200);
     });
 
-    test('uses defaultCacheTTL when no cache headers present', async () => {
+    test('uses cacheTTL when no cache headers present', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache }, { defaultCacheTTL: 900 });
+      const client = new HttpClient({ cache, cacheTTL: 900 });
 
       nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
 
@@ -2007,7 +1951,7 @@ describe('HttpClient', () => {
       });
 
       const customFetch = vi.fn().mockResolvedValue(mockResponse);
-      const client = new HttpClient({}, { fetchFn: customFetch });
+      const client = new HttpClient({ fetchFn: customFetch });
 
       const result = await client.get<{ custom: boolean }>(
         `${baseUrl}/custom-fetch`,
@@ -2048,7 +1992,7 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient({}, { fetchFn: customFetch });
+      const client = new HttpClient({ fetchFn: customFetch });
       await client.get(`${baseUrl}/check-args`, {
         headers: { 'x-test': 'value' },
       });
@@ -2062,7 +2006,7 @@ describe('HttpClient', () => {
         .fn()
         .mockRejectedValue(new Error('Custom fetch failed'));
 
-      const client = new HttpClient({}, { fetchFn: customFetch });
+      const client = new HttpClient({ fetchFn: customFetch });
 
       await expect(client.get(`${baseUrl}/fetch-error`)).rejects.toThrow(
         'Custom fetch failed',
@@ -2077,16 +2021,13 @@ describe('HttpClient', () => {
         .matchHeader('Authorization', 'Bearer token123')
         .reply(200, { authed: true });
 
-      const client = new HttpClient(
-        {},
-        {
-          requestInterceptor: (_url, init) => {
-            const headers = new Headers(init.headers);
-            headers.set('Authorization', 'Bearer token123');
-            return { ...init, headers };
-          },
+      const client = new HttpClient({
+        requestInterceptor: (_url, init) => {
+          const headers = new Headers(init.headers);
+          headers.set('Authorization', 'Bearer token123');
+          return { ...init, headers };
         },
-      );
+      });
 
       const result = await client.get<{ authed: boolean }>(
         `${baseUrl}/intercepted`,
@@ -2109,16 +2050,13 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient(
-        {},
-        {
-          fetchFn: customFetch,
-          requestInterceptor: (_url, init) => ({
-            ...init,
-            cache: 'no-store' as RequestCache,
-          }),
-        },
-      );
+      const client = new HttpClient({
+        fetchFn: customFetch,
+        requestInterceptor: (_url, init) => ({
+          ...init,
+          cache: 'no-store' as RequestCache,
+        }),
+      });
 
       await client.get(`${baseUrl}/modified-init`);
       expect(capturedInit?.cache).toBe('no-store');
@@ -2130,17 +2068,14 @@ describe('HttpClient', () => {
         .matchHeader('X-Async', 'resolved')
         .reply(200, { ok: true });
 
-      const client = new HttpClient(
-        {},
-        {
-          requestInterceptor: async (_url, init) => {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            const headers = new Headers(init.headers);
-            headers.set('X-Async', 'resolved');
-            return { ...init, headers };
-          },
+      const client = new HttpClient({
+        requestInterceptor: async (_url, init) => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const headers = new Headers(init.headers);
+          headers.set('X-Async', 'resolved');
+          return { ...init, headers };
         },
-      );
+      });
 
       const result = await client.get<{ ok: boolean }>(
         `${baseUrl}/async-intercepted`,
@@ -2159,14 +2094,11 @@ describe('HttpClient', () => {
     });
 
     test('interceptor errors propagate correctly', async () => {
-      const client = new HttpClient(
-        {},
-        {
-          requestInterceptor: () => {
-            throw new Error('Interceptor failed');
-          },
+      const client = new HttpClient({
+        requestInterceptor: () => {
+          throw new Error('Interceptor failed');
         },
-      );
+      });
 
       await expect(client.get(`${baseUrl}/interceptor-error`)).rejects.toThrow(
         'Interceptor failed',
@@ -2181,16 +2113,13 @@ describe('HttpClient', () => {
 
       nock(baseUrl).get('/response-intercepted').reply(200, { v: 1 });
 
-      const client = new HttpClient(
-        {},
-        {
-          responseInterceptor: (response, url) => {
-            capturedUrl = url;
-            capturedStatus = response.status;
-            return response;
-          },
+      const client = new HttpClient({
+        responseInterceptor: (response, url) => {
+          capturedUrl = url;
+          capturedStatus = response.status;
+          return response;
         },
-      );
+      });
 
       await client.get(`${baseUrl}/response-intercepted`);
       expect(capturedUrl).toBe(`${baseUrl}/response-intercepted`);
@@ -2200,17 +2129,14 @@ describe('HttpClient', () => {
     test('interceptor can replace the Response', async () => {
       nock(baseUrl).get('/replace-response').reply(200, { original: true });
 
-      const client = new HttpClient(
-        {},
-        {
-          responseInterceptor: () => {
-            return new Response(JSON.stringify({ replaced: true }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            });
-          },
+      const client = new HttpClient({
+        responseInterceptor: () => {
+          return new Response(JSON.stringify({ replaced: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
         },
-      );
+      });
 
       const result = await client.get<{ replaced: boolean }>(
         `${baseUrl}/replace-response`,
@@ -2221,15 +2147,12 @@ describe('HttpClient', () => {
     test('async interceptor is awaited', async () => {
       nock(baseUrl).get('/async-response').reply(200, { v: 1 });
 
-      const client = new HttpClient(
-        {},
-        {
-          responseInterceptor: async (response) => {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            return response;
-          },
+      const client = new HttpClient({
+        responseInterceptor: async (response) => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return response;
         },
-      );
+      });
 
       const result = await client.get<{ v: number }>(
         `${baseUrl}/async-response`,
@@ -2250,14 +2173,11 @@ describe('HttpClient', () => {
     test('interceptor errors propagate correctly', async () => {
       nock(baseUrl).get('/response-interceptor-error').reply(200, { ok: true });
 
-      const client = new HttpClient(
-        {},
-        {
-          responseInterceptor: () => {
-            throw new Error('Response interceptor failed');
-          },
+      const client = new HttpClient({
+        responseInterceptor: () => {
+          throw new Error('Response interceptor failed');
         },
-      );
+      });
 
       await expect(
         client.get(`${baseUrl}/response-interceptor-error`),
@@ -2269,19 +2189,16 @@ describe('HttpClient', () => {
 
       nock(baseUrl).get('/order-check').reply(200, { v: 1 });
 
-      const client = new HttpClient(
-        {},
-        {
-          responseInterceptor: (response) => {
-            callOrder.push('responseInterceptor');
-            return response;
-          },
-          responseTransformer: (data) => {
-            callOrder.push('responseTransformer');
-            return data;
-          },
+      const client = new HttpClient({
+        responseInterceptor: (response) => {
+          callOrder.push('responseInterceptor');
+          return response;
         },
-      );
+        responseTransformer: (data) => {
+          callOrder.push('responseTransformer');
+          return data;
+        },
+      });
 
       await client.get(`${baseUrl}/order-check`);
       expect(callOrder).toEqual(['responseInterceptor', 'responseTransformer']);
@@ -2297,20 +2214,17 @@ describe('HttpClient', () => {
 
       let responseIntercepted = false;
 
-      const client = new HttpClient(
-        {},
-        {
-          requestInterceptor: (_url, init) => {
-            const headers = new Headers(init.headers);
-            headers.set('X-Request', 'added');
-            return { ...init, headers };
-          },
-          responseInterceptor: (response) => {
-            responseIntercepted = true;
-            return response;
-          },
+      const client = new HttpClient({
+        requestInterceptor: (_url, init) => {
+          const headers = new Headers(init.headers);
+          headers.set('X-Request', 'added');
+          return { ...init, headers };
         },
-      );
+        responseInterceptor: (response) => {
+          responseIntercepted = true;
+          return response;
+        },
+      });
 
       const result = await client.get<{ v: number }>(
         `${baseUrl}/both-interceptors`,
@@ -2334,20 +2248,17 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient(
-        {},
-        {
-          fetchFn: customFetch,
-          requestInterceptor: (_url, init) => {
-            callOrder.push('requestInterceptor');
-            return init;
-          },
-          responseInterceptor: (response) => {
-            callOrder.push('responseInterceptor');
-            return response;
-          },
+      const client = new HttpClient({
+        fetchFn: customFetch,
+        requestInterceptor: (_url, init) => {
+          callOrder.push('requestInterceptor');
+          return init;
         },
-      );
+        responseInterceptor: (response) => {
+          callOrder.push('responseInterceptor');
+          return response;
+        },
+      });
 
       await client.get(`${baseUrl}/composed`);
       expect(callOrder).toEqual([
@@ -2392,10 +2303,12 @@ describe('HttpClient', () => {
       const requestInterceptor = vi.fn();
       const responseInterceptor = vi.fn();
 
-      const client = new HttpClient(
-        { cache: cacheStoreStub },
-        { fetchFn, requestInterceptor, responseInterceptor },
-      );
+      const client = new HttpClient({
+        cache: cacheStoreStub,
+        fetchFn,
+        requestInterceptor,
+        responseInterceptor,
+      });
 
       const result = await client.get<{ cached: boolean }>(
         `${baseUrl}/cached-skip`,
@@ -2431,19 +2344,17 @@ describe('HttpClient', () => {
       }
 
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          requestInterceptor: (_url, init) => {
-            callOrder.push('requestInterceptor');
-            return init;
-          },
-          responseInterceptor: (response) => {
-            callOrder.push('responseInterceptor');
-            return response;
-          },
+      const client = new HttpClient({
+        cache,
+        requestInterceptor: (_url, init) => {
+          callOrder.push('requestInterceptor');
+          return init;
         },
-      );
+        responseInterceptor: (response) => {
+          callOrder.push('responseInterceptor');
+          return response;
+        },
+      });
 
       nock(baseUrl).get('/swr-interceptors').reply(
         200,
@@ -2520,7 +2431,7 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient({ cache }, { fetchFn: customFetch });
+      const client = new HttpClient({ cache, fetchFn: customFetch });
 
       nock(baseUrl).get('/swr-fetchfn').reply(
         200,
@@ -2551,10 +2462,9 @@ describe('HttpClient', () => {
           .get('/retry-500')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          { retry: { jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-500`,
         );
@@ -2568,10 +2478,9 @@ describe('HttpClient', () => {
           .get('/retry-502')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          { retry: { jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-502`,
         );
@@ -2589,10 +2498,9 @@ describe('HttpClient', () => {
           .get('/retry-503')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          { retry: { jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-503`,
         );
@@ -2606,10 +2514,9 @@ describe('HttpClient', () => {
           .get('/retry-504')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          { retry: { jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-504`,
         );
@@ -2619,28 +2526,25 @@ describe('HttpClient', () => {
       test('retries on network TypeError and succeeds', async () => {
         let callCount = 0;
         const retryCalls: Array<{ url: string; attempt: number }> = [];
-        const client = new HttpClient(
-          {},
-          {
-            fetchFn: async () => {
-              callCount += 1;
-              if (callCount === 1) {
-                throw new TypeError('fetch failed');
-              }
-              return new Response(JSON.stringify({ ok: true }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-              });
-            },
-            retry: {
-              jitter: 'none',
-              baseDelay: 1,
-              onRetry: (ctx, attempt) => {
-                retryCalls.push({ url: ctx.url, attempt });
-              },
+        const client = new HttpClient({
+          fetchFn: async () => {
+            callCount += 1;
+            if (callCount === 1) {
+              throw new TypeError('fetch failed');
+            }
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          },
+          retry: {
+            jitter: 'none',
+            baseDelay: 1,
+            onRetry: (ctx, attempt) => {
+              retryCalls.push({ url: ctx.url, attempt });
             },
           },
-        );
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-network`,
@@ -2660,18 +2564,15 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const delays: Array<number> = [];
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              jitter: 'none',
-              baseDelay: 1,
-              onRetry: (_ctx, _attempt, delay) => {
-                delays.push(delay);
-              },
+        const client = new HttpClient({
+          retry: {
+            jitter: 'none',
+            baseDelay: 1,
+            onRetry: (_ctx, _attempt, delay) => {
+              delays.push(delay);
             },
           },
-        );
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/retry-429`,
@@ -2688,10 +2589,7 @@ describe('HttpClient', () => {
           nock(baseUrl).get('/no-retry').reply(status, { message: 'Error' });
 
           const onRetry = vi.fn();
-          const client = new HttpClient(
-            {},
-            { retry: { onRetry, baseDelay: 1 } },
-          );
+          const client = new HttpClient({ retry: { onRetry, baseDelay: 1 } });
 
           await expect(client.get(`${baseUrl}/no-retry`)).rejects.toThrow(
             HttpClientError,
@@ -2704,12 +2602,9 @@ describe('HttpClient', () => {
         const controller = new AbortController();
         controller.abort();
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: { baseDelay: 1 },
-          },
-        );
+        const client = new HttpClient({
+          retry: { baseDelay: 1 },
+        });
 
         await expect(
           client.get(`${baseUrl}/abort-retry`, {
@@ -2726,10 +2621,9 @@ describe('HttpClient', () => {
           .times(3)
           .reply(500, { message: 'fail' });
 
-        const client = new HttpClient(
-          {},
-          { retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
+        });
 
         await expect(client.get(`${baseUrl}/max-retries`)).rejects.toThrow(
           HttpClientError,
@@ -2740,10 +2634,7 @@ describe('HttpClient', () => {
         nock(baseUrl).get('/no-retries').reply(500, { message: 'fail' });
 
         const onRetry = vi.fn();
-        const client = new HttpClient(
-          {},
-          { retry: { maxRetries: 0, onRetry } },
-        );
+        const client = new HttpClient({ retry: { maxRetries: 0, onRetry } });
 
         await expect(client.get(`${baseUrl}/no-retries`)).rejects.toThrow(
           HttpClientError,
@@ -2758,10 +2649,9 @@ describe('HttpClient', () => {
           .get('/ctor-defaults')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          { retry: { maxRetries: 3, jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { maxRetries: 3, jitter: 'none', baseDelay: 1 },
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/ctor-defaults`,
@@ -2777,17 +2667,14 @@ describe('HttpClient', () => {
         const constructorOnRetry = vi.fn();
         const perRequestOnRetry = vi.fn();
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              maxRetries: 3,
-              onRetry: constructorOnRetry,
-              jitter: 'none',
-              baseDelay: 1,
-            },
+        const client = new HttpClient({
+          retry: {
+            maxRetries: 3,
+            onRetry: constructorOnRetry,
+            jitter: 'none',
+            baseDelay: 1,
           },
-        );
+        });
 
         await expect(
           client.get(`${baseUrl}/per-request-override`, {
@@ -2802,7 +2689,7 @@ describe('HttpClient', () => {
       test('retry: false on constructor disables globally', async () => {
         nock(baseUrl).get('/global-disabled').reply(500, { message: 'fail' });
 
-        const client = new HttpClient({}, { retry: false });
+        const client = new HttpClient({ retry: false });
 
         await expect(client.get(`${baseUrl}/global-disabled`)).rejects.toThrow(
           HttpClientError,
@@ -2814,10 +2701,9 @@ describe('HttpClient', () => {
           .get('/per-request-disabled')
           .reply(500, { message: 'fail' });
 
-        const client = new HttpClient(
-          {},
-          { retry: { maxRetries: 3, baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          retry: { maxRetries: 3, baseDelay: 1 },
+        });
 
         await expect(
           client.get(`${baseUrl}/per-request-disabled`, { retry: false }),
@@ -2832,16 +2718,13 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const delays: Array<number> = [];
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              onRetry: (_ctx, _attempt, delay) => {
-                delays.push(delay);
-              },
+        const client = new HttpClient({
+          retry: {
+            onRetry: (_ctx, _attempt, delay) => {
+              delays.push(delay);
             },
           },
-        );
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/default-config`,
@@ -2863,19 +2746,16 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const delays: Array<number> = [];
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              maxRetries: 4,
-              baseDelay: 100,
-              jitter: 'none',
-              onRetry: (_ctx, _attempt, delay) => {
-                delays.push(delay);
-              },
+        const client = new HttpClient({
+          retry: {
+            maxRetries: 4,
+            baseDelay: 100,
+            jitter: 'none',
+            onRetry: (_ctx, _attempt, delay) => {
+              delays.push(delay);
             },
           },
-        );
+        });
 
         await client.get(`${baseUrl}/backoff`);
         // Exponential: 100, 200, 400, 800
@@ -2891,20 +2771,17 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const delays: Array<number> = [];
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              maxRetries: 4,
-              baseDelay: 100,
-              maxDelay: 250,
-              jitter: 'none',
-              onRetry: (_ctx, _attempt, delay) => {
-                delays.push(delay);
-              },
+        const client = new HttpClient({
+          retry: {
+            maxRetries: 4,
+            baseDelay: 100,
+            maxDelay: 250,
+            jitter: 'none',
+            onRetry: (_ctx, _attempt, delay) => {
+              delays.push(delay);
             },
           },
-        );
+        });
 
         await client.get(`${baseUrl}/max-delay`);
         // 100, 200, 250 (capped), 250 (capped)
@@ -2919,18 +2796,15 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const delays: Array<number> = [];
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              jitter: 'none',
-              baseDelay: 1,
-              onRetry: (_ctx, _attempt, delay) => {
-                delays.push(delay);
-              },
+        const client = new HttpClient({
+          retry: {
+            jitter: 'none',
+            baseDelay: 1,
+            onRetry: (_ctx, _attempt, delay) => {
+              delays.push(delay);
             },
           },
-        );
+        });
 
         await client.get(`${baseUrl}/retry-after-override`);
         expect(delays).toHaveLength(1);
@@ -2953,25 +2827,22 @@ describe('HttpClient', () => {
           delay: number;
         }> = [];
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              jitter: 'none',
-              baseDelay: 1,
-              onRetry: (context, attempt, delay) => {
-                calls.push({
-                  context: {
-                    statusCode: context.statusCode,
-                    url: context.url,
-                  },
-                  attempt,
-                  delay,
-                });
-              },
+        const client = new HttpClient({
+          retry: {
+            jitter: 'none',
+            baseDelay: 1,
+            onRetry: (context, attempt, delay) => {
+              calls.push({
+                context: {
+                  statusCode: context.statusCode,
+                  url: context.url,
+                },
+                attempt,
+                delay,
+              });
             },
           },
-        );
+        });
 
         await client.get(`${baseUrl}/on-retry`);
         expect(calls).toHaveLength(1);
@@ -2984,15 +2855,12 @@ describe('HttpClient', () => {
       test('retryCondition returning false stops retries', async () => {
         nock(baseUrl).get('/condition-false').reply(500, { message: 'fail' });
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              baseDelay: 1,
-              retryCondition: () => false,
-            },
+        const client = new HttpClient({
+          retry: {
+            baseDelay: 1,
+            retryCondition: () => false,
           },
-        );
+        });
 
         await expect(client.get(`${baseUrl}/condition-false`)).rejects.toThrow(
           HttpClientError,
@@ -3006,16 +2874,13 @@ describe('HttpClient', () => {
           .get('/condition-override')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              baseDelay: 1,
-              jitter: 'none',
-              retryCondition: (ctx) => ctx.statusCode === 404,
-            },
+        const client = new HttpClient({
+          retry: {
+            baseDelay: 1,
+            jitter: 'none',
+            retryCondition: (ctx) => ctx.statusCode === 404,
           },
-        );
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/condition-override`,
@@ -3036,18 +2901,15 @@ describe('HttpClient', () => {
           .matchHeader('Authorization', 'Bearer token-2')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          {
-            requestInterceptor: (_url, init) => {
-              interceptorCalls += 1;
-              const headers = new Headers(init.headers);
-              headers.set('Authorization', `Bearer token-${interceptorCalls}`);
-              return { ...init, headers };
-            },
-            retry: { jitter: 'none', baseDelay: 1 },
+        const client = new HttpClient({
+          requestInterceptor: (_url, init) => {
+            interceptorCalls += 1;
+            const headers = new Headers(init.headers);
+            headers.set('Authorization', `Bearer token-${interceptorCalls}`);
+            return { ...init, headers };
           },
-        );
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
 
         const result = await client.get<{ ok: boolean }>(
           `${baseUrl}/interceptor-retry`,
@@ -3065,16 +2927,13 @@ describe('HttpClient', () => {
           .get('/resp-interceptor-retry')
           .reply(200, { ok: true });
 
-        const client = new HttpClient(
-          {},
-          {
-            responseInterceptor: (response) => {
-              interceptorCalls += 1;
-              return response;
-            },
-            retry: { jitter: 'none', baseDelay: 1 },
+        const client = new HttpClient({
+          responseInterceptor: (response) => {
+            interceptorCalls += 1;
+            return response;
           },
-        );
+          retry: { jitter: 'none', baseDelay: 1 },
+        });
 
         await client.get(`${baseUrl}/resp-interceptor-retry`);
         expect(interceptorCalls).toBe(2);
@@ -3103,10 +2962,10 @@ describe('HttpClient', () => {
         }
 
         const cache = makeCacheStore();
-        const client = new HttpClient(
-          { cache },
-          { retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 } },
-        );
+        const client = new HttpClient({
+          cache,
+          retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
+        });
 
         nock(baseUrl)
           .get('/sie-retry')
@@ -3146,16 +3005,13 @@ describe('HttpClient', () => {
         }
 
         let errorHandlerCalls = 0;
-        const client = new HttpClient(
-          {},
-          {
-            retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
-            errorHandler: (ctx) => {
-              errorHandlerCalls += 1;
-              return new CustomError(ctx.message, ctx.response.status);
-            },
+        const client = new HttpClient({
+          retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
+          errorHandler: (ctx) => {
+            errorHandlerCalls += 1;
+            return new CustomError(ctx.message, ctx.response.status);
           },
-        );
+        });
 
         await expect(
           client.get(`${baseUrl}/error-handler-retry`),
@@ -3168,20 +3024,17 @@ describe('HttpClient', () => {
 
         const controller = new AbortController();
 
-        const client = new HttpClient(
-          {},
-          {
-            retry: {
-              maxRetries: 3,
-              baseDelay: 10_000,
-              jitter: 'none',
-              onRetry: () => {
-                // Abort during the retry delay
-                controller.abort();
-              },
+        const client = new HttpClient({
+          retry: {
+            maxRetries: 3,
+            baseDelay: 10_000,
+            jitter: 'none',
+            onRetry: () => {
+              // Abort during the retry delay
+              controller.abort();
             },
           },
-        );
+        });
 
         await expect(
           client.get(`${baseUrl}/abort-retry-wait`, {
@@ -3205,10 +3058,9 @@ describe('HttpClient', () => {
 
     describe('edge cases', () => {
       test('isRetryableRequest returns false for non-TypeError non-HTTP errors', () => {
-        const client = new HttpClient(
-          {},
-          { retry: { baseDelay: 1 } },
-        ) as unknown as {
+        const client = new HttpClient({
+          retry: { baseDelay: 1 },
+        }) as unknown as {
           resolveRetryConfig: (perRequest?: object | false) => {
             baseDelay: number;
             maxDelay: number;
@@ -3239,15 +3091,12 @@ describe('HttpClient', () => {
       });
 
       test('throws last error when all retries exhausted on network failure', async () => {
-        const client = new HttpClient(
-          {},
-          {
-            fetchFn: async () => {
-              throw new TypeError('fetch failed');
-            },
-            retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
+        const client = new HttpClient({
+          fetchFn: async () => {
+            throw new TypeError('fetch failed');
           },
-        );
+          retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
+        });
 
         await expect(
           client.get(`${baseUrl}/exhausted-network`),
@@ -3277,9 +3126,9 @@ describe('HttpClient', () => {
       };
     }
 
-    test('cacheTTL overrides defaultCacheTTL for this request', async () => {
+    test('cacheTTL overrides cacheTTL for this request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache }, { defaultCacheTTL: 900 });
+      const client = new HttpClient({ cache, cacheTTL: 900 });
 
       nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
 
@@ -3291,10 +3140,10 @@ describe('HttpClient', () => {
 
     test('per-request minimumTTL overrides constructor minimumTTL', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        { cacheOverrides: { minimumTTL: 300 } },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { minimumTTL: 300 },
+      });
 
       nock(baseUrl)
         .get('/pr-min-ttl')
@@ -3312,10 +3161,10 @@ describe('HttpClient', () => {
 
     test('per-request maximumTTL overrides constructor maximumTTL', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        { cacheOverrides: { maximumTTL: 60 } },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { maximumTTL: 60 },
+      });
 
       nock(baseUrl)
         .get('/pr-max-ttl')
@@ -3373,12 +3222,10 @@ describe('HttpClient', () => {
 
     test('shallow merge — unspecified per-request fields fall back to constructor', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        {
-          cacheOverrides: { minimumTTL: 100, maximumTTL: 500 },
-        },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheOverrides: { minimumTTL: 100, maximumTTL: 500 },
+      });
 
       nock(baseUrl)
         .get('/pr-merge')
@@ -3399,7 +3246,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache }, { defaultCacheTTL: 900 });
+      const client = new HttpClient({ cache, cacheTTL: 900 });
 
       nock(baseUrl)
         .get('/pr-304')
@@ -3434,7 +3281,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache }, { defaultCacheTTL: 900 });
+      const client = new HttpClient({ cache, cacheTTL: 900 });
 
       // Initial response with SWR
       nock(baseUrl)
@@ -3467,10 +3314,11 @@ describe('HttpClient', () => {
 
     test('no per-request options uses constructor behavior (regression)', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient(
-        { cache },
-        { defaultCacheTTL: 900, cacheOverrides: { minimumTTL: 300 } },
-      );
+      const client = new HttpClient({
+        cache,
+        cacheTTL: 900,
+        cacheOverrides: { minimumTTL: 300 },
+      });
 
       nock(baseUrl)
         .get('/no-override')
