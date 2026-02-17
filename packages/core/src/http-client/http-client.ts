@@ -21,6 +21,7 @@ import {
 } from '../stores/index.js';
 import {
   HttpClientContract,
+  type CacheOverrideOptions,
   type HttpErrorContext,
   type RetryContext,
   type RetryOptions,
@@ -157,16 +158,7 @@ export interface HttpClientOptions {
   /**
    * Override specific cache header behaviors.
    */
-  cacheOverrides?: {
-    /** Cache responses even when Cache-Control: no-store is set */
-    ignoreNoStore?: boolean;
-    /** Skip revalidation even when Cache-Control: no-cache is set */
-    ignoreNoCache?: boolean;
-    /** Minimum TTL in seconds — floor on header-derived freshness */
-    minimumTTL?: number;
-    /** Maximum TTL in seconds — cap on header-derived freshness */
-    maximumTTL?: number;
-  };
+  cacheOverrides?: CacheOverrideOptions;
 }
 
 interface RateLimitHeaderConfig {
@@ -181,7 +173,12 @@ interface ParsedResponseBody {
   data: unknown;
 }
 
-export { type HttpErrorContext, type RetryContext, type RetryOptions };
+export {
+  type CacheOverrideOptions,
+  type HttpErrorContext,
+  type RetryContext,
+  type RetryOptions,
+};
 
 export class HttpClient implements HttpClientContract {
   private stores: HttpClientStores;
@@ -591,6 +588,10 @@ export class HttpClient implements HttpClientContract {
     hash: string,
     entry: CacheEntry<unknown>,
     requestHeaders?: Record<string, string>,
+    cacheConfig?: {
+      defaultCacheTTL: number;
+      cacheOverrides?: CacheOverrideOptions;
+    },
   ): Promise<void> {
     const fetchHeaders = new Headers(requestHeaders);
     if (entry.metadata.etag) {
@@ -615,10 +616,16 @@ export class HttpClient implements HttpClientContract {
 
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
+      const resolvedTTL =
+        cacheConfig?.defaultCacheTTL ?? this.options.defaultCacheTTL;
+      const resolvedOverrides =
+        cacheConfig?.cacheOverrides ?? this.options.cacheOverrides;
+
       if (response.status === 304) {
         const refreshed = refreshCacheEntry(entry, response.headers);
         const ttl = this.clampTTL(
-          calculateStoreTTL(refreshed.metadata, this.options.defaultCacheTTL),
+          calculateStoreTTL(refreshed.metadata, resolvedTTL),
+          resolvedOverrides,
         );
         await this.stores.cache?.set(hash, refreshed, ttl);
         return;
@@ -646,7 +653,8 @@ export class HttpClient implements HttpClientContract {
           );
         }
         const ttl = this.clampTTL(
-          calculateStoreTTL(newEntry.metadata, this.options.defaultCacheTTL),
+          calculateStoreTTL(newEntry.metadata, resolvedTTL),
+          resolvedOverrides,
         );
         await this.stores.cache?.set(hash, newEntry, ttl);
       }
@@ -657,8 +665,7 @@ export class HttpClient implements HttpClientContract {
     }
   }
 
-  private clampTTL(ttl: number): number {
-    const overrides = this.options.cacheOverrides;
+  private clampTTL(ttl: number, overrides?: CacheOverrideOptions): number {
     if (!overrides) return ttl;
     let clamped = ttl;
     if (overrides.minimumTTL !== undefined) {
@@ -668,6 +675,26 @@ export class HttpClient implements HttpClientContract {
       clamped = Math.min(clamped, overrides.maximumTTL);
     }
     return clamped;
+  }
+
+  private resolveCacheConfig(
+    perRequestTTL?: number,
+    perRequestOverrides?: CacheOverrideOptions,
+  ): { defaultCacheTTL: number; cacheOverrides?: CacheOverrideOptions } {
+    const defaultCacheTTL = perRequestTTL ?? this.options.defaultCacheTTL;
+
+    if (!perRequestOverrides) {
+      return { defaultCacheTTL, cacheOverrides: this.options.cacheOverrides };
+    }
+
+    const base = this.options.cacheOverrides ?? {};
+    return {
+      defaultCacheTTL,
+      cacheOverrides: {
+        ...base,
+        ...perRequestOverrides,
+      },
+    };
   }
 
   private isServerErrorOrNetworkFailure(error: unknown): boolean {
@@ -989,12 +1016,18 @@ export class HttpClient implements HttpClientContract {
       priority?: RequestPriority;
       headers?: Record<string, string>;
       retry?: RetryOptions | false;
+      cacheTTL?: number;
+      cacheOverrides?: CacheOverrideOptions;
     } = {},
   ): Promise<Result> {
     const { signal, priority = 'background', headers } = options;
     const { endpoint, params } = this.parseUrlForHashing(url);
     const hash = hashRequest(endpoint, params);
     const resource = this.inferResource(url);
+    const cacheConfig = this.resolveCacheConfig(
+      options.cacheTTL,
+      options.cacheOverrides,
+    );
 
     // Track stale entry for conditional requests and stale-if-error fallback
     let staleEntry: CacheEntry<unknown> | undefined;
@@ -1027,7 +1060,7 @@ export class HttpClient implements HttpClientContract {
                 return entry.value as Result;
 
               case 'no-cache':
-                if (this.options.cacheOverrides?.ignoreNoCache) {
+                if (cacheConfig.cacheOverrides?.ignoreNoCache) {
                   return entry.value as Result;
                 }
                 staleEntry = entry;
@@ -1044,6 +1077,7 @@ export class HttpClient implements HttpClientContract {
                   hash,
                   entry,
                   headers,
+                  cacheConfig,
                 );
                 this.pendingRevalidations.push(revalidation);
                 // Cleanup resolved promises periodically
@@ -1130,8 +1164,9 @@ export class HttpClient implements HttpClientContract {
         const ttl = this.clampTTL(
           calculateStoreTTL(
             refreshedEntry.metadata,
-            this.options.defaultCacheTTL,
+            cacheConfig.defaultCacheTTL,
           ),
+          cacheConfig.cacheOverrides,
         );
 
         if (this.stores.cache) {
@@ -1172,7 +1207,7 @@ export class HttpClient implements HttpClientContract {
       if (this.stores.cache) {
         const cc = parseCacheControl(response.headers.get('cache-control'));
         const shouldStore =
-          !cc.noStore || this.options.cacheOverrides?.ignoreNoStore;
+          !cc.noStore || cacheConfig.cacheOverrides?.ignoreNoStore;
 
         if (shouldStore) {
           const entry = createCacheEntry(
@@ -1185,7 +1220,8 @@ export class HttpClient implements HttpClientContract {
             entry.metadata.varyValues = captureVaryValues(varyFields, headers);
           }
           const ttl = this.clampTTL(
-            calculateStoreTTL(entry.metadata, this.options.defaultCacheTTL),
+            calculateStoreTTL(entry.metadata, cacheConfig.defaultCacheTTL),
+            cacheConfig.cacheOverrides,
           );
           await this.stores.cache.set(hash, entry, ttl);
         }
