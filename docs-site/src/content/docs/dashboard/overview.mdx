@@ -137,3 +137,7 @@ The dashboard exposes a REST API that the React SPA consumes. You can also call 
 | `GET` | `/api/rate-limit/resources/:name` | Get resource status |
 | `PUT` | `/api/rate-limit/resources/:name/config` | Update resource config |
 | `POST` | `/api/rate-limit/resources/:name/reset` | Reset a resource counter |
+
+## Future Improvements
+
+- **Retry metrics** — Show requests that required retries and their success rate. The core `HttpClient` retry loop currently doesn't persist metrics, so this would require adding internal retry tracking (total attempts, successes after retry, final failures) and exposing it via a new dashboard adapter.
