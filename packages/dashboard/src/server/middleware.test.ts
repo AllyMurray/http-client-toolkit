@@ -109,6 +109,17 @@ describe('createDashboard middleware', () => {
       expect(status).toBe(404);
     });
 
+    it('PUT /api/cache/entries/:hash should return 405', async () => {
+      await cacheStore.set('key1', 'value1', 60);
+      const { status, body } = await fetchJson(
+        port,
+        '/api/cache/entries/key1',
+        { method: 'PUT' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+
     it('DELETE /api/cache/entries/:hash should delete entry', async () => {
       await cacheStore.set('key1', 'value1', 60);
       const { status, body } = await fetchJson(
@@ -148,6 +159,14 @@ describe('createDashboard middleware', () => {
       expect(status).toBe(200);
       expect(body.jobs).toHaveLength(1);
     });
+
+    it('GET /api/dedup/jobs/:hash should return a single job', async () => {
+      await dedupeStore.register('hash1');
+      await dedupeStore.complete('hash1', 'result-value');
+      const { status, body } = await fetchJson(port, '/api/dedup/jobs/hash1');
+      expect(status).toBe(200);
+      expect(body.hash).toBe('hash1');
+    });
   });
 
   describe('rate limit API', () => {
@@ -165,6 +184,31 @@ describe('createDashboard middleware', () => {
       );
       expect(status).toBe(200);
       expect(body.resources.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('GET /api/rate-limit/resources/:name should return resource status', async () => {
+      await rateLimitStore.record('api-resource');
+      const { status, body } = await fetchJson(
+        port,
+        '/api/rate-limit/resources/api-resource',
+      );
+      expect(status).toBe(200);
+      expect(body.resource).toBe('api-resource');
+    });
+
+    it('PUT /api/rate-limit/resources/:name/config should update config', async () => {
+      await rateLimitStore.record('api-resource');
+      const { status, body } = await fetchJson(
+        port,
+        '/api/rate-limit/resources/api-resource/config',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 100, windowMs: 60000 }),
+        },
+      );
+      expect(status).toBe(200);
+      expect(body.updated).toBe(true);
     });
 
     it('POST /api/rate-limit/resources/:name/reset should reset', async () => {
@@ -188,5 +232,34 @@ describe('createDashboard middleware', () => {
     const res = await fetch(`http://127.0.0.1:${port}/some/page`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/html');
+  });
+
+  describe('basePath support', () => {
+    let basePathServer: Server;
+    let basePathPort: number;
+
+    afterEach(async () => {
+      if (basePathServer) await closeServer(basePathServer);
+    });
+
+    it('should strip basePath and route correctly', async () => {
+      const middleware = createDashboard({
+        cacheStore,
+        dedupeStore,
+        rateLimitStore,
+        basePath: '/dashboard',
+      });
+
+      const result = await startServer(middleware);
+      basePathServer = result.server;
+      basePathPort = result.port;
+
+      const { status, body } = await fetchJson(
+        basePathPort,
+        '/dashboard/api/health',
+      );
+      expect(status).toBe(200);
+      expect(body.status).toBe('ok');
+    });
   });
 });
