@@ -446,6 +446,79 @@ describe('AdaptiveRateLimitStore', () => {
     });
   });
 
+  describe('resource config management', () => {
+    it('should store and retrieve resource config via setResourceConfig/getResourceConfig', () => {
+      const customConfig = { limit: 100, windowMs: 30_000 };
+      store.setResourceConfig('custom-resource', customConfig);
+
+      const retrieved = store.getResourceConfig('custom-resource');
+      expect(retrieved).toEqual(customConfig);
+    });
+
+    it('should return default config for unconfigured resources', () => {
+      const config = store.getResourceConfig('unconfigured');
+      expect(config).toEqual({ limit: DEFAULT_LIMIT, windowMs: 60_000 });
+    });
+
+    it('should invalidate cached capacity when resource config changes', async () => {
+      // Record activity and get status to populate cache
+      await store.record(resource, 'user');
+      const statusBefore = await store.getStatus(resource);
+
+      // Update config to a very different limit
+      store.setResourceConfig(resource, { limit: 200, windowMs: 10_000 });
+
+      // Force recalculation by advancing past the recalculation interval
+      vi.advanceTimersByTime(35 * 1000);
+
+      const statusAfter = await store.getStatus(resource);
+      expect(statusAfter.limit).toBe(200);
+      expect(statusAfter.limit).not.toBe(statusBefore.limit);
+    });
+  });
+
+  describe('cooldown management', () => {
+    it('should store a cooldown via setCooldown', async () => {
+      const cooldownUntil = Date.now() + 60_000;
+      await store.setCooldown('api.example.com', cooldownUntil);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBe(cooldownUntil);
+    });
+
+    it('should return the cooldown timestamp from getCooldown', async () => {
+      const cooldownUntil = Date.now() + 30_000;
+      await store.setCooldown('origin-a', cooldownUntil);
+
+      const result = await store.getCooldown('origin-a');
+      expect(result).toBe(cooldownUntil);
+    });
+
+    it('should return undefined from getCooldown when cooldown has expired', async () => {
+      const pastTimestamp = Date.now() - 1000; // already in the past
+      await store.setCooldown('expired-origin', pastTimestamp);
+
+      const result = await store.getCooldown('expired-origin');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined from getCooldown when no cooldown is set', async () => {
+      const result = await store.getCooldown('unknown-origin');
+      expect(result).toBeUndefined();
+    });
+
+    it('should remove a cooldown via clearCooldown', async () => {
+      const cooldownUntil = Date.now() + 60_000;
+      await store.setCooldown('origin-to-clear', cooldownUntil);
+
+      expect(await store.getCooldown('origin-to-clear')).toBe(cooldownUntil);
+
+      await store.clearCooldown('origin-to-clear');
+
+      expect(await store.getCooldown('origin-to-clear')).toBeUndefined();
+    });
+  });
+
   describe('multiple resources', () => {
     it('should handle multiple resources independently', async () => {
       const resource1 = 'resource1';

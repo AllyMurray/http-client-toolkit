@@ -545,6 +545,84 @@ describe('InMemoryDedupeStore', () => {
     });
   });
 
+  describe('scoped clear', () => {
+    it('should remove only jobs with matching key prefix', async () => {
+      await store.register('client:a:req1');
+      await store.complete('client:a:req1', 'result-a1');
+      await store.register('client:a:req2');
+      await store.complete('client:a:req2', 'result-a2');
+      await store.register('client:b:req1');
+      await store.complete('client:b:req1', 'result-b1');
+
+      await store.clear('client:a:');
+
+      // Matching jobs should be removed
+      expect(await store.waitFor('client:a:req1')).toBeUndefined();
+      expect(await store.waitFor('client:a:req2')).toBeUndefined();
+
+      // Non-matching jobs should remain intact
+      expect(await store.waitFor('client:b:req1')).toBe('result-b1');
+    });
+
+    it('should reject pending jobs that match the scope', async () => {
+      await store.register('scope:1:pending');
+      await store.register('scope:2:pending');
+
+      // Start waiting for the scoped job before clearing
+      const waitPromise = store
+        .waitFor('scope:1:pending')
+        .catch(() => undefined);
+
+      await store.clear('scope:1:');
+
+      // The pending scoped job should resolve to undefined (rejected)
+      const result = await waitPromise;
+      expect(result).toBeUndefined();
+
+      // The out-of-scope pending job should still be in progress
+      const isInProgress = await store.isInProgress('scope:2:pending');
+      expect(isInProgress).toBe(true);
+
+      // Complete the remaining job to avoid unhandled rejection on teardown
+      await store.complete('scope:2:pending', 'done');
+    });
+
+    it('should leave non-matching jobs intact', async () => {
+      await store.register('alpha:1');
+      await store.register('beta:1');
+      await store.register('beta:2');
+
+      await store.complete('alpha:1', 'a1');
+      await store.complete('beta:1', 'b1');
+      await store.complete('beta:2', 'b2');
+
+      await store.clear('alpha:');
+
+      expect(await store.waitFor('alpha:1')).toBeUndefined();
+      expect(await store.waitFor('beta:1')).toBe('b1');
+      expect(await store.waitFor('beta:2')).toBe('b2');
+    });
+
+    it('should clear everything when called without scope', async () => {
+      await store.register('job1');
+      await store.register('job2');
+
+      // Start waiting to catch rejections
+      const wait1 = store.waitFor('job1').catch(() => undefined);
+      const wait2 = store.waitFor('job2').catch(() => undefined);
+
+      await store.clear();
+
+      await Promise.all([wait1, wait2]);
+
+      expect(await store.waitFor('job1')).toBeUndefined();
+      expect(await store.waitFor('job2')).toBeUndefined();
+
+      const stats = store.getStats();
+      expect(stats.activeJobs).toBe(0);
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all jobs when destroyed', async () => {
       await store.register('hash1');

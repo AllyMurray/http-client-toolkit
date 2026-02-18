@@ -470,6 +470,59 @@ describe('InMemoryRateLimitStore', () => {
     });
   });
 
+  describe('cooldown management', () => {
+    it('should store a cooldown via setCooldown', async () => {
+      const cooldownUntil = Date.now() + 60_000;
+      await store.setCooldown('api.example.com', cooldownUntil);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBe(cooldownUntil);
+    });
+
+    it('should return the cooldown timestamp from getCooldown', async () => {
+      const cooldownUntil = Date.now() + 30_000;
+      await store.setCooldown('origin-a', cooldownUntil);
+
+      const result = await store.getCooldown('origin-a');
+      expect(result).toBe(cooldownUntil);
+    });
+
+    it('should return undefined from getCooldown when cooldown has expired', async () => {
+      const pastTimestamp = Date.now() - 1000; // already expired
+      await store.setCooldown('expired-origin', pastTimestamp);
+
+      const result = await store.getCooldown('expired-origin');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined from getCooldown when no cooldown is set', async () => {
+      const result = await store.getCooldown('unknown-origin');
+      expect(result).toBeUndefined();
+    });
+
+    it('should remove a cooldown via clearCooldown', async () => {
+      const cooldownUntil = Date.now() + 60_000;
+      await store.setCooldown('origin-to-clear', cooldownUntil);
+
+      // Confirm it's set
+      expect(await store.getCooldown('origin-to-clear')).toBe(cooldownUntil);
+
+      await store.clearCooldown('origin-to-clear');
+
+      expect(await store.getCooldown('origin-to-clear')).toBeUndefined();
+    });
+
+    it('should clear cooldowns when clear() is called', async () => {
+      await store.setCooldown('origin-1', Date.now() + 60_000);
+      await store.setCooldown('origin-2', Date.now() + 60_000);
+
+      store.clear();
+
+      expect(await store.getCooldown('origin-1')).toBeUndefined();
+      expect(await store.getCooldown('origin-2')).toBeUndefined();
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all data when destroyed', async () => {
       await store.record('test1');
