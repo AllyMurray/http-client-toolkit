@@ -18,6 +18,8 @@ import {
   AdaptiveRateLimitStore,
   RequestPriority,
   hashRequest,
+  type RateLimitConfig,
+  type RateLimitConfigMap,
 } from '../stores/index.js';
 import {
   HttpClientContract,
@@ -178,6 +180,24 @@ export interface HttpClientOptions {
    * Override specific cache header behaviors.
    */
   cacheOverrides?: CacheOverrideOptions;
+  /**
+   * Prefix for cache/dedup keys. Enables selective clear() and prevents
+   * cross-client conflicts when sharing a store. When omitted, entries are shared.
+   */
+  storeScope?: string;
+  /**
+   * Extract a rate-limit resource key from a URL.
+   * Defaults to returning the origin (e.g. "https://api.github.com").
+   */
+  resourceExtractor?: (url: string) => string;
+  /**
+   * Per-resource rate limit configs. Keys should match resourceExtractor output.
+   */
+  rateLimitConfigs?: RateLimitConfigMap;
+  /**
+   * Default rate limit config for resources not in rateLimitConfigs.
+   */
+  defaultRateLimitConfig?: RateLimitConfig;
 }
 
 interface RateLimitHeaderConfig {
@@ -217,6 +237,10 @@ export class HttpClient implements HttpClientContract {
       | 'responseHandler'
       | 'cacheOverrides'
       | 'retry'
+      | 'storeScope'
+      | 'resourceExtractor'
+      | 'rateLimitConfigs'
+      | 'defaultRateLimitConfig'
     > & {
       rateLimitHeaders: RateLimitHeaderConfig;
     };
@@ -240,10 +264,30 @@ export class HttpClient implements HttpClientContract {
       responseHandler: options.responseHandler,
       retry: options.retry,
       cacheOverrides: options.cacheOverrides,
+      storeScope: options.storeScope,
+      resourceExtractor: options.resourceExtractor,
+      rateLimitConfigs: options.rateLimitConfigs,
+      defaultRateLimitConfig: options.defaultRateLimitConfig,
       rateLimitHeaders: this.normalizeRateLimitHeaders(
         options.rateLimitHeaders,
       ),
     };
+
+    if (this.stores.rateLimit?.setResourceConfig && options.rateLimitConfigs) {
+      for (const [resource, config] of options.rateLimitConfigs) {
+        this.stores.rateLimit.setResourceConfig(resource, config);
+      }
+    }
+
+    if (
+      this.stores.rateLimit?.setResourceConfig &&
+      options.defaultRateLimitConfig
+    ) {
+      this.stores.rateLimit.setResourceConfig(
+        '__default__',
+        options.defaultRateLimitConfig,
+      );
+    }
   }
 
   private normalizeRateLimitHeaders(
@@ -293,19 +337,27 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
-   * Infer the resource name from the endpoint URL
-   * @param url The full URL or endpoint path
-   * @returns The resource name for rate limiting
+   * Derive the rate-limit resource key for a URL.
+   * Uses `resourceExtractor` when provided, otherwise defaults to the URL origin.
    */
-  private inferResource(url: string): string {
+  private getResource(url: string): string {
+    if (this.options.resourceExtractor) {
+      return this.options.resourceExtractor(url);
+    }
     try {
-      const urlObj = new URL(url);
-      // Use the first meaningful path segment as the resource name
-      const segments = urlObj.pathname.split('/').filter(Boolean);
-      return segments[segments.length - 1] || 'unknown';
+      return new URL(url).origin;
     } catch {
       return 'unknown';
     }
+  }
+
+  /**
+   * Prefix a cache/dedup hash with the store scope when configured.
+   */
+  private scopeKey(hash: string): string {
+    return this.options.storeScope
+      ? `${this.options.storeScope}:${hash}`
+      : hash;
   }
 
   /**
@@ -497,7 +549,28 @@ export class HttpClient implements HttpClientContract {
     }
 
     const scope = this.getOriginScope(url);
-    this.serverCooldowns.set(scope, Date.now() + waitMs);
+    const cooldownUntilMs = Date.now() + waitMs;
+
+    if (this.stores.rateLimit?.setCooldown) {
+      void this.stores.rateLimit.setCooldown(scope, cooldownUntilMs);
+    } else {
+      this.serverCooldowns.set(scope, cooldownUntilMs);
+    }
+  }
+
+  private async readCooldown(scope: string): Promise<number | undefined> {
+    if (this.stores.rateLimit?.getCooldown) {
+      return this.stores.rateLimit.getCooldown(scope);
+    }
+    return this.serverCooldowns.get(scope);
+  }
+
+  private async removeCooldown(scope: string): Promise<void> {
+    if (this.stores.rateLimit?.clearCooldown) {
+      await this.stores.rateLimit.clearCooldown(scope);
+    } else {
+      this.serverCooldowns.delete(scope);
+    }
   }
 
   private async enforceServerCooldown(
@@ -512,14 +585,14 @@ export class HttpClient implements HttpClientContract {
     // cooldown is still active. This avoids bypassing limits when cooldown
     // duration is longer than maxWaitTime.
     while (true) {
-      const cooldownUntil = this.serverCooldowns.get(scope);
+      const cooldownUntil = await this.readCooldown(scope);
       if (!cooldownUntil) {
         return;
       }
 
       const waitMs = cooldownUntil - Date.now();
       if (waitMs <= 0) {
-        this.serverCooldowns.delete(scope);
+        await this.removeCooldown(scope);
         return;
       }
 
@@ -638,6 +711,7 @@ export class HttpClient implements HttpClientContract {
 
       this.applyServerRateLimitHints(url, response.headers, response.status);
 
+      /* v8 ignore next -- cacheConfig is always provided by resolveCacheConfig() */
       const resolvedTTL = cacheConfig?.cacheTTL ?? this.options.cacheTTL;
       const resolvedOverrides =
         cacheConfig?.cacheOverrides ?? this.options.cacheOverrides;
@@ -1024,10 +1098,22 @@ export class HttpClient implements HttpClientContract {
         // or other non-retryable errors — propagate
         throw fetchError;
       }
+      /* v8 ignore next */
     }
 
-    // TypeScript: unreachable — the loop always returns or throws
+    /* v8 ignore next 2 -- unreachable: the loop always returns or throws */
     throw new Error('Unexpected end of retry loop');
+  }
+
+  /**
+   * Clear this client's cached entries. When `storeScope` is set only entries
+   * belonging to this client are removed; otherwise the entire cache is cleared.
+   */
+  async clearCache(): Promise<void> {
+    if (!this.stores.cache) return;
+    await this.stores.cache.clear(
+      this.options.storeScope ? `${this.options.storeScope}:` : undefined,
+    );
   }
 
   async get<Result>(
@@ -1043,8 +1129,8 @@ export class HttpClient implements HttpClientContract {
   ): Promise<Result> {
     const { signal, priority = 'background', headers } = options;
     const { endpoint, params } = this.parseUrlForHashing(url);
-    const hash = hashRequest(endpoint, params);
-    const resource = this.inferResource(url);
+    const hash = this.scopeKey(hashRequest(endpoint, params));
+    const resource = this.getResource(url);
     const cacheConfig = this.resolveCacheConfig(
       options.cacheTTL,
       options.cacheOverrides,
