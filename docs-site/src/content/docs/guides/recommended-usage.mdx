@@ -140,3 +140,91 @@ Create a separate module for each API. Each gets its own client instance with ap
 ```
 
 This keeps rate limiting isolated per origin, which matches how real APIs enforce their limits.
+
+### Separate Stores
+
+The simplest setup gives each client its own stores. Rate limits, cache entries, and dedup jobs are completely isolated — one API can't fill the cache or exhaust the rate limit budget of another:
+
+```typescript
+// lib/github.ts
+import { HttpClient } from '@http-client-toolkit/core';
+import { InMemoryCacheStore, InMemoryDedupeStore, InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+
+export const githubClient = new HttpClient({
+  name: 'github',
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 100, windowMs: 60_000 },
+  }),
+});
+
+// lib/stripe.ts
+import { HttpClient } from '@http-client-toolkit/core';
+import { InMemoryCacheStore, InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+
+export const stripeClient = new HttpClient({
+  name: 'stripe',
+  cache: new InMemoryCacheStore(),
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 25, windowMs: 1_000 },
+  }),
+});
+```
+
+This is the right default for most applications. Each API has its own rate limits and its own cache space.
+
+### Shared Stores
+
+When multiple clients should share the same underlying storage — for example, a single SQLite database or a shared cache pool — pass the same store instance to each client:
+
+```typescript
+// lib/stores.ts
+import { InMemoryCacheStore, InMemoryDedupeStore } from '@http-client-toolkit/store-memory';
+
+// Shared across all clients
+export const sharedCache = new InMemoryCacheStore();
+export const sharedDedupe = new InMemoryDedupeStore();
+```
+
+```typescript
+// lib/github.ts
+import { HttpClient } from '@http-client-toolkit/core';
+import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+import { sharedCache, sharedDedupe } from './stores.js';
+
+export const githubClient = new HttpClient({
+  name: 'github',
+  cache: sharedCache,
+  dedupe: sharedDedupe,
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 100, windowMs: 60_000 },
+  }),
+});
+
+// lib/stripe.ts
+import { HttpClient } from '@http-client-toolkit/core';
+import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+import { sharedCache, sharedDedupe } from './stores.js';
+
+export const stripeClient = new HttpClient({
+  name: 'stripe',
+  cache: sharedCache,
+  dedupe: sharedDedupe,
+  rateLimit: new InMemoryRateLimitStore({
+    defaultConfig: { limit: 25, windowMs: 1_000 },
+  }),
+});
+```
+
+Cache and dedup are shared so both clients write to and read from the same pool. Rate limiting is kept separate because each API enforces its own limits.
+
+This pattern is especially useful with persistent backends like SQLite, where you want a single database file rather than one per client. It also means the [dashboard](/dashboard/overview/) shows the same cache data regardless of which client you select.
+
+### When to Share
+
+| Concern | Share? | Reasoning |
+|---------|--------|-----------|
+| **Cache** | Sometimes | Share when you want a single cache pool (e.g. one SQLite DB). Separate when APIs have very different TTL profiles or you want to clear one without affecting the other. |
+| **Dedup** | Sometimes | Share when requests across APIs could duplicate (rare). Separate is the safer default since request hashes are already scoped by URL. |
+| **Rate limit** | Rarely | Almost always separate — each API has its own rate limits. Only share if multiple clients hit the same origin and you need a combined request budget. |
