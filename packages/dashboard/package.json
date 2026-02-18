@@ -77,7 +77,7 @@
     "dist/client/**"
   ],
   "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
-  "version": "0.1.0",
+  "version": "0.10.0",
   "bugs": {
     "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
   },
