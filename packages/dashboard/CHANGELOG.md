@@ -1,5 +1,15 @@
 # @http-client-toolkit/dashboard
 
+## 0.12.1
+
+### Patch Changes
+
+- 21352f2: Publish dashboard package at correct version
+  - @http-client-toolkit/core@0.12.1
+  - @http-client-toolkit/store-memory@0.12.1
+  - @http-client-toolkit/store-sqlite@0.12.1
+  - @http-client-toolkit/store-dynamodb@0.12.1
+
 ## 1.0.0
 
 ### Minor Changes
