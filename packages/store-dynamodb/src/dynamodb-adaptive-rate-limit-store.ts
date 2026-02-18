@@ -5,6 +5,8 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  DeleteCommand,
+  GetCommand,
   PutCommand,
   QueryCommand,
   ScanCommand,
@@ -425,6 +427,65 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     return this.resourceConfigs.get(resource) ?? this.defaultConfig;
   }
 
+  async setCooldown(origin: string, cooldownUntilMs: number): Promise<void> {
+    const pk = `COOLDOWN#${origin}`;
+    const ttl = Math.floor(cooldownUntilMs / 1000);
+
+    try {
+      await this.docClient.send(
+        new PutCommand({
+          TableName: this.tableName,
+          Item: { pk, sk: pk, cooldownUntil: cooldownUntilMs, ttl },
+        }),
+      );
+    } catch (error: unknown) {
+      throwIfDynamoTableMissing(error, this.tableName);
+      throw error;
+    }
+  }
+
+  async getCooldown(origin: string): Promise<number | undefined> {
+    const pk = `COOLDOWN#${origin}`;
+
+    let result;
+    try {
+      result = await this.docClient.send(
+        new GetCommand({
+          TableName: this.tableName,
+          Key: { pk, sk: pk },
+        }),
+      );
+    } catch (error: unknown) {
+      throwIfDynamoTableMissing(error, this.tableName);
+      throw error;
+    }
+
+    if (!result.Item) return undefined;
+
+    const cooldownUntil = result.Item['cooldownUntil'] as number;
+    if (Date.now() >= cooldownUntil) {
+      await this.clearCooldown(origin);
+      return undefined;
+    }
+    return cooldownUntil;
+  }
+
+  async clearCooldown(origin: string): Promise<void> {
+    const pk = `COOLDOWN#${origin}`;
+
+    try {
+      await this.docClient.send(
+        new DeleteCommand({
+          TableName: this.tableName,
+          Key: { pk, sk: pk },
+        }),
+      );
+    } catch (error: unknown) {
+      throwIfDynamoTableMissing(error, this.tableName);
+      throw error;
+    }
+  }
+
   async clear(): Promise<void> {
     if (this.isDestroyed) {
       throw new Error('Rate limit store has been destroyed');
@@ -439,10 +500,11 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
           new ScanCommand({
             TableName: this.tableName,
             FilterExpression:
-              'begins_with(pk, :prefix) OR begins_with(pk, :slotPrefix)',
+              'begins_with(pk, :prefix) OR begins_with(pk, :slotPrefix) OR begins_with(pk, :cooldownPrefix)',
             ExpressionAttributeValues: {
               ':prefix': 'RATELIMIT#',
               ':slotPrefix': 'RATELIMIT_SLOT#',
+              ':cooldownPrefix': 'COOLDOWN#',
             },
             ProjectionExpression: 'pk, sk',
             ExclusiveStartKey: lastEvaluatedKey,
