@@ -26,6 +26,13 @@ export const rateLimitTable = sqliteTable('rate_limits', {
   id: integer('id').primaryKey({ autoIncrement: true }),
 });
 
+// Server cooldowns table for tracking origin-level rate limit hints
+export const serverCooldownTable = sqliteTable('server_cooldowns', {
+  origin: text('origin').primaryKey(),
+  cooldownUntil: integer('cooldown_until').notNull(),
+});
+
 export type CacheRow = typeof cacheTable.$inferSelect;
 export type DedupeRow = typeof dedupeTable.$inferSelect;
 export type RateLimitRow = typeof rateLimitTable.$inferSelect;
+export type ServerCooldownRow = typeof serverCooldownTable.$inferSelect;

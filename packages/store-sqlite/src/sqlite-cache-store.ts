@@ -155,11 +155,17 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
     await this.db.delete(cacheTable).where(eq(cacheTable.hash, hash));
   }
 
-  async clear(): Promise<void> {
+  async clear(scope?: string): Promise<void> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
-    await this.db.delete(cacheTable);
+    if (!scope) {
+      await this.db.delete(cacheTable);
+      return;
+    }
+    await this.db
+      .delete(cacheTable)
+      .where(sql`${cacheTable.hash} LIKE ${scope + '%'}`);
   }
 
   /**

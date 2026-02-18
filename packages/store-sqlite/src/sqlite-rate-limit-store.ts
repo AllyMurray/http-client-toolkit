@@ -6,7 +6,7 @@ import {
 import Database from 'better-sqlite3';
 import { and, eq, gte, count, sql, lt } from 'drizzle-orm';
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { rateLimitTable } from './schema.js';
+import { rateLimitTable, serverCooldownTable } from './schema.js';
 
 export interface SQLiteRateLimitStoreOptions {
   /** File path or existing `better-sqlite3` Database instance. Defaults to `':memory:'`. */
@@ -285,6 +285,41 @@ export class SQLiteRateLimitStore implements RateLimitStore {
     });
   }
 
+  async setCooldown(origin: string, cooldownUntilMs: number): Promise<void> {
+    await this.db
+      .insert(serverCooldownTable)
+      .values({ origin, cooldownUntil: cooldownUntilMs })
+      .onConflictDoUpdate({
+        target: serverCooldownTable.origin,
+        set: { cooldownUntil: cooldownUntilMs },
+      });
+  }
+
+  async getCooldown(origin: string): Promise<number | undefined> {
+    const result = await this.db
+      .select()
+      .from(serverCooldownTable)
+      .where(eq(serverCooldownTable.origin, origin))
+      .limit(1);
+
+    const row = result[0];
+    if (!row) return undefined;
+
+    if (Date.now() >= row.cooldownUntil) {
+      await this.db
+        .delete(serverCooldownTable)
+        .where(eq(serverCooldownTable.origin, origin));
+      return undefined;
+    }
+    return row.cooldownUntil;
+  }
+
+  async clearCooldown(origin: string): Promise<void> {
+    await this.db
+      .delete(serverCooldownTable)
+      .where(eq(serverCooldownTable.origin, origin));
+  }
+
   /**
    * Clean up all rate limit data
    */
@@ -293,6 +328,7 @@ export class SQLiteRateLimitStore implements RateLimitStore {
       throw new Error('Rate limit store has been destroyed');
     }
     await this.db.delete(rateLimitTable);
+    await this.db.delete(serverCooldownTable);
   }
 
   /**
@@ -365,6 +401,14 @@ export class SQLiteRateLimitStore implements RateLimitStore {
     // Create index on timestamp for efficient cleanup
     this.db.run(sql`
       CREATE INDEX IF NOT EXISTS idx_rate_limit_timestamp ON rate_limits(timestamp)
+    `);
+
+    // Create server cooldowns table
+    this.db.run(sql`
+      CREATE TABLE IF NOT EXISTS server_cooldowns (
+        origin TEXT PRIMARY KEY,
+        cooldown_until INTEGER NOT NULL
+      )
     `);
   }
 }
