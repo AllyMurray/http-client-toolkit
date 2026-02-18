@@ -104,6 +104,32 @@ Distributed stores for serverless and multi-instance deployments.
 The AWS SDK packages are peer dependencies — you likely already have them in a serverless project.
 :::
 
+## Dashboard
+
+Optional browser-based UI for monitoring your stores.
+
+<Tabs>
+  <TabItem label="npm">
+    ```bash
+    npm install @http-client-toolkit/dashboard
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @http-client-toolkit/dashboard
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add @http-client-toolkit/dashboard
+    ```
+  </TabItem>
+</Tabs>
+
+:::tip
+The dashboard auto-detects which store backend you're using and adapts its capabilities accordingly. See the [Dashboard guide](/http-client-toolkit/dashboard/overview/) for setup details.
+:::
+
 ## TypeScript
 
 All packages include TypeScript declarations. No additional `@types/*` packages are needed.

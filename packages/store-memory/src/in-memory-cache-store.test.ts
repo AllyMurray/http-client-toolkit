@@ -491,6 +491,71 @@ describe('InMemoryCacheStore', () => {
     });
   });
 
+  describe('listEntries', () => {
+    it('should return an empty array when cache is empty', () => {
+      const entries = store.listEntries();
+      expect(entries).toEqual([]);
+    });
+
+    it('should list all non-expired entries', async () => {
+      await store.set('key1', 'value1', 60);
+      await store.set('key2', 'value2', 60);
+
+      const entries = store.listEntries();
+      expect(entries).toHaveLength(2);
+      expect(entries[0]!.hash).toBe('key1');
+      expect(entries[1]!.hash).toBe('key2');
+      expect(entries[0]!.expiresAt).toBeGreaterThan(0);
+      expect(entries[0]!.lastAccessed).toBeGreaterThan(0);
+      expect(entries[0]!.size).toBeGreaterThan(0);
+    });
+
+    it('should exclude expired entries', async () => {
+      const noCleanupStore = new InMemoryCacheStore({ cleanupIntervalMs: 0 });
+      try {
+        await noCleanupStore.set('expired', 'value', 0.001);
+        await noCleanupStore.set('valid', 'value', 60);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const entries = noCleanupStore.listEntries();
+        expect(entries).toHaveLength(1);
+        expect(entries[0]!.hash).toBe('valid');
+      } finally {
+        noCleanupStore.destroy();
+      }
+    });
+
+    it('should support pagination with offset and limit', async () => {
+      for (let i = 0; i < 5; i++) {
+        await store.set(`key${i}`, `value${i}`, 60);
+      }
+
+      const page1 = store.listEntries(0, 2);
+      expect(page1).toHaveLength(2);
+      expect(page1[0]!.hash).toBe('key0');
+      expect(page1[1]!.hash).toBe('key1');
+
+      const page2 = store.listEntries(2, 2);
+      expect(page2).toHaveLength(2);
+      expect(page2[0]!.hash).toBe('key2');
+      expect(page2[1]!.hash).toBe('key3');
+
+      const page3 = store.listEntries(4, 2);
+      expect(page3).toHaveLength(1);
+      expect(page3[0]!.hash).toBe('key4');
+    });
+
+    it('should include permanent entries (ttl=0)', async () => {
+      await store.set('permanent', 'value', 0);
+
+      const entries = store.listEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.hash).toBe('permanent');
+      expect(entries[0]!.expiresAt).toBe(0);
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all data when destroyed', async () => {
       await store.set('key1', 'value1', 60);

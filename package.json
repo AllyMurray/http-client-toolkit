@@ -16,6 +16,7 @@
     "lint:fix": "turbo run lint -- --fix",
     "pre-commit": "prettier --write . && turbo run lint test --filter=...[HEAD^1]",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "dashboard": "node --experimental-strip-types packages/dashboard/examples/dev-server.ts",
     "dev": "turbo run dev --parallel",
     "clean": "turbo run clean && rm -rf node_modules",
     "prepare": "husky",

@@ -231,6 +231,41 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
   }
 
   /**
+   * List cache entries with pagination
+   */
+  listEntries(
+    offset: number = 0,
+    limit: number = 50,
+  ): Array<{
+    hash: string;
+    expiresAt: number;
+    lastAccessed: number;
+    size: number;
+  }> {
+    const now = Date.now();
+    const entries: Array<{
+      hash: string;
+      expiresAt: number;
+      lastAccessed: number;
+      size: number;
+    }> = [];
+
+    for (const [hash, item] of this.cache) {
+      const isExpired = item.expiresAt > 0 && now > item.expiresAt;
+      if (!isExpired) {
+        entries.push({
+          hash,
+          expiresAt: item.expiresAt,
+          lastAccessed: item.lastAccessed,
+          size: item.size,
+        });
+      }
+    }
+
+    return entries.slice(offset, offset + limit);
+  }
+
+  /**
    * Destroy the cache and cleanup resources
    */
   destroy(): void {

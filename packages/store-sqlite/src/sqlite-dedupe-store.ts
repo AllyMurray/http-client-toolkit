@@ -508,6 +508,38 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
   }
 
   /**
+   * List dedupe jobs with pagination
+   */
+  async listJobs(
+    offset: number = 0,
+    limit: number = 50,
+  ): Promise<
+    Array<{
+      hash: string;
+      jobId: string;
+      status: string;
+      createdAt: number;
+    }>
+  > {
+    if (this.isDestroyed) {
+      throw new Error('Dedupe store has been destroyed');
+    }
+
+    const results = await this.db
+      .select({
+        hash: dedupeTable.hash,
+        jobId: dedupeTable.jobId,
+        status: dedupeTable.status,
+        createdAt: dedupeTable.createdAt,
+      })
+      .from(dedupeTable)
+      .limit(limit)
+      .offset(offset);
+
+    return results;
+  }
+
+  /**
    * Clean up expired jobs
    */
   async cleanup(): Promise<void> {

@@ -1,0 +1,103 @@
+{
+  "name": "@http-client-toolkit/dashboard",
+  "description": "Dashboard UI for monitoring and managing HTTP client toolkit stores",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AllyMurray/http-client-toolkit.git"
+  },
+  "scripts": {
+    "build": "vite build && tsup && npm run test",
+    "lint": "eslint --fix src && prettier --write .",
+    "test": "vitest run --dir=src",
+    "test:coverage": "vitest run --dir=src --coverage",
+    "test:watch": "vitest --dir=src",
+    "dev": "vite",
+    "dev:server": "tsup --watch",
+    "clean": "rimraf lib dist node_modules .turbo"
+  },
+  "author": {
+    "name": "Ally Murray",
+    "email": "allymurray88@gmail.com",
+    "organization": false
+  },
+  "devDependencies": {
+    "@http-client-toolkit/store-memory": "workspace:*",
+    "@http-client-toolkit/store-sqlite": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsup-config": "workspace:*",
+    "@repo/vitest-config": "workspace:*",
+    "@types/node": "20",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "eslint": "^9.39.0",
+    "rimraf": "6.0.1",
+    "tsup": "8.5.0",
+    "typescript": "5.8.3",
+    "vite": "^6.0.0",
+    "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "@http-client-toolkit/core": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "@http-client-toolkit/store-memory": "workspace:*",
+    "@http-client-toolkit/store-sqlite": "workspace:*",
+    "@http-client-toolkit/store-dynamodb": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@http-client-toolkit/store-memory": {
+      "optional": true
+    },
+    "@http-client-toolkit/store-sqlite": {
+      "optional": true
+    },
+    "@http-client-toolkit/store-dynamodb": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "http-client",
+    "dashboard",
+    "monitoring",
+    "caching",
+    "rate-limiting"
+  ],
+  "engines": {
+    "node": ">= 20.0.0"
+  },
+  "main": "./lib/index.cjs",
+  "license": "ISC",
+  "sideEffects": false,
+  "files": [
+    "lib/**",
+    "dist/client/**"
+  ],
+  "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
+  "version": "0.1.0",
+  "bugs": {
+    "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
+  },
+  "types": "./lib/index.d.ts",
+  "type": "module",
+  "module": "./lib/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      },
+      "require": {
+        "types": "./lib/index.d.cts",
+        "default": "./lib/index.cjs"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+}

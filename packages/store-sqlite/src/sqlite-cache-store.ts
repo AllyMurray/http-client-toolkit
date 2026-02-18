@@ -200,6 +200,41 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
   }
 
   /**
+   * List cache entries with pagination
+   */
+  async listEntries(
+    offset: number = 0,
+    limit: number = 50,
+  ): Promise<
+    Array<{
+      hash: string;
+      expiresAt: number;
+      createdAt: number;
+    }>
+  > {
+    if (this.isDestroyed) {
+      throw new Error('Cache store has been destroyed');
+    }
+
+    const now = Date.now();
+
+    const results = await this.db
+      .select({
+        hash: cacheTable.hash,
+        expiresAt: cacheTable.expiresAt,
+        createdAt: cacheTable.createdAt,
+      })
+      .from(cacheTable)
+      .where(
+        sql`${cacheTable.expiresAt} = 0 OR ${cacheTable.expiresAt} > ${now}`,
+      )
+      .limit(limit)
+      .offset(offset);
+
+    return results;
+  }
+
+  /**
    * Manually trigger cleanup of expired items
    */
   async cleanup(): Promise<void> {

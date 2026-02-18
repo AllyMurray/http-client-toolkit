@@ -55,6 +55,12 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Dashboard',
+					items: [
+						{ label: 'Overview', slug: 'dashboard/overview' },
+					],
+				},
+				{
 					label: 'API Reference',
 					items: [
 						{ label: 'HttpClient', slug: 'api/http-client' },
