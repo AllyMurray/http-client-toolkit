@@ -470,6 +470,9 @@ describe('SQLiteRateLimitStore', () => {
       await expect(store.getStats()).rejects.toThrow();
       await expect(store.clear()).rejects.toThrow();
       await expect(store.reset('test')).rejects.toThrow();
+      await expect(store.listResources()).rejects.toThrow(
+        'Rate limit store has been destroyed',
+      );
     });
   });
 
@@ -664,6 +667,82 @@ describe('SQLiteRateLimitStore', () => {
 
       await store.reset('test');
       stats = await store.getStats();
+      expect(stats.totalRequests).toBe(0);
+    });
+  });
+
+  describe('server cooldown operations', () => {
+    it('setCooldown stores a cooldown for an origin', async () => {
+      const futureTs = Date.now() + 60_000;
+      await store.setCooldown('api.example.com', futureTs);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBe(futureTs);
+    });
+
+    it('setCooldown overwrites an existing cooldown for the same origin', async () => {
+      const ts1 = Date.now() + 30_000;
+      const ts2 = Date.now() + 90_000;
+
+      await store.setCooldown('api.example.com', ts1);
+      await store.setCooldown('api.example.com', ts2);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBe(ts2);
+    });
+
+    it('getCooldown returns the timestamp when the cooldown is still active', async () => {
+      const futureTs = Date.now() + 60_000;
+      await store.setCooldown('api.example.com', futureTs);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBe(futureTs);
+    });
+
+    it('getCooldown returns undefined and deletes when cooldown has expired', async () => {
+      const pastTs = Date.now() - 1_000;
+      await store.setCooldown('api.example.com', pastTs);
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBeUndefined();
+
+      // Verify the row was deleted by checking a second call
+      const resultAfter = await store.getCooldown('api.example.com');
+      expect(resultAfter).toBeUndefined();
+    });
+
+    it('getCooldown returns undefined when no cooldown has been set', async () => {
+      const result = await store.getCooldown('unknown.example.com');
+      expect(result).toBeUndefined();
+    });
+
+    it('clearCooldown removes a cooldown for an origin', async () => {
+      const futureTs = Date.now() + 60_000;
+      await store.setCooldown('api.example.com', futureTs);
+
+      await store.clearCooldown('api.example.com');
+
+      const result = await store.getCooldown('api.example.com');
+      expect(result).toBeUndefined();
+    });
+
+    it('clearCooldown does not throw for a non-existent origin', async () => {
+      await expect(
+        store.clearCooldown('non-existent.example.com'),
+      ).resolves.not.toThrow();
+    });
+
+    it('clear() also removes all server cooldowns', async () => {
+      await store.setCooldown('origin-a.example.com', Date.now() + 60_000);
+      await store.setCooldown('origin-b.example.com', Date.now() + 60_000);
+      await store.record('some-resource');
+
+      await store.clear();
+
+      expect(await store.getCooldown('origin-a.example.com')).toBeUndefined();
+      expect(await store.getCooldown('origin-b.example.com')).toBeUndefined();
+
+      const stats = await store.getStats();
       expect(stats.totalRequests).toBe(0);
     });
   });

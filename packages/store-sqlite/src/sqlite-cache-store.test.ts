@@ -67,6 +67,28 @@ describe('SQLiteCacheStore', () => {
       expect(value1).toBeUndefined();
       expect(value2).toBeUndefined();
     });
+
+    it('should clear only entries matching the scope prefix', async () => {
+      await store.set('scopeA:key1', 'a1', 60);
+      await store.set('scopeA:key2', 'a2', 60);
+      await store.set('scopeB:key1', 'b1', 60);
+
+      await store.clear('scopeA:');
+
+      expect(await store.get('scopeA:key1')).toBeUndefined();
+      expect(await store.get('scopeA:key2')).toBeUndefined();
+      expect(await store.get('scopeB:key1')).toBe('b1');
+    });
+
+    it('should clear all entries when no scope is provided', async () => {
+      await store.set('scopeA:key1', 'a1', 60);
+      await store.set('scopeB:key1', 'b1', 60);
+
+      await store.clear();
+
+      expect(await store.get('scopeA:key1')).toBeUndefined();
+      expect(await store.get('scopeB:key1')).toBeUndefined();
+    });
   });
 
   describe('TTL functionality', () => {
@@ -424,6 +446,13 @@ describe('SQLiteCacheStore', () => {
       // Should throw errors after destruction
       await expect(store.get('key')).rejects.toThrow();
       await expect(store.set('key', 'value', 60)).rejects.toThrow();
+    });
+
+    it('should throw when listing entries after destroy', async () => {
+      store.destroy();
+      await expect(store.listEntries()).rejects.toThrow(
+        'Cache store has been destroyed',
+      );
     });
   });
 
