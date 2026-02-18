@@ -52,4 +52,11 @@ export interface DedupeStore<T = unknown> {
    * @returns True if the request is in progress
    */
   isInProgress(hash: string): Promise<boolean>;
+
+  /**
+   * Clear tracked jobs.
+   * @param scope When provided, only jobs whose key starts with this
+   *              prefix are removed. When omitted, all jobs are cleared.
+   */
+  clear?(scope?: string): Promise<void>;
 }

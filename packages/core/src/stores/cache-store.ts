@@ -24,7 +24,9 @@ export interface CacheStore<T = unknown> {
   delete(hash: string): Promise<void>;
 
   /**
-   * Clear all cached items
+   * Clear cached items.
+   * @param scope When provided, only entries whose key starts with this
+   *              prefix are removed. When omitted, all entries are cleared.
    */
-  clear(): Promise<void>;
+  clear(scope?: string): Promise<void>;
 }

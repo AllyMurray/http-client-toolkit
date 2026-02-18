@@ -20,3 +20,9 @@ export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   limit: 60,
   windowMs: 60_000,
 };
+
+/**
+ * Map of resource keys to their rate-limit configurations.
+ * Keys should match the output of `resourceExtractor`.
+ */
+export type RateLimitConfigMap = Map<string, RateLimitConfig>;
