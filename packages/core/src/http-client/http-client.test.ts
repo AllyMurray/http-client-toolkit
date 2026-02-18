@@ -843,7 +843,7 @@ describe('HttpClient', () => {
         resetMs?: number;
       };
       getOriginScope: (url: string) => string;
-      inferResource: (url: string) => string;
+      getResource: (url: string) => string;
     };
 
     expect(privateClient.normalizeHeaderNames(undefined, ['x-a'])).toEqual([
@@ -894,8 +894,8 @@ describe('HttpClient', () => {
     expect(privateClient.parseCombinedRateLimitHeader(undefined)).toEqual({});
 
     expect(privateClient.getOriginScope('not-a-url')).toBe('unknown');
-    expect(privateClient.inferResource('/still-not-a-url')).toBe('unknown');
-    expect(privateClient.inferResource(`${baseUrl}/`)).toBe('unknown');
+    expect(privateClient.getResource('/still-not-a-url')).toBe('unknown');
+    expect(privateClient.getResource(`${baseUrl}/`)).toBe(baseUrl);
 
     const privateApplyClient = client as unknown as {
       applyServerRateLimitHints: (
@@ -3433,6 +3433,682 @@ describe('HttpClient', () => {
       const hash = hashRequest(`${baseUrl}/no-override`, {});
       // max-age=10 clamped to minimumTTL=300 from constructor
       expect(cache._store.get(hash)?.ttl).toBe(300);
+    });
+  });
+
+  describe('multi-client store sharing', () => {
+    function makeCacheStore() {
+      const store = new Map<string, { value: unknown; ttl: number }>();
+      return {
+        async get(hash: string) {
+          return store.get(hash)?.value;
+        },
+        async set(hash: string, value: unknown, ttl: number) {
+          store.set(hash, { value, ttl });
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear(scope?: string) {
+          if (scope) {
+            for (const key of store.keys()) {
+              if (key.startsWith(scope)) {
+                store.delete(key);
+              }
+            }
+          } else {
+            store.clear();
+          }
+        },
+        _store: store,
+      };
+    }
+
+    describe('storeScope', () => {
+      test('prefixes cache keys with scope', async () => {
+        const cache = makeCacheStore();
+        const client = new HttpClient({
+          name: 'test',
+          cache,
+          storeScope: 'clientA',
+        });
+
+        nock(baseUrl).get('/scoped').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/scoped`);
+
+        const rawHash = hashRequest(`${baseUrl}/scoped`, {});
+        const scopedHash = `clientA:${rawHash}`;
+
+        // Entry should be stored under scoped key
+        expect(cache._store.has(scopedHash)).toBe(true);
+        // Entry should NOT be stored under raw key
+        expect(cache._store.has(rawHash)).toBe(false);
+      });
+
+      test('prefixes dedupe keys with scope', async () => {
+        const registeredHashes: Array<string> = [];
+        const dedupeStub = {
+          async waitFor() {
+            return undefined;
+          },
+          async register(hash: string) {
+            registeredHashes.push(hash);
+            return 'job-1';
+          },
+          async complete() {},
+          async fail() {},
+          async isInProgress() {
+            return false;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          dedupe: dedupeStub,
+          storeScope: 'clientB',
+        });
+
+        nock(baseUrl).get('/scoped-dedupe').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/scoped-dedupe`);
+
+        const rawHash = hashRequest(`${baseUrl}/scoped-dedupe`, {});
+        expect(registeredHashes[0]).toBe(`clientB:${rawHash}`);
+      });
+
+      test('two clients sharing one store with different scopes have isolated cache entries', async () => {
+        const cache = makeCacheStore();
+
+        const clientA = new HttpClient({
+          name: 'clientA',
+          cache,
+          storeScope: 'scopeA',
+        });
+        const clientB = new HttpClient({
+          name: 'clientB',
+          cache,
+          storeScope: 'scopeB',
+        });
+
+        nock(baseUrl).get('/shared').reply(200, { source: 'A' });
+        nock(baseUrl).get('/shared').reply(200, { source: 'B' });
+
+        await clientA.get(`${baseUrl}/shared`);
+        await clientB.get(`${baseUrl}/shared`);
+
+        const rawHash = hashRequest(`${baseUrl}/shared`, {});
+        // Both scoped entries should exist
+        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+        // Unscoped key should not exist
+        expect(cache._store.has(rawHash)).toBe(false);
+      });
+    });
+
+    describe('resourceExtractor', () => {
+      test('overrides default origin-based resource extraction', async () => {
+        let recordedResource: string | undefined;
+        const rateLimitStub = {
+          async canProceed(resource: string) {
+            recordedResource = resource;
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          resourceExtractor: (url) => {
+            const u = new URL(url);
+            return `${u.origin}${u.pathname}`;
+          },
+        });
+
+        nock(baseUrl).get('/items/42').reply(200, { id: 42 });
+
+        await client.get(`${baseUrl}/items/42`);
+
+        expect(recordedResource).toBe(`${baseUrl}/items/42`);
+      });
+
+      test('getResource uses origin by default', () => {
+        const client = new HttpClient({ name: 'test' });
+        const privateClient = client as unknown as {
+          getResource: (url: string) => string;
+        };
+
+        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(baseUrl);
+      });
+
+      test('getResource uses resourceExtractor when provided', () => {
+        const client = new HttpClient({
+          name: 'test',
+          resourceExtractor: (url) => `custom:${new URL(url).pathname}`,
+        });
+        const privateClient = client as unknown as {
+          getResource: (url: string) => string;
+        };
+
+        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(
+          'custom:/items',
+        );
+      });
+    });
+
+    describe('rateLimitConfigs', () => {
+      test('calls setResourceConfig on the store at construction', () => {
+        const setResourceConfigCalls: Array<{
+          resource: string;
+          config: { limit: number; windowMs: number };
+        }> = [];
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          setResourceConfig(
+            resource: string,
+            config: { limit: number; windowMs: number },
+          ) {
+            setResourceConfigCalls.push({ resource, config });
+          },
+        };
+
+        const configs = new Map<string, { limit: number; windowMs: number }>();
+        configs.set('https://api.github.com', {
+          limit: 5000,
+          windowMs: 3600_000,
+        });
+        configs.set('https://api.stripe.com', {
+          limit: 100,
+          windowMs: 60_000,
+        });
+
+        new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          rateLimitConfigs: configs,
+        });
+
+        expect(setResourceConfigCalls).toHaveLength(2);
+        expect(setResourceConfigCalls[0]).toEqual({
+          resource: 'https://api.github.com',
+          config: { limit: 5000, windowMs: 3600_000 },
+        });
+        expect(setResourceConfigCalls[1]).toEqual({
+          resource: 'https://api.stripe.com',
+          config: { limit: 100, windowMs: 60_000 },
+        });
+      });
+
+      test('does not call setResourceConfig when store lacks it', () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const configs = new Map<string, { limit: number; windowMs: number }>();
+        configs.set('https://api.github.com', {
+          limit: 5000,
+          windowMs: 3600_000,
+        });
+
+        // Should not throw even though store has no setResourceConfig
+        expect(
+          () =>
+            new HttpClient({
+              name: 'test',
+              rateLimit: rateLimitStub,
+              rateLimitConfigs: configs,
+            }),
+        ).not.toThrow();
+      });
+    });
+
+    describe('defaultRateLimitConfig', () => {
+      test('calls setResourceConfig with __default__ key at construction', () => {
+        const setResourceConfigCalls: Array<{
+          resource: string;
+          config: { limit: number; windowMs: number };
+        }> = [];
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          setResourceConfig(
+            resource: string,
+            config: { limit: number; windowMs: number },
+          ) {
+            setResourceConfigCalls.push({ resource, config });
+          },
+        };
+
+        new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          defaultRateLimitConfig: { limit: 30, windowMs: 60_000 },
+        });
+
+        expect(setResourceConfigCalls).toHaveLength(1);
+        expect(setResourceConfigCalls[0]).toEqual({
+          resource: '__default__',
+          config: { limit: 30, windowMs: 60_000 },
+        });
+      });
+
+      test('does not call setResourceConfig for default when store lacks it', () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        // Should not throw
+        expect(
+          () =>
+            new HttpClient({
+              name: 'test',
+              rateLimit: rateLimitStub,
+              defaultRateLimitConfig: { limit: 30, windowMs: 60_000 },
+            }),
+        ).not.toThrow();
+      });
+    });
+
+    describe('server cooldown delegation', () => {
+      test('delegates setCooldown/getCooldown/clearCooldown to rate limit store when available', async () => {
+        const cooldowns = new Map<string, number>();
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async setCooldown(origin: string, cooldownUntilMs: number) {
+            cooldowns.set(origin, cooldownUntilMs);
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          throwOnRateLimit: true,
+        });
+
+        // Trigger a 429 with Retry-After to invoke applyServerRateLimitHints
+        nock(baseUrl)
+          .get('/cooldown-delegate')
+          .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
+
+        await expect(
+          client.get(`${baseUrl}/cooldown-delegate`),
+        ).rejects.toThrow();
+
+        // Cooldown should be stored in the rate limit store, not the private Map
+        const origin = baseUrl;
+        expect(cooldowns.has(origin)).toBe(true);
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+        };
+        expect(privateClient.serverCooldowns.has(origin)).toBe(false);
+      });
+
+      test('readCooldown delegates to getCooldown on the store', async () => {
+        const cooldowns = new Map<string, number>();
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+        });
+
+        const privateClient = client as unknown as {
+          readCooldown: (scope: string) => Promise<number | undefined>;
+        };
+
+        // No cooldown set
+        expect(await privateClient.readCooldown(baseUrl)).toBeUndefined();
+
+        // Set cooldown in the external store
+        cooldowns.set(baseUrl, Date.now() + 5000);
+        expect(await privateClient.readCooldown(baseUrl)).toBeGreaterThan(0);
+      });
+
+      test('removeCooldown delegates to clearCooldown on the store', async () => {
+        const cooldowns = new Map<string, number>();
+        cooldowns.set(baseUrl, Date.now() + 5000);
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+        });
+
+        const privateClient = client as unknown as {
+          removeCooldown: (scope: string) => Promise<void>;
+        };
+
+        await privateClient.removeCooldown(baseUrl);
+        expect(cooldowns.has(baseUrl)).toBe(false);
+      });
+
+      test('falls back to private serverCooldowns when store has no cooldown methods', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          throwOnRateLimit: true,
+        });
+
+        // Trigger a 429 to invoke applyServerRateLimitHints
+        nock(baseUrl)
+          .get('/cooldown-fallback')
+          .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
+
+        await expect(
+          client.get(`${baseUrl}/cooldown-fallback`),
+        ).rejects.toThrow();
+
+        // Cooldown should be stored in the private Map
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+        };
+        expect(privateClient.serverCooldowns.has(baseUrl)).toBe(true);
+      });
+
+      test('readCooldown falls back to private Map when store lacks getCooldown', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+        });
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+          readCooldown: (scope: string) => Promise<number | undefined>;
+        };
+
+        privateClient.serverCooldowns.set(baseUrl, Date.now() + 5000);
+        expect(await privateClient.readCooldown(baseUrl)).toBeGreaterThan(0);
+      });
+
+      test('removeCooldown falls back to private Map when store lacks clearCooldown', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+        });
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+          removeCooldown: (scope: string) => Promise<void>;
+        };
+
+        privateClient.serverCooldowns.set(baseUrl, Date.now() + 5000);
+        await privateClient.removeCooldown(baseUrl);
+        expect(privateClient.serverCooldowns.has(baseUrl)).toBe(false);
+      });
+
+      test('enforceServerCooldown uses store getCooldown and clearCooldown', async () => {
+        const cooldowns = new Map<string, number>();
+        // Set a cooldown that has already expired
+        cooldowns.set(baseUrl, Date.now() - 1000);
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: rateLimitStub,
+          throwOnRateLimit: false,
+          maxWaitTime: 5000,
+        });
+
+        nock(baseUrl).get('/cooldown-enforce').reply(200, { ok: true });
+
+        // Expired cooldown should be cleared and request should proceed
+        const result = await client.get<{ ok: boolean }>(
+          `${baseUrl}/cooldown-enforce`,
+        );
+        expect(result).toEqual({ ok: true });
+        // clearCooldown should have been called
+        expect(cooldowns.has(baseUrl)).toBe(false);
+      });
+    });
+
+    describe('clearCache', () => {
+      test('passes scope prefix to cache.clear when storeScope is set', async () => {
+        let clearArg: string | undefined;
+        const cacheStub = {
+          async get() {
+            return undefined;
+          },
+          async set() {},
+          async delete() {},
+          async clear(scope?: string) {
+            clearArg = scope;
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          cache: cacheStub,
+          storeScope: 'myScope',
+        });
+
+        await client.clearCache();
+        expect(clearArg).toBe('myScope:');
+      });
+
+      test('passes undefined to cache.clear when storeScope is not set', async () => {
+        let clearCalled = false;
+        let clearArg: string | undefined = 'sentinel';
+        const cacheStub = {
+          async get() {
+            return undefined;
+          },
+          async set() {},
+          async delete() {},
+          async clear(scope?: string) {
+            clearCalled = true;
+            clearArg = scope;
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          cache: cacheStub,
+        });
+
+        await client.clearCache();
+        expect(clearCalled).toBe(true);
+        expect(clearArg).toBeUndefined();
+      });
+
+      test('returns immediately when no cache store is set', async () => {
+        const client = new HttpClient({ name: 'test' });
+        // Should not throw
+        await expect(client.clearCache()).resolves.toBeUndefined();
+      });
+
+      test('scoped clearCache only removes entries for that scope', async () => {
+        const cache = makeCacheStore();
+
+        const clientA = new HttpClient({
+          name: 'clientA',
+          cache,
+          storeScope: 'scopeA',
+        });
+        const clientB = new HttpClient({
+          name: 'clientB',
+          cache,
+          storeScope: 'scopeB',
+        });
+
+        nock(baseUrl).get('/shared-clear').reply(200, { source: 'A' });
+        nock(baseUrl).get('/shared-clear').reply(200, { source: 'B' });
+
+        await clientA.get(`${baseUrl}/shared-clear`);
+        await clientB.get(`${baseUrl}/shared-clear`);
+
+        const rawHash = hashRequest(`${baseUrl}/shared-clear`, {});
+        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+
+        // Clear only clientA's entries
+        await clientA.clearCache();
+
+        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(false);
+        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+      });
     });
   });
 });
