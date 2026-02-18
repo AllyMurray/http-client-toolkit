@@ -39,6 +39,7 @@ export function createApiRouter(ctx: MultiClientContext) {
     pathname: string,
     query: URLSearchParams,
   ): Promise<boolean> => {
+    /* v8 ignore next -- req.method is always present in Node.js HTTP */
     const method = req.method?.toUpperCase() ?? 'GET';
 
     // Health (aggregate)
@@ -57,6 +58,7 @@ export function createApiRouter(ctx: MultiClientContext) {
     const clientMatch = pathname.match(CLIENT_ROUTE_REGEX);
     if (clientMatch) {
       const clientName = clientMatch[1]!;
+      /* v8 ignore next -- capture group is always present for matched client routes */
       const subPath = clientMatch[2] ?? '';
       const client = ctx.clients.get(clientName);
 

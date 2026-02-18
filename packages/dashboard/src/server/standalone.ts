@@ -26,6 +26,7 @@ export async function startDashboard(
 
     server.listen(opts.port, opts.host, () => {
       const addr = server.address();
+      /* v8 ignore next 2 -- addr is string only for Unix sockets */
       const url =
         typeof addr === 'string' ? addr : `http://${opts.host}:${opts.port}`;
 

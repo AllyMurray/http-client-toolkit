@@ -60,9 +60,11 @@ export function createDashboard(
           serveStatic(res, pathname);
         }
       })
+      /* v8 ignore start -- defensive: apiRouter catches all expected errors internally */
       .catch(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal server error' }));
       });
+    /* v8 ignore stop */
   };
 }

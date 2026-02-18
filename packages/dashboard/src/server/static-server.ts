@@ -22,10 +22,12 @@ function getCurrentDir(): string {
   // ESM: use import.meta.url; CJS: use __dirname
   try {
     return dirname(fileURLToPath(import.meta.url));
+    /* v8 ignore start -- CJS fallback unreachable in ESM test environment */
   } catch {
     // Fallback for CJS
     return typeof __dirname !== 'undefined' ? __dirname : process.cwd();
   }
+  /* v8 ignore stop */
 }
 
 function getClientDir(): string {

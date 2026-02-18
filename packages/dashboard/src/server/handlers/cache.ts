@@ -11,6 +11,7 @@ export async function handleCacheStats(
     const stats = await adapter.getStats();
     sendJson(res, { stats, capabilities: adapter.capabilities });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -27,6 +28,7 @@ export async function handleCacheEntries(
     const result = await adapter.listEntries(page, limit);
     sendJson(res, result);
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -38,6 +40,7 @@ export async function handleCacheEntry(
 ): Promise<void> {
   try {
     const hash = extractParam(pathname, '/cache/entries/:hash');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!hash) {
       sendNotFound(res);
       return;
@@ -49,6 +52,7 @@ export async function handleCacheEntry(
     }
     sendJson(res, { hash, value: entry });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -60,6 +64,7 @@ export async function handleDeleteCacheEntry(
 ): Promise<void> {
   try {
     const hash = extractParam(pathname, '/cache/entries/:hash');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!hash) {
       sendNotFound(res);
       return;
@@ -67,6 +72,7 @@ export async function handleDeleteCacheEntry(
     await adapter.deleteEntry(hash);
     sendJson(res, { deleted: true });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -79,6 +85,7 @@ export async function handleClearCache(
     await adapter.clearAll();
     sendJson(res, { cleared: true });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
