@@ -38,6 +38,7 @@ Set the cache TTL (in seconds) when creating the client. This is used when respo
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   cache: new InMemoryCacheStore(),
   cacheTTL: 300, // 5 minutes
 });
@@ -128,6 +129,7 @@ The `cacheOverrides` option lets you selectively bypass certain cache directives
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   cache: new InMemoryCacheStore(),
   cacheOverrides: {
     ignoreNoStore: true,   // Cache even when no-store is set
@@ -169,6 +171,7 @@ Per-request `cacheOverrides` are **shallow-merged** with the constructor-level o
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   cache: new InMemoryCacheStore(),
   cacheTTL: 300,
   cacheOverrides: { minimumTTL: 60, maximumTTL: 3600 },

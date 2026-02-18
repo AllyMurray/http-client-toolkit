@@ -35,10 +35,11 @@ The dashboard package provides a browser-based UI for monitoring your cache, ded
 
 ## Embedded Middleware
 
-Mount the dashboard inside an existing HTTP server using `createDashboard()`. Pass in one or more named clients, each with their own store instances:
+Mount the dashboard inside an existing HTTP server using `createDashboard()`. Pass in one or more `HttpClient` instances — the dashboard reads their stores automatically:
 
 ```typescript
 import http from 'http';
+import { HttpClient } from '@http-client-toolkit/core';
 import { createDashboard } from '@http-client-toolkit/dashboard';
 import {
   InMemoryCacheStore,
@@ -46,19 +47,23 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
+const userApiClient = new HttpClient({
+  name: 'user-api',
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
+
+const productApiClient = new HttpClient({
+  name: 'product-api',
+  cache: new InMemoryCacheStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
+
 const dashboard = createDashboard({
   clients: [
-    {
-      name: 'user-api',
-      cacheStore: new InMemoryCacheStore(),
-      dedupeStore: new InMemoryDedupeStore(),
-      rateLimitStore: new InMemoryRateLimitStore(),
-    },
-    {
-      name: 'product-api',
-      cacheStore: new InMemoryCacheStore(),
-      rateLimitStore: new InMemoryRateLimitStore(),
-    },
+    { client: userApiClient },
+    { client: productApiClient },
   ],
 });
 
@@ -75,12 +80,19 @@ The middleware signature is `(req, res, next?) => void`, so it works with plain 
 Use `createDashboardHandler()` for frameworks and runtimes that use the Web Standards `Request`/`Response` API — such as Hono, Bun, and Deno:
 
 ```typescript
+import { HttpClient } from '@http-client-toolkit/core';
 import { createDashboardHandler } from '@http-client-toolkit/dashboard';
+import { InMemoryCacheStore, InMemoryDedupeStore, InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+
+const userApiClient = new HttpClient({
+  name: 'user-api',
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
 
 const handler = createDashboardHandler({
-  clients: [
-    { name: 'user-api', cacheStore, dedupeStore, rateLimitStore },
-  ],
+  clients: [{ client: userApiClient }],
 });
 ```
 
@@ -111,7 +123,7 @@ The handler signature is `(request: Request) => Promise<Response>`, so it plugs 
 When mounting at a sub-path, set the `basePath` option so the handler can strip it during routing:
 ```typescript
 const handler = createDashboardHandler({
-  clients: [{ name: 'my-api', cacheStore }],
+  clients: [{ client: myApiClient }],
   basePath: '/dashboard',
 });
 ```
@@ -122,12 +134,19 @@ const handler = createDashboardHandler({
 For convenience, `startDashboard()` spins up its own HTTP server:
 
 ```typescript
+import { HttpClient } from '@http-client-toolkit/core';
 import { startDashboard } from '@http-client-toolkit/dashboard';
+import { InMemoryCacheStore, InMemoryDedupeStore, InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+
+const userApiClient = new HttpClient({
+  name: 'user-api',
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
 
 const { server, close } = await startDashboard({
-  clients: [
-    { name: 'user-api', cacheStore, dedupeStore, rateLimitStore },
-  ],
+  clients: [{ client: userApiClient }],
   port: 4000,
   host: 'localhost',
 });
@@ -170,12 +189,10 @@ Each client in the `clients` array accepts:
 
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
-| `name` | `string` | Yes | URL-safe identifier for this client |
-| `cacheStore` | `CacheStore` | No | Cache store instance to monitor |
-| `dedupeStore` | `DedupeStore` | No | Dedup store instance to monitor |
-| `rateLimitStore` | `RateLimitStore` | No | Rate limit store instance to monitor |
+| `client` | `HttpClient` | Yes | An `HttpClient` instance with at least one store configured |
+| `name` | `string` | No | Override the client's name for the dashboard (defaults to `client.name`) |
 
-At least one store must be provided per client.
+The dashboard reads stores directly from the `HttpClient` instance via its `stores` property. At least one store (cache, dedupe, or rateLimit) must be configured on the client.
 
 ### `DashboardOptions`
 

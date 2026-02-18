@@ -17,6 +17,7 @@ import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
 
 const client = new HttpClient({
+  name: 'my-api',
   rateLimit: new InMemoryRateLimitStore({
     defaultConfig: { limit: 60, windowMs: 60_000 }, // 60 requests per minute
   }),
@@ -111,6 +112,7 @@ Map non-standard header names for specific APIs:
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   rateLimit,
   rateLimitHeaders: {
     retryAfter: ['RetryAfterSeconds'],
@@ -128,6 +130,7 @@ Control what happens when a rate limit is hit:
   <TabItem label="Throw (default)">
     ```typescript
     const client = new HttpClient({
+      name: 'my-api',
       rateLimit,
       throwOnRateLimit: true,
     });
@@ -138,6 +141,7 @@ Control what happens when a rate limit is hit:
   <TabItem label="Wait">
     ```typescript
     const client = new HttpClient({
+      name: 'my-api',
       rateLimit,
       throwOnRateLimit: false,
       maxWaitTime: 30_000, // Wait up to 30 seconds

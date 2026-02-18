@@ -11,11 +11,29 @@ describe('HttpClient', () => {
   let httpClient: HttpClient;
   beforeEach(() => {
     nock.cleanAll();
-    httpClient = new HttpClient();
+    httpClient = new HttpClient({ name: 'test' });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  test('should store name from constructor options', () => {
+    const client = new HttpClient({ name: 'my-client' });
+    expect(client.name).toBe('my-client');
+  });
+
+  test('should expose stores as public readonly', () => {
+    const cache = {
+      get: async () => undefined,
+      set: async () => {},
+      delete: async () => {},
+      clear: async () => {},
+    };
+    const client = new HttpClient({ name: 'test', cache });
+    expect(client.stores.cache).toBe(cache);
+    expect(client.stores.dedupe).toBeUndefined();
+    expect(client.stores.rateLimit).toBeUndefined();
   });
 
   test('should return a successful response', async () => {
@@ -32,6 +50,7 @@ describe('HttpClient', () => {
     nock(baseUrl).get('/transform').reply(200, mockResponse);
 
     const client = new HttpClient({
+      name: 'test',
       responseTransformer: (data: unknown) => {
         const obj = data as Record<string, unknown>;
         return { camelCaseKey: obj['snake_case_key'] };
@@ -49,6 +68,7 @@ describe('HttpClient', () => {
     nock(baseUrl).get('/handled').reply(200, mockResponse);
 
     const client = new HttpClient({
+      name: 'test',
       responseHandler: (data: unknown) => {
         const obj = data as Record<string, unknown>;
         if (obj['error_code'] === 404) {
@@ -74,6 +94,7 @@ describe('HttpClient', () => {
     }
 
     const client = new HttpClient({
+      name: 'test',
       errorHandler: () => new CustomError('Custom error occurred'),
     });
 
@@ -95,6 +116,7 @@ describe('HttpClient', () => {
     let invocations = 0;
     let capturedUrl: string | undefined;
     const client = new HttpClient({
+      name: 'test',
       errorHandler: (context) => {
         invocations += 1;
         capturedUrl = context.url;
@@ -121,6 +143,7 @@ describe('HttpClient', () => {
   test('should not call errorHandler for network errors', async () => {
     const errorHandler = vi.fn(() => new Error('should not be called'));
     const client = new HttpClient({
+      name: 'test',
       fetchFn: async () => {
         throw new TypeError('fetch failed');
       },
@@ -246,6 +269,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: rateLimitStoreStub,
       throwOnRateLimit: false,
       maxWaitTime: 5_000,
@@ -266,7 +290,7 @@ describe('HttpClient', () => {
       .get('/throttled')
       .reply(429, { message: 'Too many requests' }, { 'Retry-After': '1' });
 
-    const client = new HttpClient();
+    const client = new HttpClient({ name: 'test' });
 
     await expect(client.get(`${baseUrl}/throttled`)).rejects.toThrow(
       HttpClientError,
@@ -287,7 +311,7 @@ describe('HttpClient', () => {
       },
     );
 
-    const client = new HttpClient();
+    const client = new HttpClient({ name: 'test' });
 
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/quota-status`);
     expect(result.ok).toBe(true);
@@ -308,6 +332,7 @@ describe('HttpClient', () => {
     );
 
     const client = new HttpClient({
+      name: 'test',
       rateLimitHeaders: {
         remaining: ['Remaining-Requests'],
         reset: ['Window-Reset-Seconds'],
@@ -359,6 +384,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: adaptiveRateLimitStoreStub,
       throwOnRateLimit: false,
     });
@@ -392,6 +418,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: rateLimitStoreStub,
       throwOnRateLimit: false,
       maxWaitTime: 30,
@@ -418,6 +445,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: rateLimitStoreStub,
       throwOnRateLimit: true,
     });
@@ -458,6 +486,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: basicRateLimitStoreStub,
       throwOnRateLimit: false,
     });
@@ -498,7 +527,7 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ cache: cacheStoreStub });
+    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
 
     await client.get(`${baseUrl}/same-path?q=1`);
     await client.get(`${alternateBaseUrl}/same-path?q=1`);
@@ -523,7 +552,7 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ cache: cacheStoreStub });
+    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
 
     await client.get(`${baseUrl}/multi?tag=a&tag=b`);
     await client.get(`${baseUrl}/multi?tag=b`);
@@ -552,7 +581,7 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ cache: cacheStoreStub });
+    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
 
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b&tag=c`);
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b`);
@@ -592,7 +621,7 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ cache: cacheStoreStub });
+    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/cache-hit`);
 
     expect(result.ok).toBe(true);
@@ -677,7 +706,7 @@ describe('HttpClient', () => {
       .delay(50)
       .reply(200, { ok: true });
 
-    const client = new HttpClient({ dedupe: dedupeStoreStub });
+    const client = new HttpClient({ name: 'test', dedupe: dedupeStoreStub });
 
     const [resultA, resultB] = await Promise.all([
       client.get<{ ok: boolean }>(`${baseUrl}/dedupe-race?page=1`),
@@ -704,7 +733,7 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    const client = new HttpClient({ dedupe: dedupeStoreStub });
+    const client = new HttpClient({ name: 'test', dedupe: dedupeStoreStub });
     const result = await client.get<{ from: string }>(`${baseUrl}/not-called`);
 
     expect(result).toEqual({ from: 'dedupe' });
@@ -737,7 +766,7 @@ describe('HttpClient', () => {
       .get('/dedupe-failure')
       .reply(503, { message: 'Service unavailable' }, { 'Retry-After': '0' });
 
-    const client = new HttpClient({ dedupe: dedupeStoreStub });
+    const client = new HttpClient({ name: 'test', dedupe: dedupeStoreStub });
 
     await expect(client.get(`${baseUrl}/dedupe-failure`)).rejects.toThrow(
       HttpClientError,
@@ -747,7 +776,7 @@ describe('HttpClient', () => {
   });
 
   test('should wrap Error in HttpClientError via generateClientError', () => {
-    const client = new HttpClient() as unknown as {
+    const client = new HttpClient({ name: 'test' }) as unknown as {
       generateClientError: (err: unknown) => Error;
     };
 
@@ -757,7 +786,7 @@ describe('HttpClient', () => {
   });
 
   test('should wrap HttpErrorContext in HttpClientError with status via generateClientError', () => {
-    const client = new HttpClient() as unknown as {
+    const client = new HttpClient({ name: 'test' }) as unknown as {
       generateClientError: (err: unknown) => Error;
     };
 
@@ -780,7 +809,7 @@ describe('HttpClient', () => {
   });
 
   test('should stringify non-Error non-HttpErrorContext values in generateClientError', () => {
-    const client = new HttpClient() as unknown as {
+    const client = new HttpClient({ name: 'test' }) as unknown as {
       generateClientError: (err: unknown) => Error;
     };
 
@@ -791,6 +820,7 @@ describe('HttpClient', () => {
 
   test('should exercise private header parsing helpers', () => {
     const client = new HttpClient({
+      name: 'test',
       rateLimitHeaders: {
         retryAfter: ['  retry-after  ', ''],
       },
@@ -898,6 +928,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: allowRateLimitStoreStub,
       throwOnRateLimit: false,
       maxWaitTime: 50,
@@ -948,6 +979,7 @@ describe('HttpClient', () => {
     nock(baseUrl).get('/signal-wait').reply(200, { ok: true });
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: rateLimitStoreStub,
       throwOnRateLimit: false,
       maxWaitTime: 100,
@@ -982,6 +1014,7 @@ describe('HttpClient', () => {
     } as const;
 
     const client = new HttpClient({
+      name: 'test',
       rateLimit: acquireStore,
       throwOnRateLimit: false,
     });
@@ -1008,6 +1041,7 @@ describe('HttpClient', () => {
     } as const;
 
     const strictClient = new HttpClient({
+      name: 'test',
       rateLimit: allowRateLimitStoreStub,
       throwOnRateLimit: true,
     });
@@ -1024,6 +1058,7 @@ describe('HttpClient', () => {
     ).resolves.toBe(false);
 
     const waitingClient = new HttpClient({
+      name: 'test',
       throwOnRateLimit: false,
       maxWaitTime: 0,
     });
@@ -1065,7 +1100,7 @@ describe('HttpClient', () => {
 
     test('respects max-age and stores CacheEntry envelope', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/data')
@@ -1081,7 +1116,7 @@ describe('HttpClient', () => {
 
     test('returns fresh cached entry without network request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/fresh')
@@ -1097,7 +1132,7 @@ describe('HttpClient', () => {
 
     test('does not cache when no-store is set', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/no-store')
@@ -1112,6 +1147,7 @@ describe('HttpClient', () => {
     test('caches despite no-store when ignoreNoStore is true', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { ignoreNoStore: true },
       });
@@ -1132,7 +1168,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/etag-data')
@@ -1161,7 +1197,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/lm-data').reply(
         200,
@@ -1190,7 +1226,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       // No ETag or Last-Modified
       nock(baseUrl)
@@ -1214,7 +1250,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/swr').reply(
         200,
@@ -1247,7 +1283,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/swr-200').reply(
         200,
@@ -1285,6 +1321,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
@@ -1324,6 +1361,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         responseHandler: (data: unknown) => {
           const obj = data as Record<string, unknown>;
@@ -1361,7 +1399,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/swr-fail').reply(
         200,
@@ -1390,7 +1428,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/sie')
@@ -1415,7 +1453,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/sie-net')
@@ -1449,7 +1487,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/no-cache')
@@ -1473,6 +1511,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { ignoreNoCache: true },
       });
@@ -1491,6 +1530,7 @@ describe('HttpClient', () => {
     test('clamps TTL with minimumTTL', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { minimumTTL: 300 },
       });
@@ -1509,6 +1549,7 @@ describe('HttpClient', () => {
     test('clamps TTL with maximumTTL', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { maximumTTL: 60 },
       });
@@ -1546,7 +1587,11 @@ describe('HttpClient', () => {
       } as const;
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, dedupe: dedupeStub });
+      const client = new HttpClient({
+        name: 'test',
+        cache,
+        dedupe: dedupeStub,
+      });
 
       nock(baseUrl)
         .get('/304-dedup')
@@ -1570,7 +1615,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/must-reval').reply(
         200,
@@ -1599,7 +1644,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/sie-4xx')
@@ -1623,6 +1668,7 @@ describe('HttpClient', () => {
     test('applies responseTransformer to cached responses', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
@@ -1645,6 +1691,7 @@ describe('HttpClient', () => {
     test('clampTTL applies both min and max', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
       });
@@ -1670,7 +1717,7 @@ describe('HttpClient', () => {
 
     test('uses cacheTTL when no cache headers present', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, cacheTTL: 900 });
+      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
 
       nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
 
@@ -1681,7 +1728,7 @@ describe('HttpClient', () => {
     });
 
     test('flushRevalidations resolves when no pending revalidations', async () => {
-      const client = new HttpClient();
+      const client = new HttpClient({ name: 'test' });
       await expect(client.flushRevalidations()).resolves.toBeUndefined();
     });
 
@@ -1707,7 +1754,11 @@ describe('HttpClient', () => {
       } as const;
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, dedupe: dedupeStub });
+      const client = new HttpClient({
+        name: 'test',
+        cache,
+        dedupe: dedupeStub,
+      });
 
       nock(baseUrl)
         .get('/sie-dedup')
@@ -1730,7 +1781,7 @@ describe('HttpClient', () => {
     });
 
     test('isServerErrorOrNetworkFailure helper covers branches', () => {
-      const client = new HttpClient() as unknown as {
+      const client = new HttpClient({ name: 'test' }) as unknown as {
         isServerErrorOrNetworkFailure: (error: unknown) => boolean;
       };
 
@@ -1775,7 +1826,7 @@ describe('HttpClient', () => {
 
     test('Vary match returns cached value', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/vary-match')
@@ -1798,7 +1849,7 @@ describe('HttpClient', () => {
 
     test('Vary mismatch treats as cache miss', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/vary-miss')
@@ -1829,7 +1880,7 @@ describe('HttpClient', () => {
 
     test('Vary: * always misses', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/vary-star')
@@ -1851,7 +1902,7 @@ describe('HttpClient', () => {
     });
 
     test('user headers are sent with fetch', async () => {
-      const client = new HttpClient();
+      const client = new HttpClient({ name: 'test' });
 
       nock(baseUrl)
         .get('/custom-headers')
@@ -1869,7 +1920,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/merge-headers')
@@ -1899,7 +1950,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl).get('/swr-headers').reply(
         200,
@@ -1951,7 +2002,7 @@ describe('HttpClient', () => {
       });
 
       const customFetch = vi.fn().mockResolvedValue(mockResponse);
-      const client = new HttpClient({ fetchFn: customFetch });
+      const client = new HttpClient({ name: 'test', fetchFn: customFetch });
 
       const result = await client.get<{ custom: boolean }>(
         `${baseUrl}/custom-fetch`,
@@ -1967,7 +2018,7 @@ describe('HttpClient', () => {
     test('falls back to globalThis.fetch when fetchFn is not provided', async () => {
       nock(baseUrl).get('/default-fetch').reply(200, { default: true });
 
-      const client = new HttpClient();
+      const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ default: boolean }>(
         `${baseUrl}/default-fetch`,
       );
@@ -1992,7 +2043,7 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient({ fetchFn: customFetch });
+      const client = new HttpClient({ name: 'test', fetchFn: customFetch });
       await client.get(`${baseUrl}/check-args`, {
         headers: { 'x-test': 'value' },
       });
@@ -2006,7 +2057,7 @@ describe('HttpClient', () => {
         .fn()
         .mockRejectedValue(new Error('Custom fetch failed'));
 
-      const client = new HttpClient({ fetchFn: customFetch });
+      const client = new HttpClient({ name: 'test', fetchFn: customFetch });
 
       await expect(client.get(`${baseUrl}/fetch-error`)).rejects.toThrow(
         'Custom fetch failed',
@@ -2022,6 +2073,7 @@ describe('HttpClient', () => {
         .reply(200, { authed: true });
 
       const client = new HttpClient({
+        name: 'test',
         requestInterceptor: (_url, init) => {
           const headers = new Headers(init.headers);
           headers.set('Authorization', 'Bearer token123');
@@ -2051,6 +2103,7 @@ describe('HttpClient', () => {
         });
 
       const client = new HttpClient({
+        name: 'test',
         fetchFn: customFetch,
         requestInterceptor: (_url, init) => ({
           ...init,
@@ -2069,6 +2122,7 @@ describe('HttpClient', () => {
         .reply(200, { ok: true });
 
       const client = new HttpClient({
+        name: 'test',
         requestInterceptor: async (_url, init) => {
           await new Promise((resolve) => setTimeout(resolve, 10));
           const headers = new Headers(init.headers);
@@ -2086,7 +2140,7 @@ describe('HttpClient', () => {
     test('no interceptor does not affect default path', async () => {
       nock(baseUrl).get('/no-interceptor').reply(200, { ok: true });
 
-      const client = new HttpClient();
+      const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ ok: boolean }>(
         `${baseUrl}/no-interceptor`,
       );
@@ -2095,6 +2149,7 @@ describe('HttpClient', () => {
 
     test('interceptor errors propagate correctly', async () => {
       const client = new HttpClient({
+        name: 'test',
         requestInterceptor: () => {
           throw new Error('Interceptor failed');
         },
@@ -2114,6 +2169,7 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/response-intercepted').reply(200, { v: 1 });
 
       const client = new HttpClient({
+        name: 'test',
         responseInterceptor: (response, url) => {
           capturedUrl = url;
           capturedStatus = response.status;
@@ -2130,6 +2186,7 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/replace-response').reply(200, { original: true });
 
       const client = new HttpClient({
+        name: 'test',
         responseInterceptor: () => {
           return new Response(JSON.stringify({ replaced: true }), {
             status: 200,
@@ -2148,6 +2205,7 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/async-response').reply(200, { v: 1 });
 
       const client = new HttpClient({
+        name: 'test',
         responseInterceptor: async (response) => {
           await new Promise((resolve) => setTimeout(resolve, 10));
           return response;
@@ -2163,7 +2221,7 @@ describe('HttpClient', () => {
     test('no interceptor does not affect default path', async () => {
       nock(baseUrl).get('/no-response-interceptor').reply(200, { ok: true });
 
-      const client = new HttpClient();
+      const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ ok: boolean }>(
         `${baseUrl}/no-response-interceptor`,
       );
@@ -2174,6 +2232,7 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/response-interceptor-error').reply(200, { ok: true });
 
       const client = new HttpClient({
+        name: 'test',
         responseInterceptor: () => {
           throw new Error('Response interceptor failed');
         },
@@ -2190,6 +2249,7 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/order-check').reply(200, { v: 1 });
 
       const client = new HttpClient({
+        name: 'test',
         responseInterceptor: (response) => {
           callOrder.push('responseInterceptor');
           return response;
@@ -2215,6 +2275,7 @@ describe('HttpClient', () => {
       let responseIntercepted = false;
 
       const client = new HttpClient({
+        name: 'test',
         requestInterceptor: (_url, init) => {
           const headers = new Headers(init.headers);
           headers.set('X-Request', 'added');
@@ -2249,6 +2310,7 @@ describe('HttpClient', () => {
         });
 
       const client = new HttpClient({
+        name: 'test',
         fetchFn: customFetch,
         requestInterceptor: (_url, init) => {
           callOrder.push('requestInterceptor');
@@ -2304,6 +2366,7 @@ describe('HttpClient', () => {
       const responseInterceptor = vi.fn();
 
       const client = new HttpClient({
+        name: 'test',
         cache: cacheStoreStub,
         fetchFn,
         requestInterceptor,
@@ -2345,6 +2408,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         requestInterceptor: (_url, init) => {
           callOrder.push('requestInterceptor');
@@ -2431,7 +2495,11 @@ describe('HttpClient', () => {
           );
         });
 
-      const client = new HttpClient({ cache, fetchFn: customFetch });
+      const client = new HttpClient({
+        name: 'test',
+        cache,
+        fetchFn: customFetch,
+      });
 
       nock(baseUrl).get('/swr-fetchfn').reply(
         200,
@@ -2463,6 +2531,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { jitter: 'none', baseDelay: 1 },
         });
         const result = await client.get<{ ok: boolean }>(
@@ -2479,6 +2548,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { jitter: 'none', baseDelay: 1 },
         });
         const result = await client.get<{ ok: boolean }>(
@@ -2499,6 +2569,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { jitter: 'none', baseDelay: 1 },
         });
         const result = await client.get<{ ok: boolean }>(
@@ -2515,6 +2586,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { jitter: 'none', baseDelay: 1 },
         });
         const result = await client.get<{ ok: boolean }>(
@@ -2527,6 +2599,7 @@ describe('HttpClient', () => {
         let callCount = 0;
         const retryCalls: Array<{ url: string; attempt: number }> = [];
         const client = new HttpClient({
+          name: 'test',
           fetchFn: async () => {
             callCount += 1;
             if (callCount === 1) {
@@ -2565,6 +2638,7 @@ describe('HttpClient', () => {
 
         const delays: Array<number> = [];
         const client = new HttpClient({
+          name: 'test',
           retry: {
             jitter: 'none',
             baseDelay: 1,
@@ -2589,7 +2663,10 @@ describe('HttpClient', () => {
           nock(baseUrl).get('/no-retry').reply(status, { message: 'Error' });
 
           const onRetry = vi.fn();
-          const client = new HttpClient({ retry: { onRetry, baseDelay: 1 } });
+          const client = new HttpClient({
+            name: 'test',
+            retry: { onRetry, baseDelay: 1 },
+          });
 
           await expect(client.get(`${baseUrl}/no-retry`)).rejects.toThrow(
             HttpClientError,
@@ -2603,6 +2680,7 @@ describe('HttpClient', () => {
         controller.abort();
 
         const client = new HttpClient({
+          name: 'test',
           retry: { baseDelay: 1 },
         });
 
@@ -2622,6 +2700,7 @@ describe('HttpClient', () => {
           .reply(500, { message: 'fail' });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
         });
 
@@ -2634,7 +2713,10 @@ describe('HttpClient', () => {
         nock(baseUrl).get('/no-retries').reply(500, { message: 'fail' });
 
         const onRetry = vi.fn();
-        const client = new HttpClient({ retry: { maxRetries: 0, onRetry } });
+        const client = new HttpClient({
+          name: 'test',
+          retry: { maxRetries: 0, onRetry },
+        });
 
         await expect(client.get(`${baseUrl}/no-retries`)).rejects.toThrow(
           HttpClientError,
@@ -2650,6 +2732,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { maxRetries: 3, jitter: 'none', baseDelay: 1 },
         });
 
@@ -2668,6 +2751,7 @@ describe('HttpClient', () => {
         const perRequestOnRetry = vi.fn();
 
         const client = new HttpClient({
+          name: 'test',
           retry: {
             maxRetries: 3,
             onRetry: constructorOnRetry,
@@ -2689,7 +2773,7 @@ describe('HttpClient', () => {
       test('retry: false on constructor disables globally', async () => {
         nock(baseUrl).get('/global-disabled').reply(500, { message: 'fail' });
 
-        const client = new HttpClient({ retry: false });
+        const client = new HttpClient({ name: 'test', retry: false });
 
         await expect(client.get(`${baseUrl}/global-disabled`)).rejects.toThrow(
           HttpClientError,
@@ -2702,6 +2786,7 @@ describe('HttpClient', () => {
           .reply(500, { message: 'fail' });
 
         const client = new HttpClient({
+          name: 'test',
           retry: { maxRetries: 3, baseDelay: 1 },
         });
 
@@ -2719,6 +2804,7 @@ describe('HttpClient', () => {
 
         const delays: Array<number> = [];
         const client = new HttpClient({
+          name: 'test',
           retry: {
             onRetry: (_ctx, _attempt, delay) => {
               delays.push(delay);
@@ -2747,6 +2833,7 @@ describe('HttpClient', () => {
 
         const delays: Array<number> = [];
         const client = new HttpClient({
+          name: 'test',
           retry: {
             maxRetries: 4,
             baseDelay: 100,
@@ -2772,6 +2859,7 @@ describe('HttpClient', () => {
 
         const delays: Array<number> = [];
         const client = new HttpClient({
+          name: 'test',
           retry: {
             maxRetries: 4,
             baseDelay: 100,
@@ -2797,6 +2885,7 @@ describe('HttpClient', () => {
 
         const delays: Array<number> = [];
         const client = new HttpClient({
+          name: 'test',
           retry: {
             jitter: 'none',
             baseDelay: 1,
@@ -2828,6 +2917,7 @@ describe('HttpClient', () => {
         }> = [];
 
         const client = new HttpClient({
+          name: 'test',
           retry: {
             jitter: 'none',
             baseDelay: 1,
@@ -2856,6 +2946,7 @@ describe('HttpClient', () => {
         nock(baseUrl).get('/condition-false').reply(500, { message: 'fail' });
 
         const client = new HttpClient({
+          name: 'test',
           retry: {
             baseDelay: 1,
             retryCondition: () => false,
@@ -2875,6 +2966,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           retry: {
             baseDelay: 1,
             jitter: 'none',
@@ -2902,6 +2994,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           requestInterceptor: (_url, init) => {
             interceptorCalls += 1;
             const headers = new Headers(init.headers);
@@ -2928,6 +3021,7 @@ describe('HttpClient', () => {
           .reply(200, { ok: true });
 
         const client = new HttpClient({
+          name: 'test',
           responseInterceptor: (response) => {
             interceptorCalls += 1;
             return response;
@@ -2963,6 +3057,7 @@ describe('HttpClient', () => {
 
         const cache = makeCacheStore();
         const client = new HttpClient({
+          name: 'test',
           cache,
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
         });
@@ -3006,6 +3101,7 @@ describe('HttpClient', () => {
 
         let errorHandlerCalls = 0;
         const client = new HttpClient({
+          name: 'test',
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
           errorHandler: (ctx) => {
             errorHandlerCalls += 1;
@@ -3025,6 +3121,7 @@ describe('HttpClient', () => {
         const controller = new AbortController();
 
         const client = new HttpClient({
+          name: 'test',
           retry: {
             maxRetries: 3,
             baseDelay: 10_000,
@@ -3048,7 +3145,7 @@ describe('HttpClient', () => {
       test('does not retry when no retry config provided', async () => {
         nock(baseUrl).get('/no-retry-default').reply(500, { message: 'fail' });
 
-        const client = new HttpClient();
+        const client = new HttpClient({ name: 'test' });
 
         await expect(client.get(`${baseUrl}/no-retry-default`)).rejects.toThrow(
           HttpClientError,
@@ -3059,6 +3156,7 @@ describe('HttpClient', () => {
     describe('edge cases', () => {
       test('isRetryableRequest returns false for non-TypeError non-HTTP errors', () => {
         const client = new HttpClient({
+          name: 'test',
           retry: { baseDelay: 1 },
         }) as unknown as {
           resolveRetryConfig: (perRequest?: object | false) => {
@@ -3092,6 +3190,7 @@ describe('HttpClient', () => {
 
       test('throws last error when all retries exhausted on network failure', async () => {
         const client = new HttpClient({
+          name: 'test',
           fetchFn: async () => {
             throw new TypeError('fetch failed');
           },
@@ -3128,7 +3227,7 @@ describe('HttpClient', () => {
 
     test('cacheTTL overrides cacheTTL for this request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, cacheTTL: 900 });
+      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
 
       nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
 
@@ -3141,6 +3240,7 @@ describe('HttpClient', () => {
     test('per-request minimumTTL overrides constructor minimumTTL', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { minimumTTL: 300 },
       });
@@ -3162,6 +3262,7 @@ describe('HttpClient', () => {
     test('per-request maximumTTL overrides constructor maximumTTL', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { maximumTTL: 60 },
       });
@@ -3183,7 +3284,7 @@ describe('HttpClient', () => {
     test('per-request ignoreNoStore forces caching despite no-store', async () => {
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoStore
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/pr-no-store')
@@ -3203,7 +3304,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoCache
-      const client = new HttpClient({ cache });
+      const client = new HttpClient({ name: 'test', cache });
 
       nock(baseUrl)
         .get('/pr-no-cache')
@@ -3223,6 +3324,7 @@ describe('HttpClient', () => {
     test('shallow merge — unspecified per-request fields fall back to constructor', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheOverrides: { minimumTTL: 100, maximumTTL: 500 },
       });
@@ -3246,7 +3348,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, cacheTTL: 900 });
+      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
 
       nock(baseUrl)
         .get('/pr-304')
@@ -3281,7 +3383,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ cache, cacheTTL: 900 });
+      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
 
       // Initial response with SWR
       nock(baseUrl)
@@ -3315,6 +3417,7 @@ describe('HttpClient', () => {
     test('no per-request options uses constructor behavior (regression)', async () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
+        name: 'test',
         cache,
         cacheTTL: 900,
         cacheOverrides: { minimumTTL: 300 },

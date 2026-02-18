@@ -1,3 +1,4 @@
+import type { HttpClientStores } from '../http-client/http-client.js';
 import { RequestPriority } from '../stores/rate-limit-store.js';
 
 export interface HttpErrorContext {
@@ -53,6 +54,10 @@ export interface CacheOverrideOptions {
 }
 
 export interface HttpClientContract {
+  /** Name identifying this client instance. */
+  readonly name: string;
+  /** The store instances backing this client. */
+  readonly stores: HttpClientStores;
   /**
    * Perform a GET request.
    *

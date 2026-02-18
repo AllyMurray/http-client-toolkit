@@ -6,7 +6,11 @@ import {
   detectDedupeAdapter,
   detectRateLimitAdapter,
 } from '../adapters/detect.js';
-import { validateDashboardOptions, type DashboardOptions } from '../config.js';
+import {
+  normalizeClient,
+  validateDashboardOptions,
+  type DashboardOptions,
+} from '../config.js';
 import type { ClientContext, MultiClientContext } from './handlers/health.js';
 import { extractParam } from './request-helpers.js';
 
@@ -380,16 +384,17 @@ export function createDashboardHandler(
 
   const clients = new Map<string, ClientContext>();
   for (const clientConfig of opts.clients) {
-    clients.set(clientConfig.name, {
-      name: clientConfig.name,
-      cache: clientConfig.cacheStore
-        ? detectCacheAdapter(clientConfig.cacheStore)
+    const normalized = normalizeClient(clientConfig);
+    clients.set(normalized.name, {
+      name: normalized.name,
+      cache: normalized.cacheStore
+        ? detectCacheAdapter(normalized.cacheStore)
         : undefined,
-      dedup: clientConfig.dedupeStore
-        ? detectDedupeAdapter(clientConfig.dedupeStore)
+      dedup: normalized.dedupeStore
+        ? detectDedupeAdapter(normalized.dedupeStore)
         : undefined,
-      rateLimit: clientConfig.rateLimitStore
-        ? detectRateLimitAdapter(clientConfig.rateLimitStore)
+      rateLimit: normalized.rateLimitStore
+        ? detectRateLimitAdapter(normalized.rateLimitStore)
         : undefined,
     });
   }

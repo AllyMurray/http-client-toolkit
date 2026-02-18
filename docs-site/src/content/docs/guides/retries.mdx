@@ -30,6 +30,7 @@ Client errors (`400`, `401`, `403`, `404`, `422`) are **not** retried by default
     import { HttpClient } from '@http-client-toolkit/core';
 
     const client = new HttpClient({
+      name: 'my-api',
       retry: {
         maxRetries: 3,    // Up to 3 retry attempts (4 total requests)
         baseDelay: 1000,  // 1 second initial delay
@@ -75,6 +76,7 @@ Override the default retry logic with `retryCondition`:
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   retry: {
     retryCondition: (context, attempt) => {
       // Retry 404s (not retried by default)
@@ -94,6 +96,7 @@ Use `onRetry` to log or track retry attempts:
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   retry: {
     onRetry: (context, attempt, delay) => {
       console.warn(
@@ -108,7 +111,7 @@ const client = new HttpClient({
 
 ```typescript
 // Globally disabled
-const client = new HttpClient({ retry: false });
+const client = new HttpClient({ name: 'my-api', retry: false });
 
 // Per-request disabled (even if constructor enables retries)
 const data = await client.get(url, { retry: false });

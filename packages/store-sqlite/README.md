@@ -28,6 +28,7 @@ import {
 const db = new Database('./app.db');
 
 const client = new HttpClient({
+  name: 'my-api',
   cache: new SQLiteCacheStore({ database: db }),
   dedupe: new SQLiteDedupeStore({ database: db }),
   rateLimit: new SQLiteRateLimitStore({ database: db }),

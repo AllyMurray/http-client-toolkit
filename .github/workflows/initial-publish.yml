@@ -31,6 +31,49 @@ jobs:
       - name: Build packages
         run: pnpm run build
 
+      - name: Align new package versions
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const pkgPaths = fs.readdirSync('packages', { withFileTypes: true })
+            .filter(d => d.isDirectory())
+            .map(d => path.join('packages', d.name, 'package.json'))
+            .filter(p => fs.existsSync(p));
+
+          const packages = pkgPaths.map(p => {
+            const content = JSON.parse(fs.readFileSync(p, 'utf8'));
+            return { path: p, name: content.name, version: content.version, private: content.private };
+          }).filter(p => !p.private);
+
+          const semverCompare = (a, b) => {
+            const pa = a.split('.').map(Number);
+            const pb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) {
+              if (pa[i] > pb[i]) return 1;
+              if (pa[i] < pb[i]) return -1;
+            }
+            return 0;
+          };
+
+          const maxVersion = packages.reduce((max, p) =>
+            semverCompare(p.version, max) > 0 ? p.version : max, '0.0.0');
+
+          let updated = false;
+          for (const pkg of packages) {
+            if (semverCompare(pkg.version, maxVersion) < 0) {
+              console.log(`Aligning ${pkg.name}: ${pkg.version} → ${maxVersion}`);
+              const content = JSON.parse(fs.readFileSync(pkg.path, 'utf8'));
+              content.version = maxVersion;
+              fs.writeFileSync(pkg.path, JSON.stringify(content, null, 2) + '\n');
+              updated = true;
+            }
+          }
+
+          if (!updated) console.log('All package versions are already aligned');
+          EOF
+
       - name: Publish packages
         run: npx changeset publish --access public
         env:

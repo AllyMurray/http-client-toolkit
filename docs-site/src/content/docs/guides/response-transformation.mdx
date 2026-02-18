@@ -25,6 +25,7 @@ Use `responseTransformer` to normalize API data before it reaches your applicati
 import camelcaseKeys from 'camelcase-keys';
 
 const client = new HttpClient({
+  name: 'my-api',
   responseTransformer: (data) => camelcaseKeys(data as Record<string, unknown>, { deep: true }),
 });
 
@@ -38,6 +39,7 @@ Use `responseHandler` to validate the shape of the response, unwrap nested data,
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   responseHandler: (data) => {
     if (!data || typeof data !== 'object') {
       throw new Error('Unexpected response shape');
@@ -54,6 +56,7 @@ import camelcaseKeys from 'camelcase-keys';
 import { z } from 'zod';
 
 const client = new HttpClient({
+  name: 'my-api',
   // First: normalize keys
   responseTransformer: (data) =>
     camelcaseKeys(data as Record<string, unknown>, { deep: true }),
@@ -79,6 +82,7 @@ Use `errorHandler` to convert HTTP errors (non-2xx responses) into domain-specif
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   responseTransformer: (data) => transform(data),
   responseHandler: (data) => validate(data),
   errorHandler: (context) => {

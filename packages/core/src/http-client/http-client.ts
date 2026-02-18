@@ -74,13 +74,18 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-interface HttpClientStores {
+export interface HttpClientStores {
   cache?: CacheStore;
   dedupe?: DedupeStore;
   rateLimit?: RateLimitStore | AdaptiveRateLimitStore;
 }
 
 export interface HttpClientOptions {
+  /**
+   * Name for this client instance. Used to identify the client
+   * in logging, debugging, and the dashboard.
+   */
+  name: string;
   /**
    * Cache store instance for HTTP response caching.
    */
@@ -195,7 +200,8 @@ export {
 };
 
 export class HttpClient implements HttpClientContract {
-  private stores: HttpClientStores;
+  public readonly name: string;
+  public readonly stores: HttpClientStores;
   private serverCooldowns = new Map<string, number>();
   private pendingRevalidations: Array<Promise<void>> = [];
   private options: Required<
@@ -215,7 +221,8 @@ export class HttpClient implements HttpClientContract {
       rateLimitHeaders: RateLimitHeaderConfig;
     };
 
-  constructor(options: HttpClientOptions = {}) {
+  constructor(options: HttpClientOptions) {
+    this.name = options.name;
     this.stores = {
       cache: options.cache,
       dedupe: options.dedupe,

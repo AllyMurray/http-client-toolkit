@@ -50,6 +50,7 @@ Each backend provides four store implementations:
     } from '@http-client-toolkit/store-memory';
 
     const client = new HttpClient({
+      name: 'my-api',
       cache: new InMemoryCacheStore(),
       dedupe: new InMemoryDedupeStore(),
       rateLimit: new InMemoryRateLimitStore(),
@@ -69,6 +70,7 @@ Each backend provides four store implementations:
     const db = new Database('./app.db');
 
     const client = new HttpClient({
+      name: 'my-api',
       cache: new SQLiteCacheStore({ database: db }),
       dedupe: new SQLiteDedupeStore({ database: db }),
       rateLimit: new SQLiteRateLimitStore({ database: db }),
@@ -88,6 +90,7 @@ Each backend provides four store implementations:
     const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
 
     const client = new HttpClient({
+      name: 'my-api',
       cache: new DynamoDBCacheStore({ client: dynamoClient }),
       dedupe: new DynamoDBDedupeStore({ client: dynamoClient }),
       rateLimit: new DynamoDBRateLimitStore({ client: dynamoClient }),
@@ -106,6 +109,7 @@ You can also **mix backends** — for example, use in-memory cache for speed wit
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   cache: new InMemoryCacheStore(),               // Fast local cache
   rateLimit: new DynamoDBRateLimitStore({ ... }), // Shared rate limit
 });

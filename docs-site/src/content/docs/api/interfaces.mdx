@@ -84,26 +84,21 @@ Extends `RateLimitStore` with priority support.
 import type { AdaptiveRateLimitStore } from '@http-client-toolkit/core';
 ```
 
-All `RateLimitStore` methods are overloaded to accept an optional `priority` parameter:
+The `canProceed`, `record`, and `getWaitTime` methods are overloaded to accept an optional `priority` parameter. `getStatus` returns adaptive metrics in a nested `adaptive` property:
 
 ```typescript
 canProceed(resource: string, priority?: 'user' | 'background'): Promise<boolean>;
 record(resource: string, priority?: 'user' | 'background'): Promise<void>;
-getStatus(resource: string, priority?: 'user' | 'background'): Promise<AdaptiveRateLimitStatus>;
-```
-
-### AdaptiveRateLimitStatus
-
-Extends `RateLimitStatus` with additional adaptive metrics:
-
-```typescript
-interface AdaptiveRateLimitStatus extends RateLimitStatus {
-  userReserved: number;
-  backgroundMax: number;
-  backgroundPaused: boolean;
-  recentUserActivity: number;
-  reason: string;
-}
+getWaitTime(resource: string, priority?: 'user' | 'background'): Promise<number>;
+getStatus(resource: string): Promise<RateLimitStatus & {
+  adaptive?: {
+    userReserved: number;
+    backgroundMax: number;
+    backgroundPaused: boolean;
+    recentUserActivity: number;
+    reason: string;
+  };
+}>;
 ```
 
 ## Implementing a Custom Store

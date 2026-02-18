@@ -1,24 +1,33 @@
 ---
+"@http-client-toolkit/core": minor
 "@http-client-toolkit/dashboard": minor
 ---
 
-BREAKING: Refactor dashboard to support multiple named HTTP clients.
+BREAKING: Add required `name` to `HttpClient` and accept `HttpClient` instances in dashboard config.
 
-The `createDashboard`, `createDashboardHandler`, and `startDashboard` functions now require a `clients` array instead of top-level store properties.
+**Core**: `HttpClient` now requires a `name` string in its constructor options. The `stores` property is publicly accessible as `readonly`.
+
+**Dashboard**: The `clients` array now accepts `{ client: HttpClient, name?: string }` instead of raw store objects. The dashboard reads stores directly from the `HttpClient` instance.
 
 Before:
-```ts
-createDashboard({ cacheStore, dedupeStore, rateLimitStore })
-```
-
-After:
 ```ts
 createDashboard({
   clients: [
     { name: 'user-api', cacheStore, dedupeStore, rateLimitStore },
-    { name: 'product-api', cacheStore: anotherCacheStore },
   ],
 })
 ```
 
-API routes are now scoped per client under `/api/clients/:clientName/...`. The health endpoint (`GET /api/health`) returns an aggregate view of all clients.
+After:
+```ts
+const client = new HttpClient({
+  name: 'user-api',
+  cache: cacheStore,
+  dedupe: dedupeStore,
+  rateLimit: rateLimitStore,
+});
+
+createDashboard({
+  clients: [{ client }],
+})
+```
