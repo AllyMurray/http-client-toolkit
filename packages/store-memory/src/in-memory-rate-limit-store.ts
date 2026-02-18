@@ -19,6 +19,7 @@ export interface InMemoryRateLimitStoreOptions {
 
 export class InMemoryRateLimitStore implements RateLimitStore {
   private limits = new Map<string, RateLimitInfo>();
+  private cooldowns = new Map<string, number>();
   private defaultConfig: RateLimitConfig;
   private resourceConfigs = new Map<string, RateLimitConfig>();
   private cleanupInterval?: NodeJS.Timeout;
@@ -200,11 +201,30 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     return resources;
   }
 
+  async setCooldown(origin: string, cooldownUntilMs: number): Promise<void> {
+    this.cooldowns.set(origin, cooldownUntilMs);
+  }
+
+  async getCooldown(origin: string): Promise<number | undefined> {
+    const until = this.cooldowns.get(origin);
+    if (until === undefined) return undefined;
+    if (Date.now() >= until) {
+      this.cooldowns.delete(origin);
+      return undefined;
+    }
+    return until;
+  }
+
+  async clearCooldown(origin: string): Promise<void> {
+    this.cooldowns.delete(origin);
+  }
+
   /**
    * Clear all rate limit data
    */
   clear(): void {
     this.limits.clear();
+    this.cooldowns.clear();
     this.totalRequests = 0;
   }
 

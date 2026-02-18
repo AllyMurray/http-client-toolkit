@@ -102,9 +102,26 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
     this.cache.delete(hash);
   }
 
-  async clear(): Promise<void> {
-    this.cache.clear();
-    this.totalSize = 0;
+  async clear(scope?: string): Promise<void> {
+    if (!scope) {
+      this.cache.clear();
+      this.totalSize = 0;
+      return;
+    }
+
+    const toDelete: Array<string> = [];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(scope)) {
+        toDelete.push(key);
+      }
+    }
+    for (const key of toDelete) {
+      const item = this.cache.get(key);
+      if (item) {
+        this.totalSize -= item.size;
+      }
+      this.cache.delete(key);
+    }
   }
 
   /**

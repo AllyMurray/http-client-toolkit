@@ -264,18 +264,38 @@ export class InMemoryDedupeStore<T = unknown> implements DedupeStore<T> {
   }
 
   /**
-   * Clear all jobs
+   * Clear tracked jobs.
+   * @param scope When provided, only jobs whose key starts with this
+   *              prefix are removed. When omitted, all jobs are cleared.
    */
-  clear(): void {
-    // Reject all pending jobs
-    for (const [_hash, job] of this.jobs) {
-      if (!job.completed) {
-        job.completed = true;
-        job.error = new Error('DedupeStore cleared');
-        job.reject(job.error);
+  async clear(scope?: string): Promise<void> {
+    if (!scope) {
+      // Reject all pending jobs
+      for (const [_hash, job] of this.jobs) {
+        if (!job.completed) {
+          job.completed = true;
+          job.error = new Error('DedupeStore cleared');
+          job.reject(job.error);
+        }
+      }
+      this.jobs.clear();
+      return;
+    }
+
+    const toDelete: Array<string> = [];
+    for (const [hash, job] of this.jobs) {
+      if (hash.startsWith(scope)) {
+        if (!job.completed) {
+          job.completed = true;
+          job.error = new Error('DedupeStore cleared');
+          job.reject(job.error);
+        }
+        toDelete.push(hash);
       }
     }
-    this.jobs.clear();
+    for (const hash of toDelete) {
+      this.jobs.delete(hash);
+    }
   }
 
   /**

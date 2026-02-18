@@ -25,6 +25,7 @@ export interface AdaptiveRateLimitStoreOptions {
 export class AdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
   private defaultConfig: RateLimitConfig;
   private resourceConfigs: Map<string, RateLimitConfig>;
+  private cooldowns = new Map<string, number>();
   private activityMetrics = new Map<string, ActivityMetrics>();
   private capacityCalculator: AdaptiveCapacityCalculator;
   private lastCapacityUpdate = new Map<string, number>();
@@ -173,6 +174,34 @@ export class AdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     const oldestRequest = Math.min(...requests);
     const waitTime = oldestRequest + monitoringWindow - Date.now();
     return Math.max(0, waitTime);
+  }
+
+  setResourceConfig(resource: string, config: RateLimitConfig): void {
+    this.resourceConfigs.set(resource, config);
+    this.cachedCapacity.delete(resource);
+    this.lastCapacityUpdate.delete(resource);
+  }
+
+  getResourceConfig(resource: string): RateLimitConfig {
+    return this.resourceConfigs.get(resource) ?? this.defaultConfig;
+  }
+
+  async setCooldown(origin: string, cooldownUntilMs: number): Promise<void> {
+    this.cooldowns.set(origin, cooldownUntilMs);
+  }
+
+  async getCooldown(origin: string): Promise<number | undefined> {
+    const until = this.cooldowns.get(origin);
+    if (until === undefined) return undefined;
+    if (Date.now() >= until) {
+      this.cooldowns.delete(origin);
+      return undefined;
+    }
+    return until;
+  }
+
+  async clearCooldown(origin: string): Promise<void> {
+    this.cooldowns.delete(origin);
   }
 
   private calculateCurrentCapacity(
