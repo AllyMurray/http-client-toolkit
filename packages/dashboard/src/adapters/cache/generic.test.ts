@@ -38,6 +38,14 @@ describe('createGenericCacheAdapter', () => {
     expect(result.entries).toEqual([]);
   });
 
+  it('should return stats message', async () => {
+    const adapter = createGenericCacheAdapter(createMockStore());
+    const stats = await adapter.getStats();
+    expect(stats).toEqual({
+      message: 'Stats not available for this store type',
+    });
+  });
+
   it('should get, delete, and clear via core interface', async () => {
     const store = createMockStore();
     await store.set('key1', 'value1', 60);

@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'http';
+import { PassThrough } from 'stream';
 import { describe, it, expect } from 'vitest';
-import { parseUrl, extractParam } from './request-helpers.js';
+import { parseUrl, extractParam, readJsonBody } from './request-helpers.js';
 
 function mockReq(url: string): IncomingMessage {
   return { url } as IncomingMessage;
@@ -31,6 +32,11 @@ describe('parseUrl', () => {
     expect(pathname).toBe('/api/health');
   });
 
+  it('should return root when pathname equals basePath exactly', () => {
+    const { pathname } = parseUrl(mockReq('/dashboard'), '/dashboard');
+    expect(pathname).toBe('/');
+  });
+
   it('should handle missing url', () => {
     const { pathname } = parseUrl({ url: undefined } as IncomingMessage, '/');
     expect(pathname).toBe('/');
@@ -46,8 +52,16 @@ describe('extractParam', () => {
     expect(hash).toBe('abc123');
   });
 
-  it('should return undefined for non-matching paths', () => {
+  it('should return undefined for non-matching paths with different length', () => {
     const result = extractParam('/api/cache/stats', '/api/cache/entries/:hash');
+    expect(result).toBeUndefined();
+  });
+
+  it('should return undefined when a literal segment does not match', () => {
+    const result = extractParam(
+      '/api/other/entries/abc123',
+      '/api/cache/entries/:hash',
+    );
     expect(result).toBeUndefined();
   });
 
@@ -62,5 +76,37 @@ describe('extractParam', () => {
       '/api/rate-limit/resources/:name/config',
     );
     expect(name).toBe('my-api');
+  });
+
+  it('should return undefined when pattern has no param placeholder', () => {
+    const result = extractParam('/api/health', '/api/health');
+    expect(result).toBeUndefined();
+  });
+});
+
+function mockReqWithBody(body: string): IncomingMessage {
+  const stream = new PassThrough();
+  stream.end(body);
+  return stream as unknown as IncomingMessage;
+}
+
+describe('readJsonBody', () => {
+  it('should parse valid JSON body', async () => {
+    const req = mockReqWithBody(JSON.stringify({ key: 'value', num: 42 }));
+    const result = await readJsonBody<{ key: string; num: number }>(req);
+    expect(result).toEqual({ key: 'value', num: 42 });
+  });
+
+  it('should reject with error for invalid JSON body', async () => {
+    const req = mockReqWithBody('not valid json {{{');
+    await expect(readJsonBody(req)).rejects.toThrow('Invalid JSON body');
+  });
+
+  it('should reject when the stream emits an error', async () => {
+    const stream = new PassThrough();
+    const req = stream as unknown as IncomingMessage;
+    const promise = readJsonBody(req);
+    stream.destroy(new Error('stream failure'));
+    await expect(promise).rejects.toThrow('stream failure');
   });
 });
