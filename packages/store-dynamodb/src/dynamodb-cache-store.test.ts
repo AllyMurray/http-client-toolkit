@@ -80,6 +80,30 @@ describe('DynamoDBCacheStore', () => {
       await expect(store.clear()).resolves.not.toThrow();
     });
 
+    it('should use CACHE# prefix filter when clearing without scope', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
+      await store.clear();
+
+      const scanInput = ddbMock.commandCalls(ScanCommand)[0]!.args[0].input;
+      expect(scanInput.FilterExpression).toBe('begins_with(pk, :prefix)');
+      expect(scanInput.ExpressionAttributeValues?.[':prefix']).toBe('CACHE#');
+    });
+
+    it('should use CACHE#<scope> prefix filter when clearing with scope', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({
+        Items: [{ pk: 'CACHE#my-scope-key1', sk: 'CACHE#my-scope-key1' }],
+      });
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      await store.clear('my-scope');
+
+      const scanInput = ddbMock.commandCalls(ScanCommand)[0]!.args[0].input;
+      expect(scanInput.FilterExpression).toBe('begins_with(pk, :prefix)');
+      expect(scanInput.ExpressionAttributeValues?.[':prefix']).toBe(
+        'CACHE#my-scope',
+      );
+    });
+
     it('should handle clear with pagination', async () => {
       ddbMock
         .on(ScanCommand)
@@ -332,6 +356,79 @@ describe('DynamoDBCacheStore', () => {
       await expect(store.get('missing')).rejects.toThrow(
         'was not found. Create the table using your infrastructure',
       );
+    });
+
+    it('should throw table-missing error when ScanCommand fails during clear', async () => {
+      ddbMock.on(ScanCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.clear()).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('should throw table-missing error when BatchWriteCommand fails during clear', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({
+        Items: [{ pk: 'CACHE#k1', sk: 'CACHE#k1' }],
+      });
+      ddbMock.on(BatchWriteCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.clear()).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('should throw table-missing error when PutCommand fails during set', async () => {
+      ddbMock.on(PutCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.set('key1', 'value1', 60)).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('should throw table-missing error when DeleteCommand fails during delete', async () => {
+      ddbMock.on(DeleteCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.delete('key1')).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('should not call BatchWriteCommand when scan returns zero items during clear', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
+
+      await store.clear();
+
+      expect(ddbMock).toHaveReceivedCommandTimes(ScanCommand, 1);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+    });
+
+    it('should handle scan returning undefined Items during clear', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({});
+
+      await store.clear();
+
+      expect(ddbMock).toHaveReceivedCommandTimes(ScanCommand, 1);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
     });
   });
 
