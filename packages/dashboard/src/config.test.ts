@@ -1,32 +1,61 @@
-import { describe, it, expect } from 'vitest';
+import { HttpClient } from '@http-client-toolkit/core';
+import {
+  InMemoryCacheStore,
+  InMemoryDedupeStore,
+} from '@http-client-toolkit/store-memory';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   validateDashboardOptions,
   validateStandaloneOptions,
+  normalizeClient,
 } from './config.js';
 
-const minimalCacheStore = {
-  get: async () => undefined,
-  set: async () => {},
-  delete: async () => {},
-  clear: async () => {},
-};
+let stores: Array<{ destroy(): void }> = [];
+
+function trackedStore<T extends { destroy(): void }>(store: T): T {
+  stores.push(store);
+  return store;
+}
+
+afterEach(() => {
+  for (const s of stores) s.destroy();
+  stores = [];
+});
+
+function makeClient(opts: { name: string; cache?: boolean; dedupe?: boolean }) {
+  return new HttpClient({
+    name: opts.name,
+    cache:
+      opts.cache !== false ? trackedStore(new InMemoryCacheStore()) : undefined,
+    dedupe: opts.dedupe ? trackedStore(new InMemoryDedupeStore()) : undefined,
+  });
+}
 
 describe('validateDashboardOptions', () => {
-  it('should accept valid options with a single client', () => {
+  it('should accept HttpClient with name', () => {
+    const client = makeClient({ name: 'test' });
     const opts = validateDashboardOptions({
-      clients: [{ name: 'test', cacheStore: minimalCacheStore }],
+      clients: [{ client }],
     });
     expect(opts.basePath).toBe('/');
     expect(opts.pollIntervalMs).toBe(5000);
     expect(opts.clients).toHaveLength(1);
-    expect(opts.clients[0]!.name).toBe('test');
+  });
+
+  it('should accept HttpClient with name override', () => {
+    const client = makeClient({ name: 'original' });
+    const opts = validateDashboardOptions({
+      clients: [{ client, name: 'override' }],
+    });
+    const normalized = normalizeClient(opts.clients[0]!);
+    expect(normalized.name).toBe('override');
   });
 
   it('should accept multiple clients', () => {
     const opts = validateDashboardOptions({
       clients: [
-        { name: 'client-a', cacheStore: minimalCacheStore },
-        { name: 'client-b', cacheStore: minimalCacheStore },
+        { client: makeClient({ name: 'client-a' }) },
+        { client: makeClient({ name: 'client-b' }) },
       ],
     });
     expect(opts.clients).toHaveLength(2);
@@ -40,51 +69,56 @@ describe('validateDashboardOptions', () => {
     expect(() => validateDashboardOptions({} as never)).toThrow();
   });
 
-  it('should reject empty client name', () => {
+  it('should reject empty config name', () => {
+    const client = makeClient({ name: 'test' });
     expect(() =>
       validateDashboardOptions({
-        clients: [{ name: '', cacheStore: minimalCacheStore }],
+        clients: [{ client, name: '' }],
       }),
     ).toThrow('Client name must not be empty');
   });
 
-  it('should reject client name with invalid characters', () => {
+  it('should reject config name with invalid characters', () => {
+    const client = makeClient({ name: 'test' });
     expect(() =>
       validateDashboardOptions({
-        clients: [{ name: 'has spaces', cacheStore: minimalCacheStore }],
+        clients: [{ client, name: 'has spaces' }],
       }),
     ).toThrow('URL-safe');
   });
 
   it('should accept client names with hyphens, underscores, and alphanumerics', () => {
+    const client = makeClient({ name: 'my-client_123' });
     const opts = validateDashboardOptions({
-      clients: [{ name: 'my-client_123', cacheStore: minimalCacheStore }],
+      clients: [{ client }],
     });
-    expect(opts.clients[0]!.name).toBe('my-client_123');
+    const normalized = normalizeClient(opts.clients[0]!);
+    expect(normalized.name).toBe('my-client_123');
   });
 
   it('should reject duplicate client names', () => {
     expect(() =>
       validateDashboardOptions({
         clients: [
-          { name: 'dupe', cacheStore: minimalCacheStore },
-          { name: 'dupe', cacheStore: minimalCacheStore },
+          { client: makeClient({ name: 'dupe' }) },
+          { client: makeClient({ name: 'dupe' }) },
         ],
       }),
     ).toThrow('unique');
   });
 
-  it('should reject a client with no stores', () => {
+  it('should reject HttpClient with no stores', () => {
+    const client = new HttpClient({ name: 'no-stores' });
     expect(() =>
       validateDashboardOptions({
-        clients: [{ name: 'no-stores' }],
+        clients: [{ client }],
       }),
-    ).toThrow('At least one store');
+    ).toThrow('at least one store');
   });
 
   it('should accept custom basePath and pollInterval', () => {
     const opts = validateDashboardOptions({
-      clients: [{ name: 'test', cacheStore: minimalCacheStore }],
+      clients: [{ client: makeClient({ name: 'test' }) }],
       basePath: '/dashboard',
       pollIntervalMs: 10000,
     });
@@ -96,7 +130,7 @@ describe('validateDashboardOptions', () => {
 describe('validateStandaloneOptions', () => {
   it('should accept valid standalone options with defaults', () => {
     const opts = validateStandaloneOptions({
-      clients: [{ name: 'test', cacheStore: minimalCacheStore }],
+      clients: [{ client: makeClient({ name: 'test' }) }],
     });
     expect(opts.port).toBe(4000);
     expect(opts.host).toBe('localhost');
@@ -104,11 +138,29 @@ describe('validateStandaloneOptions', () => {
 
   it('should accept custom port and host', () => {
     const opts = validateStandaloneOptions({
-      clients: [{ name: 'test', cacheStore: minimalCacheStore }],
+      clients: [{ client: makeClient({ name: 'test' }) }],
       port: 8080,
       host: '0.0.0.0',
     });
     expect(opts.port).toBe(8080);
     expect(opts.host).toBe('0.0.0.0');
+  });
+});
+
+describe('normalizeClient', () => {
+  it('should extract stores from HttpClient', () => {
+    const cache = trackedStore(new InMemoryCacheStore());
+    const client = new HttpClient({ name: 'test', cache });
+    const normalized = normalizeClient({ client });
+    expect(normalized.name).toBe('test');
+    expect(normalized.cacheStore).toBe(cache);
+    expect(normalized.dedupeStore).toBeUndefined();
+    expect(normalized.rateLimitStore).toBeUndefined();
+  });
+
+  it('should prefer config name over client name', () => {
+    const client = makeClient({ name: 'client-name' });
+    const normalized = normalizeClient({ client, name: 'config-name' });
+    expect(normalized.name).toBe('config-name');
   });
 });

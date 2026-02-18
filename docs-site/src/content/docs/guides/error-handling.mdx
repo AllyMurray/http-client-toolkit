@@ -13,7 +13,7 @@ All HTTP errors from `HttpClient` are wrapped in `HttpClientError`, a custom err
 ```typescript
 import { HttpClient, HttpClientError } from '@http-client-toolkit/core';
 
-const client = new HttpClient({ cache: new InMemoryCacheStore() });
+const client = new HttpClient({ name: 'my-api', cache: new InMemoryCacheStore() });
 
 try {
   const data = await client.get('https://api.example.com/user/1');
@@ -54,6 +54,7 @@ class ApiError extends Error {
 }
 
 const client = new HttpClient({
+  name: 'my-api',
   errorHandler: (context) => {
     console.error(`Request to ${context.url} failed`);
 
@@ -91,6 +92,7 @@ Set `throwOnRateLimit: false` to wait instead of throwing:
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   throwOnRateLimit: false,
   maxWaitTime: 30_000, // Wait up to 30 seconds
 });

@@ -15,15 +15,16 @@ import { HttpClient } from '@http-client-toolkit/core';
 ## Constructor
 
 ```typescript
-new HttpClient(options?)
+new HttpClient(options)
 ```
 
 ### Options
 
-All fields are optional. Pass only what you need — stores, behavior, and hooks are all part of the same options object.
+`name` is required. All other fields are optional — pass only what you need.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
+| `name` | `string` | required | Name for the client instance |
 | `cache` | `CacheStore<T>` | — | Response caching |
 | `dedupe` | `DedupeStore<T>` | — | Request deduplication |
 | `rateLimit` | `RateLimitStore \| AdaptiveRateLimitStore` | — | Rate limiting |
@@ -109,6 +110,7 @@ Cooldowns are enforced when:
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   rateLimitHeaders: {
     retryAfter: ['RetryAfterSeconds'],
     remaining: ['Remaining-Requests'],
@@ -143,13 +145,14 @@ await client.flushRevalidations();
 ### Cache-Only Client
 
 ```typescript
-const client = new HttpClient({ cache: new InMemoryCacheStore() });
+const client = new HttpClient({ name: 'my-api', cache: new InMemoryCacheStore() });
 ```
 
 ### Full Stack with Adaptive Rate Limiting
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   cache: new SQLiteCacheStore({ database: db }),
   dedupe: new SQLiteDedupeStore({ database: db }),
   rateLimit: new SqliteAdaptiveRateLimitStore({
@@ -176,6 +179,7 @@ controller.abort();
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     const headers = new Headers(init.headers);
@@ -193,6 +197,7 @@ const client = new HttpClient({
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   fetchFn: async (url, init) => {
     const response = await fetch(url, init);
     // Follow pre-signed URL redirects before caching
@@ -210,6 +215,7 @@ const client = new HttpClient({
 import camelcaseKeys from 'camelcase-keys';
 
 const client = new HttpClient({
+  name: 'my-api',
   responseTransformer: (data) =>
     camelcaseKeys(data as Record<string, unknown>, { deep: true }),
   responseHandler: (data) => {

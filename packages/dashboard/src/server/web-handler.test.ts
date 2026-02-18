@@ -1,3 +1,4 @@
+import { HttpClient } from '@http-client-toolkit/core';
 import {
   InMemoryCacheStore,
   InMemoryDedupeStore,
@@ -36,10 +37,12 @@ describe('createDashboardHandler', () => {
     handler = createDashboardHandler({
       clients: [
         {
-          name: 'test-client',
-          cacheStore,
-          dedupeStore,
-          rateLimitStore,
+          client: new HttpClient({
+            name: 'test-client',
+            cache: cacheStore,
+            dedupe: dedupeStore,
+            rateLimit: rateLimitStore,
+          }),
         },
       ],
     });
@@ -135,7 +138,14 @@ describe('createDashboardHandler', () => {
 
     it('should return 404 when cache store not configured', async () => {
       const h = createDashboardHandler({
-        clients: [{ name: 'no-cache', dedupeStore }],
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'no-cache',
+              dedupe: dedupeStore,
+            }),
+          },
+        ],
       });
       const { status, body } = await fetchJson(
         h,
@@ -169,7 +179,14 @@ describe('createDashboardHandler', () => {
 
     it('should return 404 when dedup store not configured', async () => {
       const h = createDashboardHandler({
-        clients: [{ name: 'no-dedup', cacheStore }],
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'no-dedup',
+              cache: cacheStore,
+            }),
+          },
+        ],
       });
       const { status, body } = await fetchJson(
         h,
@@ -213,7 +230,14 @@ describe('createDashboardHandler', () => {
 
     it('should return 404 when rate limit store not configured', async () => {
       const h = createDashboardHandler({
-        clients: [{ name: 'no-rl', cacheStore }],
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'no-rl',
+              cache: cacheStore,
+            }),
+          },
+        ],
       });
       const { status, body } = await fetchJson(
         h,
@@ -249,10 +273,12 @@ describe('createDashboardHandler', () => {
       const h = createDashboardHandler({
         clients: [
           {
-            name: 'test-client',
-            cacheStore,
-            dedupeStore,
-            rateLimitStore,
+            client: new HttpClient({
+              name: 'test-client',
+              cache: cacheStore,
+              dedupe: dedupeStore,
+              rateLimit: rateLimitStore,
+            }),
           },
         ],
         basePath: '/dashboard',
@@ -272,8 +298,12 @@ describe('createDashboardHandler', () => {
 
       const h = createDashboardHandler({
         clients: [
-          { name: 'client-a', cacheStore: cacheA },
-          { name: 'client-b', cacheStore: cacheB },
+          {
+            client: new HttpClient({ name: 'client-a', cache: cacheA }),
+          },
+          {
+            client: new HttpClient({ name: 'client-b', cache: cacheB }),
+          },
         ],
       });
 

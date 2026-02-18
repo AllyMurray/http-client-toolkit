@@ -42,6 +42,7 @@ import {
 
 // 1. Create one client per API with shared defaults
 const client = new HttpClient({
+  name: 'my-api',
   cache: new InMemoryCacheStore(),
   dedupe: new InMemoryDedupeStore(),
   rateLimit: new InMemoryRateLimitStore({

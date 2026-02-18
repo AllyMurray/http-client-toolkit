@@ -1,3 +1,4 @@
+import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryCacheStore } from '@http-client-toolkit/store-memory';
 import { describe, it, expect, afterEach } from 'vitest';
 import {
@@ -22,8 +23,9 @@ describe('startDashboard', () => {
 
   it('should start a server and respond to health check', async () => {
     cacheStore = new InMemoryCacheStore();
+    const client = new HttpClient({ name: 'test-client', cache: cacheStore });
     dashboard = await startDashboard({
-      clients: [{ name: 'test-client', cacheStore }],
+      clients: [{ client }],
       port: 0, // Random available port
       host: '127.0.0.1',
     });
@@ -41,8 +43,9 @@ describe('startDashboard', () => {
 
   it('should be closable', async () => {
     cacheStore = new InMemoryCacheStore();
+    const client = new HttpClient({ name: 'test-client', cache: cacheStore });
     dashboard = await startDashboard({
-      clients: [{ name: 'test-client', cacheStore }],
+      clients: [{ client }],
       port: 0,
       host: '127.0.0.1',
     });

@@ -29,6 +29,7 @@ import {
 } from '@http-client-toolkit/store-memory';
 
 const client = new HttpClient({
+  name: 'example-api',
   cache: new InMemoryCacheStore(),
   dedupe: new InMemoryDedupeStore(),
   rateLimit: new InMemoryRateLimitStore(),
@@ -44,10 +45,14 @@ Every store is optional. Use only what you need:
 
 ```typescript
 // Cache-only client
-const client = new HttpClient({ cache: new InMemoryCacheStore() });
+const client = new HttpClient({
+  name: 'cached',
+  cache: new InMemoryCacheStore(),
+});
 
 // Rate-limited client with no caching
 const client = new HttpClient({
+  name: 'rate-limited',
   rateLimit: new InMemoryRateLimitStore({
     defaultConfig: { limit: 100, windowMs: 60_000 },
   }),
@@ -60,7 +65,7 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 
 ## API
 
-### `new HttpClient(options?)`
+### `new HttpClient(options)`
 
 `HttpClient` exposes a single request method: `get(url, options?)`. The `url` must be an absolute URL.
 
@@ -79,6 +84,7 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 
 | Property              | Type                                       | Default  | Description                             |
 | --------------------- | ------------------------------------------ | -------- | --------------------------------------- |
+| `name`                | `string`                                   | required | Name for the client instance            |
 | `cache`               | `CacheStore`                               | -        | Response caching                        |
 | `dedupe`              | `DedupeStore`                              | -        | Request deduplication                   |
 | `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore` | -        | Rate limiting                           |
@@ -140,6 +146,7 @@ Map non-standard header names per API:
 
 ```typescript
 const client = new HttpClient({
+  name: 'custom-api',
   rateLimitHeaders: {
     retryAfter: ['RetryAfterSeconds'],
     remaining: ['Remaining-Requests'],

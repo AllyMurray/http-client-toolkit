@@ -206,6 +206,7 @@ import {
 const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
 
 const client = new HttpClient({
+  name: 'my-api',
   cache: new DynamoDBCacheStore({ client: dynamoClient }),
   dedupe: new DynamoDBDedupeStore({ client: dynamoClient }),
   rateLimit: new DynamoDBRateLimitStore({ client: dynamoClient }),

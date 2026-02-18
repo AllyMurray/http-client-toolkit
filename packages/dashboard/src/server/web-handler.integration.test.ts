@@ -4,6 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from 'http';
+import { HttpClient } from '@http-client-toolkit/core';
 import {
   InMemoryCacheStore,
   InMemoryDedupeStore,
@@ -102,10 +103,12 @@ describe('createDashboardHandler integration', () => {
     const handler = createDashboardHandler({
       clients: [
         {
-          name: 'test-client',
-          cacheStore,
-          dedupeStore,
-          rateLimitStore,
+          client: new HttpClient({
+            name: 'test-client',
+            cache: cacheStore,
+            dedupe: dedupeStore,
+            rateLimit: rateLimitStore,
+          }),
         },
       ],
     });
@@ -338,10 +341,12 @@ describe('createDashboardHandler integration', () => {
       const handler = createDashboardHandler({
         clients: [
           {
-            name: 'test-client',
-            cacheStore,
-            dedupeStore,
-            rateLimitStore,
+            client: new HttpClient({
+              name: 'test-client',
+              cache: cacheStore,
+              dedupe: dedupeStore,
+              rateLimit: rateLimitStore,
+            }),
           },
         ],
         basePath: '/dashboard',
@@ -381,8 +386,18 @@ describe('createDashboardHandler integration', () => {
 
       const handler = createDashboardHandler({
         clients: [
-          { name: 'client-a', cacheStore: cacheStoreA },
-          { name: 'client-b', cacheStore: cacheStoreB },
+          {
+            client: new HttpClient({
+              name: 'client-a',
+              cache: cacheStoreA,
+            }),
+          },
+          {
+            client: new HttpClient({
+              name: 'client-b',
+              cache: cacheStoreB,
+            }),
+          },
         ],
       });
 

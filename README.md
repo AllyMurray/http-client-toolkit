@@ -29,6 +29,7 @@ import {
 } from '@http-client-toolkit/store-memory';
 
 const client = new HttpClient({
+  name: 'example-api',
   cache: new InMemoryCacheStore(),
   dedupe: new InMemoryDedupeStore(),
   rateLimit: new InMemoryRateLimitStore(),

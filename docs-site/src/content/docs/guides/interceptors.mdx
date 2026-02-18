@@ -35,6 +35,7 @@ Runs before every outbound request. Use it to inject headers, add tracing contex
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     const headers = new Headers(init.headers);
@@ -85,6 +86,7 @@ Runs after the raw `Response` is received but **before** body parsing, transform
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   responseInterceptor: (response, url) => {
     console.log(`${response.status} ${url}`);
     return response;
@@ -130,6 +132,7 @@ Replace `globalThis.fetch` entirely. Use this when you need control over the tra
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   fetchFn: async (url, init) => {
     const response = await fetch(url, init);
     // Resolve S3 pre-signed URL before the response enters the cache
@@ -150,6 +153,7 @@ The hooks compose naturally. Here's a complete example with auth injection, cust
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   // 1. Inject auth before every request
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
@@ -192,6 +196,7 @@ Errors thrown by interceptors are wrapped in `HttpClientError` and propagate nor
 
 ```typescript
 const client = new HttpClient({
+  name: 'my-api',
   requestInterceptor: async (url, init) => {
     const token = await getAccessToken();
     if (!token) {

@@ -7,5 +7,6 @@ export type { StandaloneDashboardServer } from './server/standalone.js';
 export type {
   ClientConfig,
   DashboardOptions,
+  NormalizedClientConfig,
   StandaloneDashboardOptions,
 } from './config.js';

@@ -1,3 +1,4 @@
+import { HttpClient } from '@http-client-toolkit/core';
 import { startDashboard } from '../lib/index.js';
 import {
   InMemoryCacheStore,
@@ -5,38 +6,35 @@ import {
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
 
-// User API client stores
-const userCacheStore = new InMemoryCacheStore();
-const userDedupeStore = new InMemoryDedupeStore();
-const userRateLimitStore = new InMemoryRateLimitStore();
+// Create named HttpClient instances with their stores
+const userApiClient = new HttpClient({
+  name: 'user-api',
+  cache: new InMemoryCacheStore(),
+  dedupe: new InMemoryDedupeStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
 
-// Product API client stores
-const productCacheStore = new InMemoryCacheStore();
-const productRateLimitStore = new InMemoryRateLimitStore();
+const productApiClient = new HttpClient({
+  name: 'product-api',
+  cache: new InMemoryCacheStore(),
+  rateLimit: new InMemoryRateLimitStore(),
+});
 
 // Seed some test data
-await userCacheStore.set('user-123', { name: 'Alice' }, 300);
-await userCacheStore.set('user-456', { name: 'Bob' }, 600);
-await userRateLimitStore.record('api.users.example.com');
-await userRateLimitStore.record('api.users.example.com');
+const userCache = userApiClient.stores.cache!;
+const userRateLimit = userApiClient.stores.rateLimit!;
+await userCache.set('user-123', { name: 'Alice' }, 300);
+await userCache.set('user-456', { name: 'Bob' }, 600);
+await userRateLimit.record('api.users.example.com');
+await userRateLimit.record('api.users.example.com');
 
-await productCacheStore.set('products-list', [{ id: 1, name: 'Widget' }], 120);
-await productRateLimitStore.record('api.products.example.com');
+const productCache = productApiClient.stores.cache!;
+const productRateLimit = productApiClient.stores.rateLimit!;
+await productCache.set('products-list', [{ id: 1, name: 'Widget' }], 120);
+await productRateLimit.record('api.products.example.com');
 
 const { server } = await startDashboard({
-  clients: [
-    {
-      name: 'user-api',
-      cacheStore: userCacheStore,
-      dedupeStore: userDedupeStore,
-      rateLimitStore: userRateLimitStore,
-    },
-    {
-      name: 'product-api',
-      cacheStore: productCacheStore,
-      rateLimitStore: productRateLimitStore,
-    },
-  ],
+  clients: [{ client: userApiClient }, { client: productApiClient }],
   port: 4000,
 });
 
