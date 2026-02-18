@@ -9,15 +9,15 @@ import {
 // Create named HttpClient instances with their stores
 const userApiClient = new HttpClient({
   name: 'user-api',
-  cache: new InMemoryCacheStore(),
+  cache: { store: new InMemoryCacheStore() },
   dedupe: new InMemoryDedupeStore(),
-  rateLimit: new InMemoryRateLimitStore(),
+  rateLimit: { store: new InMemoryRateLimitStore() },
 });
 
 const productApiClient = new HttpClient({
   name: 'product-api',
-  cache: new InMemoryCacheStore(),
-  rateLimit: new InMemoryRateLimitStore(),
+  cache: { store: new InMemoryCacheStore() },
+  rateLimit: { store: new InMemoryRateLimitStore() },
 });
 
 // Seed some test data

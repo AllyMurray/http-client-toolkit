@@ -23,7 +23,10 @@ describe('startDashboard', () => {
 
   it('should start a server and respond to health check', async () => {
     cacheStore = new InMemoryCacheStore();
-    const client = new HttpClient({ name: 'test-client', cache: cacheStore });
+    const client = new HttpClient({
+      name: 'test-client',
+      cache: { store: cacheStore },
+    });
     dashboard = await startDashboard({
       clients: [{ client }],
       port: 0, // Random available port
@@ -43,7 +46,10 @@ describe('startDashboard', () => {
 
   it('should be closable', async () => {
     cacheStore = new InMemoryCacheStore();
-    const client = new HttpClient({ name: 'test-client', cache: cacheStore });
+    const client = new HttpClient({
+      name: 'test-client',
+      cache: { store: cacheStore },
+    });
     dashboard = await startDashboard({
       clients: [{ client }],
       port: 0,
@@ -56,7 +62,10 @@ describe('startDashboard', () => {
 
   it('should reject on close error when server is already closed', async () => {
     cacheStore = new InMemoryCacheStore();
-    const client = new HttpClient({ name: 'test-client', cache: cacheStore });
+    const client = new HttpClient({
+      name: 'test-client',
+      cache: { store: cacheStore },
+    });
     dashboard = await startDashboard({
       clients: [{ client }],
       port: 0,

@@ -51,9 +51,9 @@ describe('createDashboard middleware', () => {
 
     const client = new HttpClient({
       name: 'test-client',
-      cache: cacheStore,
+      cache: { store: cacheStore },
       dedupe: dedupeStore,
-      rateLimit: rateLimitStore,
+      rateLimit: { store: rateLimitStore },
     });
 
     const middleware = createDashboard({
@@ -301,13 +301,13 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'client-a',
-              cache: cacheStoreA,
+              cache: { store: cacheStoreA },
             }),
           },
           {
             client: new HttpClient({
               name: 'client-b',
-              cache: cacheStoreB,
+              cache: { store: cacheStoreB },
             }),
           },
         ],
@@ -348,9 +348,9 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -438,7 +438,7 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'cache-only',
-              cache: partialCacheStore,
+              cache: { store: partialCacheStore },
             }),
           },
         ],
@@ -462,7 +462,7 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'cache-only',
-              cache: partialCacheStore,
+              cache: { store: partialCacheStore },
             }),
           },
         ],
@@ -486,7 +486,7 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'cache-only',
-              cache: partialCacheStore,
+              cache: { store: partialCacheStore },
             }),
           },
         ],
@@ -511,7 +511,7 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'cache-only',
-              cache: partialCacheStore,
+              cache: { store: partialCacheStore },
             }),
           },
         ],
@@ -622,9 +622,9 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'err-client',
-              cache: errCacheStore,
+              cache: { store: errCacheStore },
               dedupe: errDedupeStore,
-              rateLimit: errRateLimitStore,
+              rateLimit: { store: errRateLimitStore },
             }),
           },
         ],

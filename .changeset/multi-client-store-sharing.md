@@ -1,14 +1,28 @@
 ---
-"@http-client-toolkit/core": minor
+"@http-client-toolkit/core": major
 "@http-client-toolkit/store-memory": minor
 "@http-client-toolkit/store-sqlite": minor
 "@http-client-toolkit/store-dynamodb": minor
 ---
 
-Add multi-client store sharing support
+Restructure HttpClientOptions: group by concern
 
-- **Scoped cache/dedup keys**: New `storeScope` option on `HttpClient` prefixes all cache and dedup keys, enabling selective `clear(scope)` and preventing cross-client conflicts when sharing a single store instance.
-- **Resource-based rate limiting**: `resourceExtractor` replaces `inferResource`, defaulting to URL origin instead of the last path segment. Per-origin configs via `rateLimitConfigs` and `defaultRateLimitConfig`.
-- **Shared server cooldowns**: `RateLimitStore` gains optional `setCooldown`/`getCooldown`/`clearCooldown` methods so 429/503 cooldowns propagate across all clients sharing a store.
-- **Scoped clear**: `CacheStore.clear(scope?)` and `DedupeStore.clear(scope?)` filter by key prefix when scope is provided, preserving other clients' entries.
-- All three backends (memory, SQLite, DynamoDB) implement the new interface methods.
+**BREAKING:** `HttpClientOptions` constructor and per-request `get()` options now use nested objects grouped by concern instead of flat properties.
+
+### Constructor options
+
+- **Cache**: `cache: store` → `cache: { store, scope?, ttl?, overrides? }`
+- **Rate limit**: `rateLimit: store, throwOnRateLimit, maxWaitTime, rateLimitHeaders, resourceExtractor, rateLimitConfigs, defaultRateLimitConfig` → `rateLimit: { store?, throw?, maxWaitTime?, headers?, resourceExtractor?, configs?, defaultConfig? }`
+- **Dedup**: `dedupe: store` stays flat (no config to group)
+- **Removed**: `storeScope` (replaced by `cache.scope` — scope now only applies to cache keys, not dedup)
+- **Removed**: flat `cacheTTL`, `cacheOverrides`, `throwOnRateLimit`, `maxWaitTime`, `rateLimitHeaders`, `resourceExtractor`, `rateLimitConfigs`, `defaultRateLimitConfig`
+
+### Per-request `get()` options
+
+- `cacheTTL` and `cacheOverrides` → `cache: { ttl?, overrides? }`
+
+### Other changes
+
+- Dedup now always uses raw (unscoped) hashes for cross-client deduplication
+- `rateLimit.store` is optional — server cooldown logic (429/Retry-After headers) works without a store
+- Multi-client store sharing support with scoped cache keys, resource-based rate limiting, and shared server cooldowns

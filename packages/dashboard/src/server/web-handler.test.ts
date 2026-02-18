@@ -39,9 +39,9 @@ describe('createDashboardHandler', () => {
         {
           client: new HttpClient({
             name: 'test-client',
-            cache: cacheStore,
+            cache: { store: cacheStore },
             dedupe: dedupeStore,
-            rateLimit: rateLimitStore,
+            rateLimit: { store: rateLimitStore },
           }),
         },
       ],
@@ -244,7 +244,7 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'no-dedup',
-              cache: cacheStore,
+              cache: { store: cacheStore },
             }),
           },
         ],
@@ -351,7 +351,7 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'no-rl',
-              cache: cacheStore,
+              cache: { store: cacheStore },
             }),
           },
         ],
@@ -454,9 +454,9 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -473,9 +473,9 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -497,10 +497,16 @@ describe('createDashboardHandler', () => {
       const h = createDashboardHandler({
         clients: [
           {
-            client: new HttpClient({ name: 'client-a', cache: cacheA }),
+            client: new HttpClient({
+              name: 'client-a',
+              cache: { store: cacheA },
+            }),
           },
           {
-            client: new HttpClient({ name: 'client-b', cache: cacheB }),
+            client: new HttpClient({
+              name: 'client-b',
+              cache: { store: cacheB },
+            }),
           },
         ],
       });
@@ -552,7 +558,7 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'cache-only',
-              cache: cacheOnly,
+              cache: { store: cacheOnly },
             }),
           },
         ],

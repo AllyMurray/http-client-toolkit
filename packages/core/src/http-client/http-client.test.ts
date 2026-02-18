@@ -30,7 +30,7 @@ describe('HttpClient', () => {
       delete: async () => {},
       clear: async () => {},
     };
-    const client = new HttpClient({ name: 'test', cache });
+    const client = new HttpClient({ name: 'test', cache: { store: cache } });
     expect(client.stores.cache).toBe(cache);
     expect(client.stores.dedupe).toBeUndefined();
     expect(client.stores.rateLimit).toBeUndefined();
@@ -270,9 +270,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 5_000,
+      rateLimit: {
+        store: rateLimitStoreStub,
+        throw: false,
+        maxWaitTime: 5_000,
+      },
     });
 
     const controller = new AbortController();
@@ -333,9 +335,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimitHeaders: {
-        remaining: ['Remaining-Requests'],
-        reset: ['Window-Reset-Seconds'],
+      rateLimit: {
+        headers: {
+          remaining: ['Remaining-Requests'],
+          reset: ['Window-Reset-Seconds'],
+        },
       },
     });
 
@@ -385,8 +389,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: adaptiveRateLimitStoreStub,
-      throwOnRateLimit: false,
+      rateLimit: { store: adaptiveRateLimitStoreStub, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -419,9 +422,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 30,
+      rateLimit: { store: rateLimitStoreStub, throw: false, maxWaitTime: 30 },
     });
 
     await expect(client.get(`${baseUrl}/never-allowed`)).rejects.toThrow(
@@ -446,8 +447,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: true,
+      rateLimit: { store: rateLimitStoreStub, throw: true },
     });
 
     await expect(client.get(`${baseUrl}/blocked-immediately`)).rejects.toThrow(
@@ -487,8 +487,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: basicRateLimitStoreStub,
-      throwOnRateLimit: false,
+      rateLimit: { store: basicRateLimitStoreStub, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -527,7 +526,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/same-path?q=1`);
     await client.get(`${alternateBaseUrl}/same-path?q=1`);
@@ -552,7 +554,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/multi?tag=a&tag=b`);
     await client.get(`${baseUrl}/multi?tag=b`);
@@ -581,7 +586,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b&tag=c`);
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b`);
@@ -621,7 +629,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/cache-hit`);
 
     expect(result.ok).toBe(true);
@@ -821,8 +832,10 @@ describe('HttpClient', () => {
   test('should exercise private header parsing helpers', () => {
     const client = new HttpClient({
       name: 'test',
-      rateLimitHeaders: {
-        retryAfter: ['  retry-after  ', ''],
+      rateLimit: {
+        headers: {
+          retryAfter: ['  retry-after  ', ''],
+        },
       },
     });
 
@@ -929,9 +942,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: allowRateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 50,
+      rateLimit: {
+        store: allowRateLimitStoreStub,
+        throw: false,
+        maxWaitTime: 50,
+      },
     });
 
     const privateClient = client as unknown as {
@@ -980,9 +995,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 100,
+      rateLimit: { store: rateLimitStoreStub, throw: false, maxWaitTime: 100 },
     });
 
     const controller = new AbortController();
@@ -1015,8 +1028,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: acquireStore,
-      throwOnRateLimit: false,
+      rateLimit: { store: acquireStore, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -1042,8 +1054,7 @@ describe('HttpClient', () => {
 
     const strictClient = new HttpClient({
       name: 'test',
-      rateLimit: allowRateLimitStoreStub,
-      throwOnRateLimit: true,
+      rateLimit: { store: allowRateLimitStoreStub, throw: true },
     });
 
     const strictPrivate = strictClient as unknown as {
@@ -1059,8 +1070,7 @@ describe('HttpClient', () => {
 
     const waitingClient = new HttpClient({
       name: 'test',
-      throwOnRateLimit: false,
-      maxWaitTime: 0,
+      rateLimit: { throw: false, maxWaitTime: 0 },
     });
 
     const waitingPrivate = waitingClient as unknown as {
@@ -1100,7 +1110,7 @@ describe('HttpClient', () => {
 
     test('respects max-age and stores CacheEntry envelope', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/data')
@@ -1116,7 +1126,7 @@ describe('HttpClient', () => {
 
     test('returns fresh cached entry without network request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/fresh')
@@ -1132,7 +1142,7 @@ describe('HttpClient', () => {
 
     test('does not cache when no-store is set', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/no-store')
@@ -1148,8 +1158,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { ignoreNoStore: true },
+        cache: { store: cache, overrides: { ignoreNoStore: true } },
       });
 
       nock(baseUrl)
@@ -1168,7 +1177,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/etag-data')
@@ -1197,7 +1206,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/lm-data').reply(
         200,
@@ -1226,7 +1235,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       // No ETag or Last-Modified
       nock(baseUrl)
@@ -1250,7 +1259,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr').reply(
         200,
@@ -1283,7 +1292,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr-200').reply(
         200,
@@ -1322,7 +1331,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { transformed: obj['v'] };
@@ -1362,7 +1371,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         responseHandler: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { handled: obj['v'] };
@@ -1399,7 +1408,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr-fail').reply(
         200,
@@ -1428,7 +1437,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie')
@@ -1453,7 +1462,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie-net')
@@ -1487,7 +1496,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/no-cache')
@@ -1512,8 +1521,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { store: cache, overrides: { ignoreNoCache: true } },
       });
 
       nock(baseUrl)
@@ -1531,8 +1539,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: { store: cache, overrides: { minimumTTL: 300 } },
       });
 
       nock(baseUrl)
@@ -1550,8 +1557,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { maximumTTL: 60 },
+        cache: { store: cache, overrides: { maximumTTL: 60 } },
       });
 
       nock(baseUrl)
@@ -1589,7 +1595,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         dedupe: dedupeStub,
       });
 
@@ -1615,7 +1621,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/must-reval').reply(
         200,
@@ -1644,7 +1650,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie-4xx')
@@ -1669,7 +1675,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { transformed: obj['raw'] };
@@ -1692,8 +1698,10 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
+        cache: {
+          store: cache,
+          overrides: { minimumTTL: 100, maximumTTL: 200 },
+        },
       });
 
       // TTL of 50 should be clamped to 100 (minimum)
@@ -1717,7 +1725,10 @@ describe('HttpClient', () => {
 
     test('uses cacheTTL when no cache headers present', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, ttl: 900 },
+      });
 
       nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
 
@@ -1756,7 +1767,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         dedupe: dedupeStub,
       });
 
@@ -1826,7 +1837,7 @@ describe('HttpClient', () => {
 
     test('Vary match returns cached value', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-match')
@@ -1849,7 +1860,7 @@ describe('HttpClient', () => {
 
     test('Vary mismatch treats as cache miss', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-miss')
@@ -1880,7 +1891,7 @@ describe('HttpClient', () => {
 
     test('Vary: * always misses', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-star')
@@ -1920,7 +1931,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/merge-headers')
@@ -1950,7 +1961,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr-headers').reply(
         200,
@@ -2367,7 +2378,7 @@ describe('HttpClient', () => {
 
       const client = new HttpClient({
         name: 'test',
-        cache: cacheStoreStub,
+        cache: { store: cacheStoreStub },
         fetchFn,
         requestInterceptor,
         responseInterceptor,
@@ -2409,7 +2420,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         requestInterceptor: (_url, init) => {
           callOrder.push('requestInterceptor');
           return init;
@@ -2497,7 +2508,7 @@ describe('HttpClient', () => {
 
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         fetchFn: customFetch,
       });
 
@@ -3058,7 +3069,7 @@ describe('HttpClient', () => {
         const cache = makeCacheStore();
         const client = new HttpClient({
           name: 'test',
-          cache,
+          cache: { store: cache },
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
         });
 
@@ -3227,11 +3238,14 @@ describe('HttpClient', () => {
 
     test('cacheTTL overrides cacheTTL for this request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, ttl: 900 },
+      });
 
       nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
 
-      await client.get(`${baseUrl}/per-req-ttl`, { cacheTTL: 120 });
+      await client.get(`${baseUrl}/per-req-ttl`, { cache: { ttl: 120 } });
 
       const hash = hashRequest(`${baseUrl}/per-req-ttl`, {});
       expect(cache._store.get(hash)?.ttl).toBe(120);
@@ -3241,8 +3255,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: { store: cache, overrides: { minimumTTL: 300 } },
       });
 
       nock(baseUrl)
@@ -3250,7 +3263,7 @@ describe('HttpClient', () => {
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
       await client.get(`${baseUrl}/pr-min-ttl`, {
-        cacheOverrides: { minimumTTL: 50 },
+        cache: { overrides: { minimumTTL: 50 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-min-ttl`, {});
@@ -3263,8 +3276,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { maximumTTL: 60 },
+        cache: { store: cache, overrides: { maximumTTL: 60 } },
       });
 
       nock(baseUrl)
@@ -3272,7 +3284,7 @@ describe('HttpClient', () => {
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
 
       await client.get(`${baseUrl}/pr-max-ttl`, {
-        cacheOverrides: { maximumTTL: 500 },
+        cache: { overrides: { maximumTTL: 500 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-max-ttl`, {});
@@ -3284,14 +3296,14 @@ describe('HttpClient', () => {
     test('per-request ignoreNoStore forces caching despite no-store', async () => {
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoStore
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/pr-no-store')
         .reply(200, { id: 1 }, { 'Cache-Control': 'no-store, max-age=60' });
 
       await client.get(`${baseUrl}/pr-no-store`, {
-        cacheOverrides: { ignoreNoStore: true },
+        cache: { overrides: { ignoreNoStore: true } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-no-store`, {});
@@ -3304,19 +3316,19 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoCache
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/pr-no-cache')
         .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache, max-age=3600' });
 
       await client.get(`${baseUrl}/pr-no-cache`, {
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { overrides: { ignoreNoCache: true } },
       });
 
       // No second nock — should return cached value without fetching
       const result = await client.get(`${baseUrl}/pr-no-cache`, {
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { overrides: { ignoreNoCache: true } },
       });
       expect(result).toEqual({ v: 1 });
     });
@@ -3325,8 +3337,10 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 100, maximumTTL: 500 },
+        cache: {
+          store: cache,
+          overrides: { minimumTTL: 100, maximumTTL: 500 },
+        },
       });
 
       nock(baseUrl)
@@ -3335,7 +3349,7 @@ describe('HttpClient', () => {
 
       // Only override maximumTTL; minimumTTL should fall back to constructor (100)
       await client.get(`${baseUrl}/pr-merge`, {
-        cacheOverrides: { maximumTTL: 200 },
+        cache: { overrides: { maximumTTL: 200 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-merge`, {});
@@ -3348,13 +3362,16 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, ttl: 900 },
+      });
 
       nock(baseUrl)
         .get('/pr-304')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"v1"' });
 
-      await client.get(`${baseUrl}/pr-304`, { cacheTTL: 200 });
+      await client.get(`${baseUrl}/pr-304`, { cache: { ttl: 200 } });
 
       // Advance past freshness
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
@@ -3369,8 +3386,7 @@ describe('HttpClient', () => {
         .reply(304, '');
 
       await client.get(`${baseUrl}/pr-304`, {
-        cacheTTL: 200,
-        cacheOverrides: { minimumTTL: 150 },
+        cache: { ttl: 200, overrides: { minimumTTL: 150 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-304`, {});
@@ -3383,7 +3399,10 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, ttl: 900 },
+      });
 
       // Initial response with SWR
       nock(baseUrl)
@@ -3394,7 +3413,7 @@ describe('HttpClient', () => {
           { 'Cache-Control': 'max-age=1, stale-while-revalidate=60' },
         );
 
-      await client.get(`${baseUrl}/pr-swr`, { cacheTTL: 200 });
+      await client.get(`${baseUrl}/pr-swr`, { cache: { ttl: 200 } });
 
       // Advance into SWR window
       vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
@@ -3403,7 +3422,9 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/pr-swr').reply(200, { v: 2 });
 
       // This returns stale value but triggers background revalidation
-      const result = await client.get(`${baseUrl}/pr-swr`, { cacheTTL: 200 });
+      const result = await client.get(`${baseUrl}/pr-swr`, {
+        cache: { ttl: 200 },
+      });
       expect(result).toEqual({ v: 1 });
 
       await client.flushRevalidations();
@@ -3418,9 +3439,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheTTL: 900,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: { store: cache, ttl: 900, overrides: { minimumTTL: 300 } },
       });
 
       nock(baseUrl)
@@ -3469,8 +3488,7 @@ describe('HttpClient', () => {
         const cache = makeCacheStore();
         const client = new HttpClient({
           name: 'test',
-          cache,
-          storeScope: 'clientA',
+          cache: { store: cache, scope: 'clientA' },
         });
 
         nock(baseUrl).get('/scoped').reply(200, { v: 1 });
@@ -3486,7 +3504,7 @@ describe('HttpClient', () => {
         expect(cache._store.has(rawHash)).toBe(false);
       });
 
-      test('prefixes dedupe keys with scope', async () => {
+      test('dedupe uses raw hash even when cache has scope', async () => {
         const registeredHashes: Array<string> = [];
         const dedupeStub = {
           async waitFor() {
@@ -3503,10 +3521,11 @@ describe('HttpClient', () => {
           },
         } as const;
 
+        const cache = makeCacheStore();
         const client = new HttpClient({
           name: 'test',
+          cache: { store: cache, scope: 'clientB' },
           dedupe: dedupeStub,
-          storeScope: 'clientB',
         });
 
         nock(baseUrl).get('/scoped-dedupe').reply(200, { v: 1 });
@@ -3514,7 +3533,8 @@ describe('HttpClient', () => {
         await client.get(`${baseUrl}/scoped-dedupe`);
 
         const rawHash = hashRequest(`${baseUrl}/scoped-dedupe`, {});
-        expect(registeredHashes[0]).toBe(`clientB:${rawHash}`);
+        // Dedupe should use the raw (unscoped) hash
+        expect(registeredHashes[0]).toBe(rawHash);
       });
 
       test('two clients sharing one store with different scopes have isolated cache entries', async () => {
@@ -3522,13 +3542,11 @@ describe('HttpClient', () => {
 
         const clientA = new HttpClient({
           name: 'clientA',
-          cache,
-          storeScope: 'scopeA',
+          cache: { store: cache, scope: 'scopeA' },
         });
         const clientB = new HttpClient({
           name: 'clientB',
-          cache,
-          storeScope: 'scopeB',
+          cache: { store: cache, scope: 'scopeB' },
         });
 
         nock(baseUrl).get('/shared').reply(200, { source: 'A' });
@@ -3566,10 +3584,12 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          resourceExtractor: (url) => {
-            const u = new URL(url);
-            return `${u.origin}${u.pathname}`;
+          rateLimit: {
+            store: rateLimitStub,
+            resourceExtractor: (url) => {
+              const u = new URL(url);
+              return `${u.origin}${u.pathname}`;
+            },
           },
         });
 
@@ -3592,7 +3612,9 @@ describe('HttpClient', () => {
       test('getResource uses resourceExtractor when provided', () => {
         const client = new HttpClient({
           name: 'test',
-          resourceExtractor: (url) => `custom:${new URL(url).pathname}`,
+          rateLimit: {
+            resourceExtractor: (url) => `custom:${new URL(url).pathname}`,
+          },
         });
         const privateClient = client as unknown as {
           getResource: (url: string) => string;
@@ -3643,8 +3665,7 @@ describe('HttpClient', () => {
 
         new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          rateLimitConfigs: configs,
+          rateLimit: { store: rateLimitStub, configs },
         });
 
         expect(setResourceConfigCalls).toHaveLength(2);
@@ -3684,8 +3705,7 @@ describe('HttpClient', () => {
           () =>
             new HttpClient({
               name: 'test',
-              rateLimit: rateLimitStub,
-              rateLimitConfigs: configs,
+              rateLimit: { store: rateLimitStub, configs },
             }),
         ).not.toThrow();
       });
@@ -3720,8 +3740,10 @@ describe('HttpClient', () => {
 
         new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          defaultRateLimitConfig: { limit: 30, windowMs: 60_000 },
+          rateLimit: {
+            store: rateLimitStub,
+            defaultConfig: { limit: 30, windowMs: 60_000 },
+          },
         });
 
         expect(setResourceConfigCalls).toHaveLength(1);
@@ -3751,8 +3773,10 @@ describe('HttpClient', () => {
           () =>
             new HttpClient({
               name: 'test',
-              rateLimit: rateLimitStub,
-              defaultRateLimitConfig: { limit: 30, windowMs: 60_000 },
+              rateLimit: {
+                store: rateLimitStub,
+                defaultConfig: { limit: 30, windowMs: 60_000 },
+              },
             }),
         ).not.toThrow();
       });
@@ -3787,8 +3811,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          throwOnRateLimit: true,
+          rateLimit: { store: rateLimitStub, throw: true },
         });
 
         // Trigger a 429 with Retry-After to invoke applyServerRateLimitHints
@@ -3835,7 +3858,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
+          rateLimit: { store: rateLimitStub },
         });
 
         const privateClient = client as unknown as {
@@ -3873,7 +3896,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
+          rateLimit: { store: rateLimitStub },
         });
 
         const privateClient = client as unknown as {
@@ -3901,8 +3924,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          throwOnRateLimit: true,
+          rateLimit: { store: rateLimitStub, throw: true },
         });
 
         // Trigger a 429 to invoke applyServerRateLimitHints
@@ -3938,7 +3960,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
+          rateLimit: { store: rateLimitStub },
         });
 
         const privateClient = client as unknown as {
@@ -3967,7 +3989,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
+          rateLimit: { store: rateLimitStub },
         });
 
         const privateClient = client as unknown as {
@@ -4007,9 +4029,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: rateLimitStub,
-          throwOnRateLimit: false,
-          maxWaitTime: 5000,
+          rateLimit: { store: rateLimitStub, throw: false, maxWaitTime: 5000 },
         });
 
         nock(baseUrl).get('/cooldown-enforce').reply(200, { ok: true });
@@ -4040,8 +4060,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          cache: cacheStub,
-          storeScope: 'myScope',
+          cache: { store: cacheStub, scope: 'myScope' },
         });
 
         await client.clearCache();
@@ -4065,7 +4084,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          cache: cacheStub,
+          cache: { store: cacheStub },
         });
 
         await client.clearCache();
@@ -4084,13 +4103,11 @@ describe('HttpClient', () => {
 
         const clientA = new HttpClient({
           name: 'clientA',
-          cache,
-          storeScope: 'scopeA',
+          cache: { store: cache, scope: 'scopeA' },
         });
         const clientB = new HttpClient({
           name: 'clientB',
-          cache,
-          storeScope: 'scopeB',
+          cache: { store: cache, scope: 'scopeB' },
         });
 
         nock(baseUrl).get('/shared-clear').reply(200, { source: 'A' });

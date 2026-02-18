@@ -82,24 +82,62 @@ export interface HttpClientStores {
   rateLimit?: RateLimitStore | AdaptiveRateLimitStore;
 }
 
+export interface HttpClientCacheOptions {
+  /** Cache store instance for HTTP response caching. */
+  store: CacheStore;
+  /**
+   * Prefix for cache keys. Enables selective clear() and prevents
+   * cross-client conflicts when sharing a store. When omitted, entries are shared.
+   */
+  scope?: string;
+  /**
+   * Cache TTL in seconds. Used when the response has no cache headers
+   * (`Cache-Control`, `Expires`, `Last-Modified`). When headers are
+   * present, the server-specified freshness takes precedence.
+   */
+  ttl?: number;
+  /** Override specific cache header behaviors. */
+  overrides?: CacheOverrideOptions;
+}
+
+export interface HttpClientRateLimitOptions {
+  /** Rate limit store instance for request throttling. */
+  store?: RateLimitStore | AdaptiveRateLimitStore;
+  /** Whether to throw errors on rate limit violations. */
+  throw?: boolean;
+  /** Maximum time to wait for rate limit in milliseconds. */
+  maxWaitTime?: number;
+  /** Configure rate-limit response header names for standards and custom APIs. */
+  headers?: {
+    retryAfter?: Array<string>;
+    limit?: Array<string>;
+    remaining?: Array<string>;
+    reset?: Array<string>;
+    combined?: Array<string>;
+  };
+  /**
+   * Extract a rate-limit resource key from a URL.
+   * Defaults to returning the origin (e.g. "https://api.github.com").
+   */
+  resourceExtractor?: (url: string) => string;
+  /** Per-resource rate limit configs. Keys should match resourceExtractor output. */
+  configs?: RateLimitConfigMap;
+  /** Default rate limit config for resources not in configs. */
+  defaultConfig?: RateLimitConfig;
+}
+
 export interface HttpClientOptions {
   /**
    * Name for this client instance. Used to identify the client
    * in logging, debugging, and the dashboard.
    */
   name: string;
-  /**
-   * Cache store instance for HTTP response caching.
-   */
-  cache?: CacheStore;
-  /**
-   * Deduplication store instance for in-flight request deduplication.
-   */
+  /** Cache configuration and store. */
+  cache?: HttpClientCacheOptions;
+  /** Deduplication store instance for in-flight request deduplication. */
   dedupe?: DedupeStore;
-  /**
-   * Rate limit store instance for request throttling.
-   */
-  rateLimit?: RateLimitStore | AdaptiveRateLimitStore;
+  /** Rate limiting configuration and optional store. */
+  rateLimit?: HttpClientRateLimitOptions;
   /**
    * Custom fetch implementation. Defaults to `globalThis.fetch`.
    * Use this to intercept/transform at the fetch level — e.g., resolving
@@ -128,20 +166,6 @@ export interface HttpClientOptions {
     url: string,
   ) => Promise<Response> | Response;
   /**
-   * Cache TTL in seconds. Used when the response has no cache headers
-   * (`Cache-Control`, `Expires`, `Last-Modified`). When headers are
-   * present, the server-specified freshness takes precedence.
-   */
-  cacheTTL?: number;
-  /**
-   * Whether to throw errors on rate limit violations
-   */
-  throwOnRateLimit?: boolean;
-  /**
-   * Maximum time to wait for rate limit in milliseconds
-   */
-  maxWaitTime?: number;
-  /**
    * Transforms parsed response data before caching and further processing.
    * Runs on every response (cache miss or revalidation). Use this for
    * structural mapping like converting snake_case keys to camelCase.
@@ -162,42 +186,10 @@ export interface HttpClientOptions {
    */
   responseHandler?: (data: unknown) => unknown;
   /**
-   * Configure rate-limit response header names for standards and custom APIs.
-   */
-  rateLimitHeaders?: {
-    retryAfter?: Array<string>;
-    limit?: Array<string>;
-    remaining?: Array<string>;
-    reset?: Array<string>;
-    combined?: Array<string>;
-  };
-  /**
    * Automatic retry configuration. Pass `false` to disable retries globally.
    * Pass an options object to enable retries with custom settings.
    */
   retry?: RetryOptions | false;
-  /**
-   * Override specific cache header behaviors.
-   */
-  cacheOverrides?: CacheOverrideOptions;
-  /**
-   * Prefix for cache/dedup keys. Enables selective clear() and prevents
-   * cross-client conflicts when sharing a store. When omitted, entries are shared.
-   */
-  storeScope?: string;
-  /**
-   * Extract a rate-limit resource key from a URL.
-   * Defaults to returning the origin (e.g. "https://api.github.com").
-   */
-  resourceExtractor?: (url: string) => string;
-  /**
-   * Per-resource rate limit configs. Keys should match resourceExtractor output.
-   */
-  rateLimitConfigs?: RateLimitConfigMap;
-  /**
-   * Default rate limit config for resources not in rateLimitConfigs.
-   */
-  defaultRateLimitConfig?: RateLimitConfig;
 }
 
 interface RateLimitHeaderConfig {
@@ -224,74 +216,75 @@ export class HttpClient implements HttpClientContract {
   public readonly stores: HttpClientStores;
   private serverCooldowns = new Map<string, number>();
   private pendingRevalidations: Array<Promise<void>> = [];
-  private options: Required<
-    Pick<HttpClientOptions, 'cacheTTL' | 'throwOnRateLimit' | 'maxWaitTime'>
-  > &
-    Pick<
-      HttpClientOptions,
-      | 'fetchFn'
-      | 'requestInterceptor'
-      | 'responseInterceptor'
-      | 'responseTransformer'
-      | 'errorHandler'
-      | 'responseHandler'
-      | 'cacheOverrides'
-      | 'retry'
-      | 'storeScope'
-      | 'resourceExtractor'
-      | 'rateLimitConfigs'
-      | 'defaultRateLimitConfig'
-    > & {
-      rateLimitHeaders: RateLimitHeaderConfig;
-    };
+  private options: {
+    cacheTTL: number;
+    throwOnRateLimit: boolean;
+    maxWaitTime: number;
+    fetchFn?: HttpClientOptions['fetchFn'];
+    requestInterceptor?: HttpClientOptions['requestInterceptor'];
+    responseInterceptor?: HttpClientOptions['responseInterceptor'];
+    responseTransformer?: HttpClientOptions['responseTransformer'];
+    errorHandler?: HttpClientOptions['errorHandler'];
+    responseHandler?: HttpClientOptions['responseHandler'];
+    retry?: HttpClientOptions['retry'];
+    cacheOverrides?: CacheOverrideOptions;
+    cacheScope?: string;
+    resourceExtractor?: (url: string) => string;
+    rateLimitConfigs?: RateLimitConfigMap;
+    defaultRateLimitConfig?: RateLimitConfig;
+    rateLimitHeaders: RateLimitHeaderConfig;
+  };
 
   constructor(options: HttpClientOptions) {
     this.name = options.name;
     this.stores = {
-      cache: options.cache,
+      cache: options.cache?.store,
       dedupe: options.dedupe,
-      rateLimit: options.rateLimit,
+      rateLimit: options.rateLimit?.store,
     };
     this.options = {
       fetchFn: options.fetchFn,
       requestInterceptor: options.requestInterceptor,
       responseInterceptor: options.responseInterceptor,
-      cacheTTL: options.cacheTTL ?? 3600,
-      throwOnRateLimit: options.throwOnRateLimit ?? true,
-      maxWaitTime: options.maxWaitTime ?? 60000,
+      cacheTTL: options.cache?.ttl ?? 3600,
+      throwOnRateLimit: options.rateLimit?.throw ?? true,
+      maxWaitTime: options.rateLimit?.maxWaitTime ?? 60000,
       responseTransformer: options.responseTransformer,
       errorHandler: options.errorHandler,
       responseHandler: options.responseHandler,
       retry: options.retry,
-      cacheOverrides: options.cacheOverrides,
-      storeScope: options.storeScope,
-      resourceExtractor: options.resourceExtractor,
-      rateLimitConfigs: options.rateLimitConfigs,
-      defaultRateLimitConfig: options.defaultRateLimitConfig,
+      cacheOverrides: options.cache?.overrides,
+      cacheScope: options.cache?.scope,
+      resourceExtractor: options.rateLimit?.resourceExtractor,
+      rateLimitConfigs: options.rateLimit?.configs,
+      defaultRateLimitConfig: options.rateLimit?.defaultConfig,
       rateLimitHeaders: this.normalizeRateLimitHeaders(
-        options.rateLimitHeaders,
+        options.rateLimit?.headers,
       ),
     };
 
-    if (this.stores.rateLimit?.setResourceConfig && options.rateLimitConfigs) {
-      for (const [resource, config] of options.rateLimitConfigs) {
+    if (
+      this.stores.rateLimit?.setResourceConfig &&
+      options.rateLimit?.configs
+    ) {
+      for (const [resource, config] of options.rateLimit.configs) {
         this.stores.rateLimit.setResourceConfig(resource, config);
       }
     }
 
     if (
       this.stores.rateLimit?.setResourceConfig &&
-      options.defaultRateLimitConfig
+      options.rateLimit?.defaultConfig
     ) {
       this.stores.rateLimit.setResourceConfig(
         '__default__',
-        options.defaultRateLimitConfig,
+        options.rateLimit.defaultConfig,
       );
     }
   }
 
   private normalizeRateLimitHeaders(
-    customHeaders?: HttpClientOptions['rateLimitHeaders'],
+    customHeaders?: HttpClientRateLimitOptions['headers'],
   ): RateLimitHeaderConfig {
     return {
       retryAfter: this.normalizeHeaderNames(
@@ -352,11 +345,11 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
-   * Prefix a cache/dedup hash with the store scope when configured.
+   * Prefix a cache hash with the cache scope when configured.
    */
   private scopeKey(hash: string): string {
-    return this.options.storeScope
-      ? `${this.options.storeScope}:${hash}`
+    return this.options.cacheScope
+      ? `${this.options.cacheScope}:${hash}`
       : hash;
   }
 
@@ -1106,13 +1099,13 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
-   * Clear this client's cached entries. When `storeScope` is set only entries
+   * Clear this client's cached entries. When `cache.scope` is set only entries
    * belonging to this client are removed; otherwise the entire cache is cleared.
    */
   async clearCache(): Promise<void> {
     if (!this.stores.cache) return;
     await this.stores.cache.clear(
-      this.options.storeScope ? `${this.options.storeScope}:` : undefined,
+      this.options.cacheScope ? `${this.options.cacheScope}:` : undefined,
     );
   }
 
@@ -1123,17 +1116,17 @@ export class HttpClient implements HttpClientContract {
       priority?: RequestPriority;
       headers?: Record<string, string>;
       retry?: RetryOptions | false;
-      cacheTTL?: number;
-      cacheOverrides?: CacheOverrideOptions;
+      cache?: { ttl?: number; overrides?: CacheOverrideOptions };
     } = {},
   ): Promise<Result> {
     const { signal, priority = 'background', headers } = options;
     const { endpoint, params } = this.parseUrlForHashing(url);
-    const hash = this.scopeKey(hashRequest(endpoint, params));
+    const rawHash = hashRequest(endpoint, params);
+    const cacheHash = this.scopeKey(rawHash);
     const resource = this.getResource(url);
     const cacheConfig = this.resolveCacheConfig(
-      options.cacheTTL,
-      options.cacheOverrides,
+      options.cache?.ttl,
+      options.cache?.overrides,
     );
 
     // Track stale entry for conditional requests and stale-if-error fallback
@@ -1145,7 +1138,7 @@ export class HttpClient implements HttpClientContract {
 
       // 1. Cache — check for cached response
       if (this.stores.cache) {
-        const cachedResult = await this.stores.cache.get(hash);
+        const cachedResult = await this.stores.cache.get(cacheHash);
 
         if (cachedResult !== undefined && isCacheEntry(cachedResult)) {
           const entry = cachedResult as CacheEntry<unknown>;
@@ -1181,7 +1174,7 @@ export class HttpClient implements HttpClientContract {
                 // Serve stale immediately, revalidate in background
                 const revalidation = this.backgroundRevalidate(
                   url,
-                  hash,
+                  cacheHash,
                   entry,
                   headers,
                   cacheConfig,
@@ -1212,22 +1205,22 @@ export class HttpClient implements HttpClientContract {
 
       // 2. Deduplication — check for in-progress request
       if (this.stores.dedupe) {
-        const existingResult = await this.stores.dedupe.waitFor(hash);
+        const existingResult = await this.stores.dedupe.waitFor(rawHash);
         if (existingResult !== undefined) {
           return existingResult as Result;
         }
 
         if (this.stores.dedupe.registerOrJoin) {
-          const registration = await this.stores.dedupe.registerOrJoin(hash);
+          const registration = await this.stores.dedupe.registerOrJoin(rawHash);
 
           if (!registration.isOwner) {
-            const joinedResult = await this.stores.dedupe.waitFor(hash);
+            const joinedResult = await this.stores.dedupe.waitFor(rawHash);
             if (joinedResult !== undefined) {
               return joinedResult as Result;
             }
           }
         } else {
-          await this.stores.dedupe.register(hash);
+          await this.stores.dedupe.register(rawHash);
         }
       }
 
@@ -1274,13 +1267,13 @@ export class HttpClient implements HttpClientContract {
         );
 
         if (this.stores.cache) {
-          await this.stores.cache.set(hash, refreshedEntry, ttl);
+          await this.stores.cache.set(cacheHash, refreshedEntry, ttl);
         }
 
         const result = refreshedEntry.value as Result;
 
         if (this.stores.dedupe) {
-          await this.stores.dedupe.complete(hash, result);
+          await this.stores.dedupe.complete(rawHash, result);
         }
 
         return result;
@@ -1327,13 +1320,13 @@ export class HttpClient implements HttpClientContract {
             calculateStoreTTL(entry.metadata, cacheConfig.cacheTTL),
             cacheConfig.cacheOverrides,
           );
-          await this.stores.cache.set(hash, entry, ttl);
+          await this.stores.cache.set(cacheHash, entry, ttl);
         }
       }
 
       // 9. Mark deduplication as complete
       if (this.stores.dedupe) {
-        await this.stores.dedupe.complete(hash, result);
+        await this.stores.dedupe.complete(rawHash, result);
       }
 
       return result;
@@ -1343,7 +1336,7 @@ export class HttpClient implements HttpClientContract {
         const result = staleCandidate.value as Result;
 
         if (this.stores.dedupe) {
-          await this.stores.dedupe.complete(hash, result);
+          await this.stores.dedupe.complete(rawHash, result);
         }
 
         return result;
@@ -1351,7 +1344,7 @@ export class HttpClient implements HttpClientContract {
 
       // Mark deduplication as failed
       if (this.stores.dedupe) {
-        await this.stores.dedupe.fail(hash, error as Error);
+        await this.stores.dedupe.fail(rawHash, error as Error);
       }
 
       // Allow callers to detect aborts distinctly – do not wrap AbortError.

@@ -90,16 +90,10 @@ export interface HttpClientContract {
        */
       retry?: RetryOptions | false;
       /**
-       * Per-request cache TTL in seconds. Overrides the constructor-level
-       * `cacheTTL` for this specific request. Only used when the response
-       * has no cache headers.
+       * Per-request cache options. `ttl` overrides constructor-level TTL;
+       * `overrides` are shallow-merged with constructor-level cache overrides.
        */
-      cacheTTL?: number;
-      /**
-       * Per-request cache override options. Shallow-merged with constructor-level
-       * `cacheOverrides` — specified fields override, unspecified fields fall back.
-       */
-      cacheOverrides?: CacheOverrideOptions;
+      cache?: { ttl?: number; overrides?: CacheOverrideOptions };
     },
   ): Promise<Result>;
 }
