@@ -9,7 +9,6 @@
   **BREAKING:** `HttpClientOptions` constructor and per-request `get()` options now use nested objects grouped by concern instead of flat properties.
 
   ### Constructor options
-
   - **Cache**: `cache: store` → `cache: { store, globalScope?, ttl?, overrides? }`
     - Cache keys are automatically scoped (prefixed) with the client `name` by default, isolating each client's cache entries
     - Set `globalScope: true` to share cache keys across clients (previous unscoped behaviour)
@@ -20,11 +19,9 @@
   - **Removed**: flat `cacheTTL`, `cacheOverrides`, `throwOnRateLimit`, `maxWaitTime`, `rateLimitHeaders`
 
   ### Per-request `get()` options
-
   - `cacheTTL` and `cacheOverrides` → `cache: { ttl?, overrides? }`
 
   ### Multi-client store sharing
-
   - Multiple `HttpClient` instances can share the same store instances safely
   - Cache keys are scoped by client name by default, preventing cross-client cache collisions
   - Dedup uses raw (unscoped) hashes, enabling cross-client request deduplication
