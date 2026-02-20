@@ -1,5 +1,16 @@
 # @http-client-toolkit/store-dynamodb
 
+## 2.0.0
+
+### Minor Changes
+
+- 0fc2d9f: Add tag-based cache invalidation. Cache entries can now be labelled with tags via `cache: { tags: ['users'] }` on requests, then selectively invalidated with `client.invalidateByTag()` and `client.invalidateByTags()`.
+
+### Patch Changes
+
+- Updated dependencies [0fc2d9f]
+  - @http-client-toolkit/core@2.0.0
+
 ## 1.0.1
 
 ### Patch Changes
