@@ -18,11 +18,13 @@ import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
 
 const client = new HttpClient({
   name: 'my-api',
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 60, windowMs: 60_000 }, // 60 requests per minute
-  }),
-  throwOnRateLimit: true, // Default: throw when rate limited
-  maxWaitTime: 60_000,    // Max time to wait if throwOnRateLimit is false
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 60, windowMs: 60_000 }, // 60 requests per minute
+    }),
+    throw: true,          // Default: throw when rate limited
+    maxWaitTime: 60_000,  // Max time to wait if throw is false
+  },
 });
 ```
 
@@ -113,11 +115,13 @@ Map non-standard header names for specific APIs:
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  rateLimit,
-  rateLimitHeaders: {
-    retryAfter: ['RetryAfterSeconds'],
-    remaining: ['Remaining-Requests'],
-    reset: ['Window-Reset-Seconds'],
+  rateLimit: {
+    store: rateLimit,
+    headers: {
+      retryAfter: ['RetryAfterSeconds'],
+      remaining: ['Remaining-Requests'],
+      reset: ['Window-Reset-Seconds'],
+    },
   },
 });
 ```
@@ -131,8 +135,7 @@ Control what happens when a rate limit is hit:
     ```typescript
     const client = new HttpClient({
       name: 'my-api',
-      rateLimit,
-      throwOnRateLimit: true,
+      rateLimit: { store: rateLimit, throw: true },
     });
 
     // Throws HttpClientError when rate limited
@@ -142,9 +145,11 @@ Control what happens when a rate limit is hit:
     ```typescript
     const client = new HttpClient({
       name: 'my-api',
-      rateLimit,
-      throwOnRateLimit: false,
-      maxWaitTime: 30_000, // Wait up to 30 seconds
+      rateLimit: {
+        store: rateLimit,
+        throw: false,
+        maxWaitTime: 30_000, // Wait up to 30 seconds
+      },
     });
 
     // Waits for the rate limit window to open, then retries

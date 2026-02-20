@@ -88,22 +88,24 @@ Each layer is optional. A cache-only client or a rate-limit-only client works ju
 
 ```typescript
 // Cache-only client
-const client = new HttpClient({ name: 'my-api', cache: new InMemoryCacheStore() });
+const client = new HttpClient({ name: 'my-api', cache: { store: new InMemoryCacheStore() } });
 
 // Rate-limited client with no caching
 const client = new HttpClient({
   name: 'my-api',
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 100, windowMs: 60_000 },
-  }),
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 100, windowMs: 60_000 },
+    }),
+  },
 });
 
 // Full stack
 const client = new HttpClient({
   name: 'my-api',
-  cache: new SQLiteCacheStore({ database: './app.db' }),
+  cache: { store: new SQLiteCacheStore({ database: './app.db' }) },
   dedupe: new SQLiteDedupeStore({ database: './app.db' }),
-  rateLimit: new SqliteAdaptiveRateLimitStore({ database: './app.db' }),
+  rateLimit: { store: new SqliteAdaptiveRateLimitStore({ database: './app.db' }) },
 });
 ```
 

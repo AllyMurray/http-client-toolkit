@@ -45,10 +45,9 @@ import {
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
+  cache: { store: new InMemoryCacheStore(), ttl: 300 },
   dedupe: new InMemoryDedupeStore(),
-  rateLimit: new InMemoryRateLimitStore(),
-  cacheTTL: 300,
+  rateLimit: { store: new InMemoryRateLimitStore() },
 });
 
 const data = await client.get<{ name: string }>(

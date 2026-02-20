@@ -87,7 +87,7 @@ Deduplication and caching work well together. The cache prevents repeated reques
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
+  cache: { store: new InMemoryCacheStore() },
   dedupe: new InMemoryDedupeStore(),
 });
 
