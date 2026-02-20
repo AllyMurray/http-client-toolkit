@@ -2,6 +2,10 @@
 
 ## 0.12.1
 
+### Patch Changes
+
+- Version alignment for dashboard package release
+
 ## 0.12.0
 
 ### Minor Changes
@@ -37,7 +41,7 @@
 
 ## 0.11.0
 
-_Failed release — see 0.12.0_
+_Failed release — superseded by 0.12.0._
 
 ## 0.10.0
 
