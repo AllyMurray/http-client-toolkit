@@ -45,6 +45,7 @@ export function createDashboard(
   const ctx: MultiClientContext = {
     clients,
     pollIntervalMs: opts.pollIntervalMs,
+    readonly: opts.readonly,
   };
 
   const apiRouter = createApiRouter(ctx);

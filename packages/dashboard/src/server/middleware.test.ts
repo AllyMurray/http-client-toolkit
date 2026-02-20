@@ -954,4 +954,68 @@ describe('createDashboard middleware', () => {
       expect(body.error).toBe('Unknown error');
     });
   });
+
+  describe('readonly mode', () => {
+    let roServer: Server;
+    let roPort: number;
+    let roCacheStore: InMemoryCacheStore;
+    let roRateLimitStore: InMemoryRateLimitStore;
+
+    beforeEach(async () => {
+      roCacheStore = new InMemoryCacheStore();
+      roRateLimitStore = new InMemoryRateLimitStore();
+
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'test-client',
+              cache: { store: roCacheStore },
+              rateLimit: { store: roRateLimitStore },
+            }),
+          },
+        ],
+        readonly: true,
+      });
+
+      const result = await startServer(middleware);
+      roServer = result.server;
+      roPort = result.port;
+    });
+
+    afterEach(async () => {
+      await closeServer(roServer);
+      roCacheStore.destroy();
+      roRateLimitStore.destroy();
+    });
+
+    it('should allow GET requests in readonly mode', async () => {
+      const { status } = await fetchJson(roPort, '/api/health');
+      expect(status).toBe(200);
+    });
+
+    it('should block DELETE requests in readonly mode', async () => {
+      const { status, body } = await fetchJson(
+        roPort,
+        '/api/clients/test-client/cache/entries',
+        { method: 'DELETE' },
+      );
+      expect(status).toBe(403);
+      expect(body.error).toBe('Dashboard is in readonly mode');
+    });
+
+    it('should block PUT requests in readonly mode', async () => {
+      const { status, body } = await fetchJson(
+        roPort,
+        '/api/clients/test-client/rate-limit/resources/api/config',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ limit: 100, windowMs: 60000 }),
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      expect(status).toBe(403);
+      expect(body.error).toBe('Dashboard is in readonly mode');
+    });
+  });
 });

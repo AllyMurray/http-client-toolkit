@@ -194,7 +194,14 @@ async function routeApi(
       return errorResponse(`Unknown client: ${clientName}`, 404);
     }
 
-    return routeClientApi(request, subPath, method, client, query);
+    return routeClientApi(
+      request,
+      subPath,
+      method,
+      client,
+      query,
+      ctx.readonly,
+    );
   }
 
   // Unknown API route
@@ -205,13 +212,21 @@ async function routeApi(
   return null;
 }
 
+function isMutatingMethod(method: string): boolean {
+  return method === 'DELETE' || method === 'PUT' || method === 'POST';
+}
+
 async function routeClientApi(
   request: Request,
   subPath: string,
   method: string,
   client: ClientContext,
   query: URLSearchParams,
+  readonly: boolean,
 ): Promise<Response> {
+  if (readonly && isMutatingMethod(method)) {
+    return errorResponse('Dashboard is in readonly mode', 403);
+  }
   // Cache routes
   if (subPath.startsWith('/cache')) {
     if (!client.cache) return errorResponse('Cache store not configured', 404);
@@ -420,6 +435,7 @@ export function createDashboardHandler(
   const ctx: MultiClientContext = {
     clients,
     pollIntervalMs: opts.pollIntervalMs,
+    readonly: opts.readonly,
   };
 
   return async (request: Request): Promise<Response> => {

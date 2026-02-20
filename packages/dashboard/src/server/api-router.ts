@@ -27,6 +27,7 @@ import { handleClients } from './handlers/stores.js';
 import {
   sendNotFound,
   sendMethodNotAllowed,
+  sendForbidden,
   sendError,
 } from './response-helpers.js';
 
@@ -67,7 +68,15 @@ export function createApiRouter(ctx: MultiClientContext) {
         return true;
       }
 
-      return routeClientApi(req, res, client, subPath, method, query);
+      return routeClientApi(
+        req,
+        res,
+        client,
+        subPath,
+        method,
+        query,
+        ctx.readonly,
+      );
     }
 
     // No API route matched
@@ -80,6 +89,10 @@ export function createApiRouter(ctx: MultiClientContext) {
   };
 }
 
+function isMutatingMethod(method: string): boolean {
+  return method === 'DELETE' || method === 'PUT' || method === 'POST';
+}
+
 async function routeClientApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -87,7 +100,12 @@ async function routeClientApi(
   subPath: string,
   method: string,
   query: URLSearchParams,
+  readonly: boolean,
 ): Promise<boolean> {
+  if (readonly && isMutatingMethod(method)) {
+    sendForbidden(res);
+    return true;
+  }
   // Cache routes
   if (subPath.startsWith('/cache')) {
     if (!client.cache) {

@@ -43,6 +43,7 @@ const DashboardOptionsSchema = z
       .min(1, 'At least one client is required'),
     basePath: z.string().default('/'),
     pollIntervalMs: z.number().int().positive().default(5000),
+    readonly: z.boolean().default(false),
   })
   .refine(
     (data) => {

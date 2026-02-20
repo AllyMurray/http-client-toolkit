@@ -5,6 +5,7 @@ import {
   sendError,
   sendNotFound,
   sendMethodNotAllowed,
+  sendForbidden,
 } from './response-helpers.js';
 
 function mockRes() {
@@ -76,5 +77,16 @@ describe('sendMethodNotAllowed', () => {
     const res = mockRes();
     sendMethodNotAllowed(res);
     expect(res.writeHead).toHaveBeenCalledWith(405, expect.any(Object));
+  });
+});
+
+describe('sendForbidden', () => {
+  it('should send 403', () => {
+    const res = mockRes();
+    sendForbidden(res);
+    expect(res.writeHead).toHaveBeenCalledWith(403, expect.any(Object));
+    expect(res.end).toHaveBeenCalledWith(
+      JSON.stringify({ error: 'Dashboard is in readonly mode' }),
+    );
   });
 });
