@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 1.0.1
+
+### Patch Changes
+
+- 9ef43f7: Version alignment across all packages
+
 ## 1.0.0
 
 ### Minor Changes

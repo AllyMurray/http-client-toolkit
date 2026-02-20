@@ -1,5 +1,16 @@
 # @http-client-toolkit/dashboard
 
+## 1.0.1
+
+### Patch Changes
+
+- 9ef43f7: Version alignment across all packages
+- Updated dependencies [9ef43f7]
+  - @http-client-toolkit/core@1.0.1
+  - @http-client-toolkit/store-memory@1.0.1
+  - @http-client-toolkit/store-sqlite@1.0.1
+  - @http-client-toolkit/store-dynamodb@1.0.1
+
 ## 1.0.0
 
 ### Patch Changes
