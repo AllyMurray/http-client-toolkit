@@ -15,10 +15,7 @@
 
 ## 0.11.0
 
-### Patch Changes
-
-- Updated dependencies [35b888d]
-  - @http-client-toolkit/core@0.11.0
+_Failed release — superseded by 0.12.0._
 
 ## 0.10.0
 
