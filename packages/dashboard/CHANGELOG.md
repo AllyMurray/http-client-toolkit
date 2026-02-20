@@ -1,5 +1,11 @@
 # @http-client-toolkit/dashboard
 
+## 1.0.0
+
+### Patch Changes
+
+- Version alignment with core packages (1.0.0 was previously burned on npm from an earlier release)
+
 ## 0.12.1
 
 ### Minor Changes
