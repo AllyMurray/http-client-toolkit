@@ -86,10 +86,12 @@ export interface HttpClientCacheOptions {
   /** Cache store instance for HTTP response caching. */
   store: CacheStore;
   /**
-   * Prefix for cache keys. Enables selective clear() and prevents
-   * cross-client conflicts when sharing a store. When omitted, entries are shared.
+   * When `true`, cache keys are not prefixed with the client name.
+   * By default (`false`), each client's cache entries are isolated
+   * by prefixing keys with `name:`, preventing cross-client conflicts
+   * when sharing a store and scoping `clearCache()` to this client.
    */
-  scope?: string;
+  globalScope?: boolean;
   /**
    * Cache TTL in seconds. Used when the response has no cache headers
    * (`Cache-Control`, `Expires`, `Last-Modified`). When headers are
@@ -254,7 +256,8 @@ export class HttpClient implements HttpClientContract {
       responseHandler: options.responseHandler,
       retry: options.retry,
       cacheOverrides: options.cache?.overrides,
-      cacheScope: options.cache?.scope,
+      cacheScope:
+        options.cache && !options.cache.globalScope ? options.name : undefined,
       resourceExtractor: options.rateLimit?.resourceExtractor,
       rateLimitConfigs: options.rateLimit?.configs,
       defaultRateLimitConfig: options.rateLimit?.defaultConfig,
@@ -1099,8 +1102,9 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
-   * Clear this client's cached entries. When `cache.scope` is set only entries
-   * belonging to this client are removed; otherwise the entire cache is cleared.
+   * Clear this client's cached entries. By default only entries belonging to
+   * this client are removed (keys prefixed with `name:`). When
+   * `cache.globalScope` is `true` the entire cache is cleared.
    */
   async clearCache(): Promise<void> {
     if (!this.stores.cache) return;

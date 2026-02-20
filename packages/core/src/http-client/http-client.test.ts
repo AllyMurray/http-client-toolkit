@@ -1110,7 +1110,10 @@ describe('HttpClient', () => {
 
     test('respects max-age and stores CacheEntry envelope', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache: { store: cache } });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/data')
@@ -1142,7 +1145,10 @@ describe('HttpClient', () => {
 
     test('does not cache when no-store is set', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache: { store: cache } });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/no-store')
@@ -1158,7 +1164,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, overrides: { ignoreNoStore: true } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { ignoreNoStore: true },
+        },
       });
 
       nock(baseUrl)
@@ -1292,7 +1302,10 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache: { store: cache } });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl).get('/swr-200').reply(
         200,
@@ -1331,7 +1344,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache },
+        cache: { store: cache, globalScope: true },
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { transformed: obj['v'] };
@@ -1371,7 +1384,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache },
+        cache: { store: cache, globalScope: true },
         responseHandler: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { handled: obj['v'] };
@@ -1539,7 +1552,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, overrides: { minimumTTL: 300 } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -1557,7 +1574,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, overrides: { maximumTTL: 60 } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { maximumTTL: 60 },
+        },
       });
 
       nock(baseUrl)
@@ -1700,6 +1721,7 @@ describe('HttpClient', () => {
         name: 'test',
         cache: {
           store: cache,
+          globalScope: true,
           overrides: { minimumTTL: 100, maximumTTL: 200 },
         },
       });
@@ -1727,7 +1749,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, ttl: 900 },
+        cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
       nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
@@ -3240,7 +3262,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, ttl: 900 },
+        cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
       nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
@@ -3255,7 +3277,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, overrides: { minimumTTL: 300 } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -3276,7 +3302,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, overrides: { maximumTTL: 60 } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { maximumTTL: 60 },
+        },
       });
 
       nock(baseUrl)
@@ -3296,7 +3326,10 @@ describe('HttpClient', () => {
     test('per-request ignoreNoStore forces caching despite no-store', async () => {
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoStore
-      const client = new HttpClient({ name: 'test', cache: { store: cache } });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/pr-no-store')
@@ -3339,6 +3372,7 @@ describe('HttpClient', () => {
         name: 'test',
         cache: {
           store: cache,
+          globalScope: true,
           overrides: { minimumTTL: 100, maximumTTL: 500 },
         },
       });
@@ -3364,7 +3398,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, ttl: 900 },
+        cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
       nock(baseUrl)
@@ -3401,7 +3435,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, ttl: 900 },
+        cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
       // Initial response with SWR
@@ -3439,7 +3473,12 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache: { store: cache, ttl: 900, overrides: { minimumTTL: 300 } },
+        cache: {
+          store: cache,
+          globalScope: true,
+          ttl: 900,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -3483,12 +3522,12 @@ describe('HttpClient', () => {
       };
     }
 
-    describe('storeScope', () => {
-      test('prefixes cache keys with scope', async () => {
+    describe('cache scope', () => {
+      test('prefixes cache keys with client name by default', async () => {
         const cache = makeCacheStore();
         const client = new HttpClient({
-          name: 'test',
-          cache: { store: cache, scope: 'clientA' },
+          name: 'clientA',
+          cache: { store: cache },
         });
 
         nock(baseUrl).get('/scoped').reply(200, { v: 1 });
@@ -3504,7 +3543,24 @@ describe('HttpClient', () => {
         expect(cache._store.has(rawHash)).toBe(false);
       });
 
-      test('dedupe uses raw hash even when cache has scope', async () => {
+      test('globalScope: true stores cache keys without prefix', async () => {
+        const cache = makeCacheStore();
+        const client = new HttpClient({
+          name: 'clientA',
+          cache: { store: cache, globalScope: true },
+        });
+
+        nock(baseUrl).get('/global').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/global`);
+
+        const rawHash = hashRequest(`${baseUrl}/global`, {});
+
+        // Entry should be stored under raw key (no prefix)
+        expect(cache._store.has(rawHash)).toBe(true);
+      });
+
+      test('dedupe uses raw hash even when cache is scoped', async () => {
         const registeredHashes: Array<string> = [];
         const dedupeStub = {
           async waitFor() {
@@ -3523,8 +3579,8 @@ describe('HttpClient', () => {
 
         const cache = makeCacheStore();
         const client = new HttpClient({
-          name: 'test',
-          cache: { store: cache, scope: 'clientB' },
+          name: 'clientB',
+          cache: { store: cache },
           dedupe: dedupeStub,
         });
 
@@ -3537,16 +3593,16 @@ describe('HttpClient', () => {
         expect(registeredHashes[0]).toBe(rawHash);
       });
 
-      test('two clients sharing one store with different scopes have isolated cache entries', async () => {
+      test('two clients sharing one store have isolated cache entries', async () => {
         const cache = makeCacheStore();
 
         const clientA = new HttpClient({
           name: 'clientA',
-          cache: { store: cache, scope: 'scopeA' },
+          cache: { store: cache },
         });
         const clientB = new HttpClient({
           name: 'clientB',
-          cache: { store: cache, scope: 'scopeB' },
+          cache: { store: cache },
         });
 
         nock(baseUrl).get('/shared').reply(200, { source: 'A' });
@@ -3557,8 +3613,8 @@ describe('HttpClient', () => {
 
         const rawHash = hashRequest(`${baseUrl}/shared`, {});
         // Both scoped entries should exist
-        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(true);
-        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
         // Unscoped key should not exist
         expect(cache._store.has(rawHash)).toBe(false);
       });
@@ -4045,7 +4101,7 @@ describe('HttpClient', () => {
     });
 
     describe('clearCache', () => {
-      test('passes scope prefix to cache.clear when storeScope is set', async () => {
+      test('passes name prefix to cache.clear by default', async () => {
         let clearArg: string | undefined;
         const cacheStub = {
           async get() {
@@ -4059,15 +4115,15 @@ describe('HttpClient', () => {
         };
 
         const client = new HttpClient({
-          name: 'test',
-          cache: { store: cacheStub, scope: 'myScope' },
+          name: 'my-client',
+          cache: { store: cacheStub },
         });
 
         await client.clearCache();
-        expect(clearArg).toBe('myScope:');
+        expect(clearArg).toBe('my-client:');
       });
 
-      test('passes undefined to cache.clear when storeScope is not set', async () => {
+      test('passes undefined to cache.clear when globalScope is true', async () => {
         let clearCalled = false;
         let clearArg: string | undefined = 'sentinel';
         const cacheStub = {
@@ -4084,7 +4140,7 @@ describe('HttpClient', () => {
 
         const client = new HttpClient({
           name: 'test',
-          cache: { store: cacheStub },
+          cache: { store: cacheStub, globalScope: true },
         });
 
         await client.clearCache();
@@ -4098,16 +4154,16 @@ describe('HttpClient', () => {
         await expect(client.clearCache()).resolves.toBeUndefined();
       });
 
-      test('scoped clearCache only removes entries for that scope', async () => {
+      test('clearCache only removes entries for the calling client', async () => {
         const cache = makeCacheStore();
 
         const clientA = new HttpClient({
           name: 'clientA',
-          cache: { store: cache, scope: 'scopeA' },
+          cache: { store: cache },
         });
         const clientB = new HttpClient({
           name: 'clientB',
-          cache: { store: cache, scope: 'scopeB' },
+          cache: { store: cache },
         });
 
         nock(baseUrl).get('/shared-clear').reply(200, { source: 'A' });
@@ -4117,14 +4173,14 @@ describe('HttpClient', () => {
         await clientB.get(`${baseUrl}/shared-clear`);
 
         const rawHash = hashRequest(`${baseUrl}/shared-clear`, {});
-        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(true);
-        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
 
         // Clear only clientA's entries
         await clientA.clearCache();
 
-        expect(cache._store.has(`scopeA:${rawHash}`)).toBe(false);
-        expect(cache._store.has(`scopeB:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(false);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
       });
     });
   });
