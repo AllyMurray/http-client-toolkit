@@ -1,5 +1,5 @@
 ---
-"@http-client-toolkit/core": major
+"@http-client-toolkit/core": minor
 "@http-client-toolkit/store-memory": minor
 "@http-client-toolkit/store-sqlite": minor
 "@http-client-toolkit/store-dynamodb": minor
