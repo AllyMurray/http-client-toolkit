@@ -11,6 +11,7 @@ export async function handleRateLimitStats(
     const stats = await adapter.getStats();
     sendJson(res, { stats, capabilities: adapter.capabilities });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -23,6 +24,7 @@ export async function handleRateLimitResources(
     const resources = await adapter.listResources();
     sendJson(res, { resources });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -34,6 +36,7 @@ export async function handleRateLimitResource(
 ): Promise<void> {
   try {
     const name = extractParam(pathname, '/rate-limit/resources/:name');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!name) {
       sendNotFound(res);
       return;
@@ -41,6 +44,7 @@ export async function handleRateLimitResource(
     const status = await adapter.getResourceStatus(name);
     sendJson(res, { resource: name, ...status });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -53,6 +57,7 @@ export async function handleUpdateRateLimitConfig(
 ): Promise<void> {
   try {
     const name = extractParam(pathname, '/rate-limit/resources/:name/config');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!name) {
       sendNotFound(res);
       return;
@@ -61,6 +66,7 @@ export async function handleUpdateRateLimitConfig(
     await adapter.updateResourceConfig(name, body);
     sendJson(res, { updated: true });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -72,6 +78,7 @@ export async function handleResetRateLimitResource(
 ): Promise<void> {
   try {
     const name = extractParam(pathname, '/rate-limit/resources/:name/reset');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!name) {
       sendNotFound(res);
       return;
@@ -79,6 +86,7 @@ export async function handleResetRateLimitResource(
     await adapter.resetResource(name);
     sendJson(res, { reset: true });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }

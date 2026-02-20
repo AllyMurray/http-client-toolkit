@@ -17,7 +17,7 @@ import type { CacheStore } from '@http-client-toolkit/core';
 | `get` | `(hash: string) => Promise<T \| undefined>` | Retrieve a cached value by hash |
 | `set` | `(hash: string, value: T, ttlSeconds: number) => Promise<void>` | Store a value with TTL |
 | `delete` | `(hash: string) => Promise<void>` | Remove a cached entry |
-| `clear` | `() => Promise<void>` | Remove all cached entries |
+| `clear` | `(scope?: string) => Promise<void>` | Remove cached entries. When `scope` is provided, only entries whose key starts with that prefix are removed. When omitted, all entries are cleared |
 
 ### TTL Semantics
 
@@ -65,6 +65,9 @@ import type { RateLimitStore } from '@http-client-toolkit/core';
 | `getStatus` | `(resource: string) => Promise<RateLimitStatus>` | Get current rate limit status |
 | `reset` | `(resource: string) => Promise<void>` | Reset rate limit for a resource |
 | `getWaitTime` | `(resource: string) => Promise<number>` | Get wait time in ms until next request |
+| `setCooldown` | `(origin: string, cooldownUntilMs: number) => Promise<void>` | Store a server-driven cooldown for an origin (optional) |
+| `getCooldown` | `(origin: string) => Promise<number \| undefined>` | Retrieve a server-driven cooldown timestamp for an origin (optional) |
+| `clearCooldown` | `(origin: string) => Promise<void>` | Remove a server-driven cooldown for an origin (optional) |
 
 ### RateLimitStatus
 
@@ -75,6 +78,12 @@ interface RateLimitStatus {
   limit: number;
 }
 ```
+
+### Server Cooldown Methods
+
+`setCooldown`, `getCooldown`, and `clearCooldown` are optional methods. When implemented, the `HttpClient` delegates server-driven cooldown storage (from 429/503 responses with `Retry-After` headers) to the store instead of keeping them in a private in-memory map. This allows cooldowns to propagate across multiple `HttpClient` instances sharing the same store.
+
+If these methods are not implemented, the client falls back to an internal `Map` — cooldowns are per-client-instance only.
 
 ## AdaptiveRateLimitStore
 
@@ -121,8 +130,9 @@ class RedisCacheStore<T> implements CacheStore<T> {
     // ... Redis DEL
   }
 
-  async clear(): Promise<void> {
+  async clear(scope?: string): Promise<void> {
     // ... Redis FLUSHDB or pattern delete
+    // When scope is provided, only delete keys starting with that prefix
   }
 }
 ```

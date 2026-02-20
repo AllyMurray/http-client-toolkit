@@ -873,6 +873,56 @@ describe('SQLiteDedupeStore', () => {
       await expect(waiting).resolves.toBeUndefined();
     });
 
+    it('scoped clear removes only jobs whose hash starts with the scope prefix', async () => {
+      await store.register('scopeA:hash1');
+      await store.complete('scopeA:hash1', 'a1');
+      await store.register('scopeA:hash2');
+      await store.complete('scopeA:hash2', 'a2');
+      await store.register('scopeB:hash1');
+      await store.complete('scopeB:hash1', 'b1');
+
+      await store.clear('scopeA:');
+
+      expect(await store.waitFor('scopeA:hash1')).toBeUndefined();
+      expect(await store.waitFor('scopeA:hash2')).toBeUndefined();
+      expect(await store.waitFor('scopeB:hash1')).toBe('b1');
+    });
+
+    it('scoped clear resolves matching in-memory waiters to undefined', async () => {
+      await store.register('scopeA:pending');
+      await store.register('scopeB:pending');
+
+      const waitingA = store.waitFor('scopeA:pending');
+      const waitingB = store.waitFor('scopeB:pending');
+
+      await store.clear('scopeA:');
+
+      await expect(waitingA).resolves.toBeUndefined();
+
+      // Complete the non-matching job so the waiter resolves
+      await store.complete('scopeB:pending', 'still-here');
+      await expect(waitingB).resolves.toBe('still-here');
+    });
+
+    it('clear without scope removes all jobs', async () => {
+      await store.register('hash1');
+      await store.complete('hash1', 'v1');
+      await store.register('hash2');
+      await store.complete('hash2', 'v2');
+
+      await store.clear();
+
+      expect(await store.waitFor('hash1')).toBeUndefined();
+      expect(await store.waitFor('hash2')).toBeUndefined();
+    });
+
+    it('listJobs throws when store has been destroyed', async () => {
+      store.destroy();
+      await expect(store.listJobs()).rejects.toThrow(
+        'Dedupe store has been destroyed',
+      );
+    });
+
     it('supports sharing an external sqlite connection', async () => {
       const sqlite = new Database(testDbPath);
       const sharedStore = new SQLiteDedupeStore({ database: sqlite });

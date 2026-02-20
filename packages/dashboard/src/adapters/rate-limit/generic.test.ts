@@ -24,6 +24,14 @@ describe('createGenericRateLimitAdapter', () => {
     expect(adapter.capabilities.canReset).toBe(true);
   });
 
+  it('should return stats message', async () => {
+    const adapter = createGenericRateLimitAdapter(mockStore);
+    const stats = await adapter.getStats();
+    expect(stats).toEqual({
+      message: 'Stats not available for this store type',
+    });
+  });
+
   it('should return empty resources list', async () => {
     const adapter = createGenericRateLimitAdapter(mockStore);
     const resources = await adapter.listResources();

@@ -12,13 +12,13 @@ Without a wrapper, per-request config leaks into every call site:
 ```typescript
 // ❌ Config scattered across consumers
 await client.get('https://api.github.com/users/octocat', {
-  cacheTTL: 120,
+  cache: { ttl: 120 },
   retry: { maxRetries: 2 },
 });
 
 // ... somewhere else in the codebase
 await client.get('https://api.github.com/users/octocat', {
-  cacheTTL: 300, // Inconsistent — which is right?
+  cache: { ttl: 300 }, // Inconsistent — which is right?
 });
 ```
 
@@ -43,14 +43,18 @@ import {
 // 1. Create one client per API with shared defaults
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
+  cache: {
+    store: new InMemoryCacheStore(),
+    ttl: 300,
+    overrides: { minimumTTL: 60 },
+  },
   dedupe: new InMemoryDedupeStore(),
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 100, windowMs: 60_000 },
-  }),
-  cacheTTL: 300,
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 100, windowMs: 60_000 },
+    }),
+  },
   retry: { maxRetries: 2 },
-  cacheOverrides: { minimumTTL: 60 },
 });
 
 // 2. Define response types
@@ -70,7 +74,7 @@ interface GitHubRepo {
 export function getUser(username: string) {
   return client.get<GitHubUser>(
     `https://api.github.com/users/${username}`,
-    { cacheTTL: 120 },
+    { cache: { ttl: 120 } },
   );
 }
 
@@ -79,8 +83,7 @@ export function getRepo(owner: string, repo: string) {
   return client.get<GitHubRepo>(
     `https://api.github.com/repos/${owner}/${repo}`,
     {
-      cacheTTL: 600,
-      cacheOverrides: { ignoreNoStore: true },
+      cache: { ttl: 600, overrides: { ignoreNoStore: true } },
     },
   );
 }
@@ -89,7 +92,7 @@ export function getRepo(owner: string, repo: string) {
 export function getRateLimit() {
   return client.get<{ rate: { remaining: number } }>(
     'https://api.github.com/rate_limit',
-    { retry: false, cacheTTL: 10 },
+    { retry: false, cache: { ttl: 10 } },
   );
 }
 ```
@@ -119,7 +122,7 @@ export function getUser(username: string, options?: GetUserOptions) {
   return client.get<GitHubUser>(
     `https://api.github.com/users/${username}`,
     {
-      cacheTTL: 120,
+      cache: { ttl: 120 },
       signal: options?.signal,
       priority: options?.priority,
     },
@@ -152,11 +155,13 @@ import { InMemoryCacheStore, InMemoryDedupeStore, InMemoryRateLimitStore } from 
 
 export const githubClient = new HttpClient({
   name: 'github',
-  cache: new InMemoryCacheStore(),
+  cache: { store: new InMemoryCacheStore() },
   dedupe: new InMemoryDedupeStore(),
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 100, windowMs: 60_000 },
-  }),
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 100, windowMs: 60_000 },
+    }),
+  },
 });
 
 // lib/stripe.ts
@@ -165,10 +170,12 @@ import { InMemoryCacheStore, InMemoryRateLimitStore } from '@http-client-toolkit
 
 export const stripeClient = new HttpClient({
   name: 'stripe',
-  cache: new InMemoryCacheStore(),
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 25, windowMs: 1_000 },
-  }),
+  cache: { store: new InMemoryCacheStore() },
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 25, windowMs: 1_000 },
+    }),
+  },
 });
 ```
 
@@ -195,11 +202,13 @@ import { sharedCache, sharedDedupe } from './stores.js';
 
 export const githubClient = new HttpClient({
   name: 'github',
-  cache: sharedCache,
+  cache: { store: sharedCache },
   dedupe: sharedDedupe,
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 100, windowMs: 60_000 },
-  }),
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 100, windowMs: 60_000 },
+    }),
+  },
 });
 
 // lib/stripe.ts
@@ -209,15 +218,17 @@ import { sharedCache, sharedDedupe } from './stores.js';
 
 export const stripeClient = new HttpClient({
   name: 'stripe',
-  cache: sharedCache,
+  cache: { store: sharedCache },
   dedupe: sharedDedupe,
-  rateLimit: new InMemoryRateLimitStore({
-    defaultConfig: { limit: 25, windowMs: 1_000 },
-  }),
+  rateLimit: {
+    store: new InMemoryRateLimitStore({
+      defaultConfig: { limit: 25, windowMs: 1_000 },
+    }),
+  },
 });
 ```
 
-Cache and dedup are shared so both clients write to and read from the same pool. Rate limiting is kept separate because each API enforces its own limits.
+Cache and dedup are shared so both clients write to and read from the same pool. Each client's cache keys are automatically prefixed with its name (e.g. `github:` and `stripe:`), so entries don't collide even in the same store. Rate limiting is kept separate because each API enforces its own limits.
 
 This pattern is especially useful with persistent backends like SQLite, where you want a single database file rather than one per client. It also means the [dashboard](/dashboard/overview/) shows the same cache data regardless of which client you select.
 

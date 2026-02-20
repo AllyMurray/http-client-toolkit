@@ -552,17 +552,34 @@ export class SQLiteDedupeStore<T = unknown> implements DedupeStore<T> {
   }
 
   /**
-   * Clear all jobs
+   * Clear tracked jobs.
+   * @param scope When provided, only jobs whose key starts with this
+   *              prefix are removed. When omitted, all jobs are cleared.
    */
-  async clear(): Promise<void> {
-    await this.db.delete(dedupeTable);
+  async clear(scope?: string): Promise<void> {
+    if (!scope) {
+      await this.db.delete(dedupeTable);
 
-    for (const settle of this.jobSettlers.values()) {
-      settle(undefined);
+      for (const settle of this.jobSettlers.values()) {
+        settle(undefined);
+      }
+
+      this.jobPromises.clear();
+      this.jobSettlers.clear();
+      return;
     }
 
-    this.jobPromises.clear();
-    this.jobSettlers.clear();
+    await this.db
+      .delete(dedupeTable)
+      .where(sql`${dedupeTable.hash} LIKE ${scope + '%'}`);
+
+    for (const [hash, settle] of this.jobSettlers) {
+      if (hash.startsWith(scope)) {
+        settle(undefined);
+        this.jobSettlers.delete(hash);
+        this.jobPromises.delete(hash);
+      }
+    }
   }
 
   /**

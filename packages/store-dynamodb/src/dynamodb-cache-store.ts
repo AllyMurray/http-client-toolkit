@@ -179,11 +179,12 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
     }
   }
 
-  async clear(): Promise<void> {
+  async clear(scope?: string): Promise<void> {
     if (this.isDestroyed) {
       throw new Error('Cache store has been destroyed');
     }
 
+    const prefix = scope ? `CACHE#${scope}` : 'CACHE#';
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 
     do {
@@ -193,7 +194,7 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
           new ScanCommand({
             TableName: this.tableName,
             FilterExpression: 'begins_with(pk, :prefix)',
-            ExpressionAttributeValues: { ':prefix': 'CACHE#' },
+            ExpressionAttributeValues: { ':prefix': prefix },
             ProjectionExpression: 'pk, sk',
             ExclusiveStartKey: lastEvaluatedKey,
           }),

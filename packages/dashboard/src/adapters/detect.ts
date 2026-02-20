@@ -19,6 +19,7 @@ import type {
 } from './types.js';
 
 function isMemoryStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (
@@ -30,6 +31,7 @@ function isMemoryStore(store: unknown): boolean {
 }
 
 function isSqliteStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (
@@ -40,6 +42,7 @@ function isSqliteStore(store: unknown): boolean {
 }
 
 function isMemoryDedupeStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (
@@ -52,6 +55,7 @@ function isMemoryDedupeStore(store: unknown): boolean {
 }
 
 function isSqliteDedupeStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (
@@ -63,6 +67,7 @@ function isSqliteDedupeStore(store: unknown): boolean {
 }
 
 function isMemoryRateLimitStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (
@@ -75,6 +80,7 @@ function isMemoryRateLimitStore(store: unknown): boolean {
 }
 
 function isSqliteRateLimitStore(store: unknown): boolean {
+  /* v8 ignore next */
   if (!store || typeof store !== 'object') return false;
   const s = store as Record<string, unknown>;
   return (

@@ -25,21 +25,37 @@ new HttpClient(options)
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `name` | `string` | required | Name for the client instance |
-| `cache` | `CacheStore<T>` | — | Response caching |
+| `cache` | `HttpClientCacheOptions` | — | Cache configuration (see below) |
 | `dedupe` | `DedupeStore<T>` | — | Request deduplication |
-| `rateLimit` | `RateLimitStore \| AdaptiveRateLimitStore` | — | Rate limiting |
+| `rateLimit` | `HttpClientRateLimitOptions` | — | Rate limit configuration (see below) |
 | `fetchFn` | `(url: string, init?: RequestInit) => Promise<Response>` | `globalThis.fetch` | Custom fetch implementation |
 | `requestInterceptor` | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | — | Pre-request hook to modify the outgoing request |
 | `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response` | — | Post-response hook to inspect/modify the raw Response |
-| `cacheTTL` | `number` | `3600` | Cache TTL in seconds. Used when response has no cache headers |
-| `throwOnRateLimit` | `boolean` | `true` | Throw when rate limited vs. wait |
-| `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
 | `responseTransformer` | `(data: unknown) => unknown` | — | Transform parsed response data before caching (e.g. snake_case to camelCase) |
 | `responseHandler` | `(data: unknown) => unknown` | — | Post-transformation hook for validation or domain-level error detection. Throw to reject 2xx responses with application-level errors |
 | `errorHandler` | `(context: HttpErrorContext) => Error` | — | Convert HTTP errors to domain-specific types. Context includes `url`, response `status`, parsed `data`, and `headers`. Not called for network failures |
-| `rateLimitHeaders` | `RateLimitHeaderConfig` | defaults | Configure standard/custom header names |
 | `retry` | `RetryOptions \| false` | — | Automatic retry configuration. See [Retries guide](/http-client-toolkit/guides/retries/) |
-| `cacheOverrides` | `object` | — | Override specific cache header behaviors (see below) |
+
+#### `cache` Options (`HttpClientCacheOptions`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `store` | `CacheStore<T>` | required | Cache store instance |
+| `globalScope` | `boolean` | `false` | When `true`, cache keys are not prefixed with the client name. By default, keys are prefixed with `name:` to isolate each client's cache entries |
+| `ttl` | `number` | `3600` | Cache TTL in seconds. Used when response has no cache headers |
+| `overrides` | `CacheOverrideOptions` | — | Override specific cache header behaviors (see below) |
+
+#### `rateLimit` Options (`HttpClientRateLimitOptions`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `store` | `RateLimitStore \| AdaptiveRateLimitStore` | — | Rate limit store instance (optional — server cooldown logic works without a store) |
+| `throw` | `boolean` | `true` | Throw when rate limited vs. wait |
+| `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
+| `headers` | `RateLimitHeaderConfig` | defaults | Configure standard/custom header names |
+| `resourceExtractor` | `(url: string) => string` | URL origin | Extract rate-limit resource key from URL |
+| `configs` | `RateLimitConfigMap` | — | Per-resource rate limit configurations |
+| `defaultConfig` | `RateLimitConfig` | — | Fallback rate limit config when no per-resource config matches |
 
 ## Methods
 
@@ -63,8 +79,7 @@ The `url` must be an absolute URL (e.g. `https://api.example.com/items`).
 | `priority` | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores |
 | `headers` | `Record<string, string>` | — | Custom headers sent with the request; also used for Vary-based cache matching |
 | `retry` | `RetryOptions \| false` | — | Per-request retry override. Pass `false` to disable retries for this request |
-| `cacheTTL` | `number` | — | Per-request cache TTL in seconds (overrides constructor `cacheTTL`) |
-| `cacheOverrides` | `CacheOverrideOptions` | — | Per-request cache overrides (shallow-merged with constructor-level) |
+| `cache` | `{ ttl?: number; overrides?: CacheOverrideOptions }` | — | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level |
 
 ## Request Flow
 
@@ -111,10 +126,12 @@ Cooldowns are enforced when:
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  rateLimitHeaders: {
-    retryAfter: ['RetryAfterSeconds'],
-    remaining: ['Remaining-Requests'],
-    reset: ['Window-Reset-Seconds'],
+  rateLimit: {
+    headers: {
+      retryAfter: ['RetryAfterSeconds'],
+      remaining: ['Remaining-Requests'],
+      reset: ['Window-Reset-Seconds'],
+    },
   },
 });
 ```
@@ -145,7 +162,7 @@ await client.flushRevalidations();
 ### Cache-Only Client
 
 ```typescript
-const client = new HttpClient({ name: 'my-api', cache: new InMemoryCacheStore() });
+const client = new HttpClient({ name: 'my-api', cache: { store: new InMemoryCacheStore() } });
 ```
 
 ### Full Stack with Adaptive Rate Limiting
@@ -153,15 +170,16 @@ const client = new HttpClient({ name: 'my-api', cache: new InMemoryCacheStore() 
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  cache: new SQLiteCacheStore({ database: db }),
+  cache: { store: new SQLiteCacheStore({ database: db }), ttl: 600 },
   dedupe: new SQLiteDedupeStore({ database: db }),
-  rateLimit: new SqliteAdaptiveRateLimitStore({
-    database: db,
-    defaultConfig: { limit: 200, windowMs: 3_600_000 },
-  }),
-  cacheTTL: 600,
-  throwOnRateLimit: false,
-  maxWaitTime: 30_000,
+  rateLimit: {
+    store: new SqliteAdaptiveRateLimitStore({
+      database: db,
+      defaultConfig: { limit: 200, windowMs: 3_600_000 },
+    }),
+    throw: false,
+    maxWaitTime: 30_000,
+  },
 });
 ```
 

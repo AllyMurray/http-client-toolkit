@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { RateLimitConfig } from './rate-limit-config.js';
+
 /**
  * Priority level for API requests
  */
@@ -87,6 +89,30 @@ export interface RateLimitStore {
    * @returns Milliseconds to wait, or 0 if no waiting is needed
    */
   getWaitTime(resource: string): Promise<number>;
+
+  /**
+   * Store a server-driven cooldown for an origin.
+   * @param origin The origin (e.g. "https://api.github.com")
+   * @param cooldownUntilMs Absolute timestamp (ms) until the cooldown expires
+   */
+  setCooldown?(origin: string, cooldownUntilMs: number): Promise<void>;
+
+  /**
+   * Retrieve a server-driven cooldown for an origin.
+   * @returns The absolute timestamp (ms) until which requests should be paused,
+   *          or undefined if no cooldown is active.
+   */
+  getCooldown?(origin: string): Promise<number | undefined>;
+
+  /**
+   * Remove a server-driven cooldown for an origin.
+   */
+  clearCooldown?(origin: string): Promise<void>;
+
+  /**
+   * Set the rate limit configuration for a specific resource.
+   */
+  setResourceConfig?(resource: string, config: RateLimitConfig): void;
 }
 
 /**

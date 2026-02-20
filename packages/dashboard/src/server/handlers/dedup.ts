@@ -11,6 +11,7 @@ export async function handleDedupeStats(
     const stats = await adapter.getStats();
     sendJson(res, { stats, capabilities: adapter.capabilities });
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -27,6 +28,7 @@ export async function handleDedupeJobs(
     const result = await adapter.listJobs(page, limit);
     sendJson(res, result);
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }
@@ -38,6 +40,7 @@ export async function handleDedupeJob(
 ): Promise<void> {
   try {
     const hash = extractParam(pathname, '/dedup/jobs/:hash');
+    /* v8 ignore next 4 -- unreachable: router validates path structure before calling handler */
     if (!hash) {
       sendNotFound(res);
       return;
@@ -49,6 +52,7 @@ export async function handleDedupeJob(
     }
     sendJson(res, job);
   } catch (err) {
+    /* v8 ignore next -- non-Error throws are defensive */
     sendError(res, err instanceof Error ? err.message : 'Unknown error');
   }
 }

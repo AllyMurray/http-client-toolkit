@@ -30,7 +30,7 @@ describe('HttpClient', () => {
       delete: async () => {},
       clear: async () => {},
     };
-    const client = new HttpClient({ name: 'test', cache });
+    const client = new HttpClient({ name: 'test', cache: { store: cache } });
     expect(client.stores.cache).toBe(cache);
     expect(client.stores.dedupe).toBeUndefined();
     expect(client.stores.rateLimit).toBeUndefined();
@@ -270,9 +270,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 5_000,
+      rateLimit: {
+        store: rateLimitStoreStub,
+        throw: false,
+        maxWaitTime: 5_000,
+      },
     });
 
     const controller = new AbortController();
@@ -333,9 +335,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimitHeaders: {
-        remaining: ['Remaining-Requests'],
-        reset: ['Window-Reset-Seconds'],
+      rateLimit: {
+        headers: {
+          remaining: ['Remaining-Requests'],
+          reset: ['Window-Reset-Seconds'],
+        },
       },
     });
 
@@ -385,8 +389,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: adaptiveRateLimitStoreStub,
-      throwOnRateLimit: false,
+      rateLimit: { store: adaptiveRateLimitStoreStub, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -419,9 +422,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 30,
+      rateLimit: { store: rateLimitStoreStub, throw: false, maxWaitTime: 30 },
     });
 
     await expect(client.get(`${baseUrl}/never-allowed`)).rejects.toThrow(
@@ -446,8 +447,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: true,
+      rateLimit: { store: rateLimitStoreStub, throw: true },
     });
 
     await expect(client.get(`${baseUrl}/blocked-immediately`)).rejects.toThrow(
@@ -487,8 +487,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: basicRateLimitStoreStub,
-      throwOnRateLimit: false,
+      rateLimit: { store: basicRateLimitStoreStub, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -527,7 +526,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/same-path?q=1`);
     await client.get(`${alternateBaseUrl}/same-path?q=1`);
@@ -552,7 +554,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/multi?tag=a&tag=b`);
     await client.get(`${baseUrl}/multi?tag=b`);
@@ -581,7 +586,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
 
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b&tag=c`);
     await client.get(`${baseUrl}/multi-values?tag=a&tag=b`);
@@ -621,7 +629,10 @@ describe('HttpClient', () => {
       async clear() {},
     } as const;
 
-    const client = new HttpClient({ name: 'test', cache: cacheStoreStub });
+    const client = new HttpClient({
+      name: 'test',
+      cache: { store: cacheStoreStub },
+    });
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/cache-hit`);
 
     expect(result.ok).toBe(true);
@@ -821,8 +832,10 @@ describe('HttpClient', () => {
   test('should exercise private header parsing helpers', () => {
     const client = new HttpClient({
       name: 'test',
-      rateLimitHeaders: {
-        retryAfter: ['  retry-after  ', ''],
+      rateLimit: {
+        headers: {
+          retryAfter: ['  retry-after  ', ''],
+        },
       },
     });
 
@@ -843,7 +856,7 @@ describe('HttpClient', () => {
         resetMs?: number;
       };
       getOriginScope: (url: string) => string;
-      inferResource: (url: string) => string;
+      getResource: (url: string) => string;
     };
 
     expect(privateClient.normalizeHeaderNames(undefined, ['x-a'])).toEqual([
@@ -894,8 +907,8 @@ describe('HttpClient', () => {
     expect(privateClient.parseCombinedRateLimitHeader(undefined)).toEqual({});
 
     expect(privateClient.getOriginScope('not-a-url')).toBe('unknown');
-    expect(privateClient.inferResource('/still-not-a-url')).toBe('unknown');
-    expect(privateClient.inferResource(`${baseUrl}/`)).toBe('unknown');
+    expect(privateClient.getResource('/still-not-a-url')).toBe('unknown');
+    expect(privateClient.getResource(`${baseUrl}/`)).toBe(baseUrl);
 
     const privateApplyClient = client as unknown as {
       applyServerRateLimitHints: (
@@ -929,9 +942,11 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: allowRateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 50,
+      rateLimit: {
+        store: allowRateLimitStoreStub,
+        throw: false,
+        maxWaitTime: 50,
+      },
     });
 
     const privateClient = client as unknown as {
@@ -980,9 +995,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: rateLimitStoreStub,
-      throwOnRateLimit: false,
-      maxWaitTime: 100,
+      rateLimit: { store: rateLimitStoreStub, throw: false, maxWaitTime: 100 },
     });
 
     const controller = new AbortController();
@@ -1015,8 +1028,7 @@ describe('HttpClient', () => {
 
     const client = new HttpClient({
       name: 'test',
-      rateLimit: acquireStore,
-      throwOnRateLimit: false,
+      rateLimit: { store: acquireStore, throw: false },
     });
 
     const result = await client.get<{ ok: boolean }>(
@@ -1042,8 +1054,7 @@ describe('HttpClient', () => {
 
     const strictClient = new HttpClient({
       name: 'test',
-      rateLimit: allowRateLimitStoreStub,
-      throwOnRateLimit: true,
+      rateLimit: { store: allowRateLimitStoreStub, throw: true },
     });
 
     const strictPrivate = strictClient as unknown as {
@@ -1059,8 +1070,7 @@ describe('HttpClient', () => {
 
     const waitingClient = new HttpClient({
       name: 'test',
-      throwOnRateLimit: false,
-      maxWaitTime: 0,
+      rateLimit: { throw: false, maxWaitTime: 0 },
     });
 
     const waitingPrivate = waitingClient as unknown as {
@@ -1100,7 +1110,10 @@ describe('HttpClient', () => {
 
     test('respects max-age and stores CacheEntry envelope', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/data')
@@ -1116,7 +1129,7 @@ describe('HttpClient', () => {
 
     test('returns fresh cached entry without network request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/fresh')
@@ -1132,7 +1145,10 @@ describe('HttpClient', () => {
 
     test('does not cache when no-store is set', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/no-store')
@@ -1148,8 +1164,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { ignoreNoStore: true },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { ignoreNoStore: true },
+        },
       });
 
       nock(baseUrl)
@@ -1168,7 +1187,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/etag-data')
@@ -1197,7 +1216,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/lm-data').reply(
         200,
@@ -1226,7 +1245,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       // No ETag or Last-Modified
       nock(baseUrl)
@@ -1250,7 +1269,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr').reply(
         200,
@@ -1283,7 +1302,10 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl).get('/swr-200').reply(
         200,
@@ -1322,7 +1344,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache, globalScope: true },
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { transformed: obj['v'] };
@@ -1362,7 +1384,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache, globalScope: true },
         responseHandler: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { handled: obj['v'] };
@@ -1399,7 +1421,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr-fail').reply(
         200,
@@ -1428,7 +1450,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie')
@@ -1453,7 +1475,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie-net')
@@ -1487,7 +1509,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/no-cache')
@@ -1512,8 +1534,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { store: cache, overrides: { ignoreNoCache: true } },
       });
 
       nock(baseUrl)
@@ -1531,8 +1552,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -1550,8 +1574,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { maximumTTL: 60 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { maximumTTL: 60 },
+        },
       });
 
       nock(baseUrl)
@@ -1589,7 +1616,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         dedupe: dedupeStub,
       });
 
@@ -1615,7 +1642,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/must-reval').reply(
         200,
@@ -1644,7 +1671,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/sie-4xx')
@@ -1669,7 +1696,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         responseTransformer: (data: unknown) => {
           const obj = data as Record<string, unknown>;
           return { transformed: obj['raw'] };
@@ -1692,8 +1719,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 100, maximumTTL: 200 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 100, maximumTTL: 200 },
+        },
       });
 
       // TTL of 50 should be clamped to 100 (minimum)
@@ -1717,7 +1747,10 @@ describe('HttpClient', () => {
 
     test('uses cacheTTL when no cache headers present', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true, ttl: 900 },
+      });
 
       nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
 
@@ -1756,7 +1789,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         dedupe: dedupeStub,
       });
 
@@ -1826,7 +1859,7 @@ describe('HttpClient', () => {
 
     test('Vary match returns cached value', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-match')
@@ -1849,7 +1882,7 @@ describe('HttpClient', () => {
 
     test('Vary mismatch treats as cache miss', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-miss')
@@ -1880,7 +1913,7 @@ describe('HttpClient', () => {
 
     test('Vary: * always misses', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/vary-star')
@@ -1920,7 +1953,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/merge-headers')
@@ -1950,7 +1983,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl).get('/swr-headers').reply(
         200,
@@ -2367,7 +2400,7 @@ describe('HttpClient', () => {
 
       const client = new HttpClient({
         name: 'test',
-        cache: cacheStoreStub,
+        cache: { store: cacheStoreStub },
         fetchFn,
         requestInterceptor,
         responseInterceptor,
@@ -2409,7 +2442,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         requestInterceptor: (_url, init) => {
           callOrder.push('requestInterceptor');
           return init;
@@ -2497,7 +2530,7 @@ describe('HttpClient', () => {
 
       const client = new HttpClient({
         name: 'test',
-        cache,
+        cache: { store: cache },
         fetchFn: customFetch,
       });
 
@@ -3058,7 +3091,7 @@ describe('HttpClient', () => {
         const cache = makeCacheStore();
         const client = new HttpClient({
           name: 'test',
-          cache,
+          cache: { store: cache },
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
         });
 
@@ -3227,11 +3260,14 @@ describe('HttpClient', () => {
 
     test('cacheTTL overrides cacheTTL for this request', async () => {
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true, ttl: 900 },
+      });
 
       nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
 
-      await client.get(`${baseUrl}/per-req-ttl`, { cacheTTL: 120 });
+      await client.get(`${baseUrl}/per-req-ttl`, { cache: { ttl: 120 } });
 
       const hash = hashRequest(`${baseUrl}/per-req-ttl`, {});
       expect(cache._store.get(hash)?.ttl).toBe(120);
@@ -3241,8 +3277,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -3250,7 +3289,7 @@ describe('HttpClient', () => {
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
       await client.get(`${baseUrl}/pr-min-ttl`, {
-        cacheOverrides: { minimumTTL: 50 },
+        cache: { overrides: { minimumTTL: 50 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-min-ttl`, {});
@@ -3263,8 +3302,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { maximumTTL: 60 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { maximumTTL: 60 },
+        },
       });
 
       nock(baseUrl)
@@ -3272,7 +3314,7 @@ describe('HttpClient', () => {
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
 
       await client.get(`${baseUrl}/pr-max-ttl`, {
-        cacheOverrides: { maximumTTL: 500 },
+        cache: { overrides: { maximumTTL: 500 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-max-ttl`, {});
@@ -3284,14 +3326,17 @@ describe('HttpClient', () => {
     test('per-request ignoreNoStore forces caching despite no-store', async () => {
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoStore
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
 
       nock(baseUrl)
         .get('/pr-no-store')
         .reply(200, { id: 1 }, { 'Cache-Control': 'no-store, max-age=60' });
 
       await client.get(`${baseUrl}/pr-no-store`, {
-        cacheOverrides: { ignoreNoStore: true },
+        cache: { overrides: { ignoreNoStore: true } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-no-store`, {});
@@ -3304,19 +3349,19 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
       // Constructor does NOT set ignoreNoCache
-      const client = new HttpClient({ name: 'test', cache });
+      const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       nock(baseUrl)
         .get('/pr-no-cache')
         .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache, max-age=3600' });
 
       await client.get(`${baseUrl}/pr-no-cache`, {
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { overrides: { ignoreNoCache: true } },
       });
 
       // No second nock — should return cached value without fetching
       const result = await client.get(`${baseUrl}/pr-no-cache`, {
-        cacheOverrides: { ignoreNoCache: true },
+        cache: { overrides: { ignoreNoCache: true } },
       });
       expect(result).toEqual({ v: 1 });
     });
@@ -3325,8 +3370,11 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheOverrides: { minimumTTL: 100, maximumTTL: 500 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          overrides: { minimumTTL: 100, maximumTTL: 500 },
+        },
       });
 
       nock(baseUrl)
@@ -3335,7 +3383,7 @@ describe('HttpClient', () => {
 
       // Only override maximumTTL; minimumTTL should fall back to constructor (100)
       await client.get(`${baseUrl}/pr-merge`, {
-        cacheOverrides: { maximumTTL: 200 },
+        cache: { overrides: { maximumTTL: 200 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-merge`, {});
@@ -3348,13 +3396,16 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true, ttl: 900 },
+      });
 
       nock(baseUrl)
         .get('/pr-304')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"v1"' });
 
-      await client.get(`${baseUrl}/pr-304`, { cacheTTL: 200 });
+      await client.get(`${baseUrl}/pr-304`, { cache: { ttl: 200 } });
 
       // Advance past freshness
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
@@ -3369,8 +3420,7 @@ describe('HttpClient', () => {
         .reply(304, '');
 
       await client.get(`${baseUrl}/pr-304`, {
-        cacheTTL: 200,
-        cacheOverrides: { minimumTTL: 150 },
+        cache: { ttl: 200, overrides: { minimumTTL: 150 } },
       });
 
       const hash = hashRequest(`${baseUrl}/pr-304`, {});
@@ -3383,7 +3433,10 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
 
       const cache = makeCacheStore();
-      const client = new HttpClient({ name: 'test', cache, cacheTTL: 900 });
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true, ttl: 900 },
+      });
 
       // Initial response with SWR
       nock(baseUrl)
@@ -3394,7 +3447,7 @@ describe('HttpClient', () => {
           { 'Cache-Control': 'max-age=1, stale-while-revalidate=60' },
         );
 
-      await client.get(`${baseUrl}/pr-swr`, { cacheTTL: 200 });
+      await client.get(`${baseUrl}/pr-swr`, { cache: { ttl: 200 } });
 
       // Advance into SWR window
       vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
@@ -3403,7 +3456,9 @@ describe('HttpClient', () => {
       nock(baseUrl).get('/pr-swr').reply(200, { v: 2 });
 
       // This returns stale value but triggers background revalidation
-      const result = await client.get(`${baseUrl}/pr-swr`, { cacheTTL: 200 });
+      const result = await client.get(`${baseUrl}/pr-swr`, {
+        cache: { ttl: 200 },
+      });
       expect(result).toEqual({ v: 1 });
 
       await client.flushRevalidations();
@@ -3418,9 +3473,12 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({
         name: 'test',
-        cache,
-        cacheTTL: 900,
-        cacheOverrides: { minimumTTL: 300 },
+        cache: {
+          store: cache,
+          globalScope: true,
+          ttl: 900,
+          overrides: { minimumTTL: 300 },
+        },
       });
 
       nock(baseUrl)
@@ -3433,6 +3491,697 @@ describe('HttpClient', () => {
       const hash = hashRequest(`${baseUrl}/no-override`, {});
       // max-age=10 clamped to minimumTTL=300 from constructor
       expect(cache._store.get(hash)?.ttl).toBe(300);
+    });
+  });
+
+  describe('multi-client store sharing', () => {
+    function makeCacheStore() {
+      const store = new Map<string, { value: unknown; ttl: number }>();
+      return {
+        async get(hash: string) {
+          return store.get(hash)?.value;
+        },
+        async set(hash: string, value: unknown, ttl: number) {
+          store.set(hash, { value, ttl });
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear(scope?: string) {
+          if (scope) {
+            for (const key of store.keys()) {
+              if (key.startsWith(scope)) {
+                store.delete(key);
+              }
+            }
+          } else {
+            store.clear();
+          }
+        },
+        _store: store,
+      };
+    }
+
+    describe('cache scope', () => {
+      test('prefixes cache keys with client name by default', async () => {
+        const cache = makeCacheStore();
+        const client = new HttpClient({
+          name: 'clientA',
+          cache: { store: cache },
+        });
+
+        nock(baseUrl).get('/scoped').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/scoped`);
+
+        const rawHash = hashRequest(`${baseUrl}/scoped`, {});
+        const scopedHash = `clientA:${rawHash}`;
+
+        // Entry should be stored under scoped key
+        expect(cache._store.has(scopedHash)).toBe(true);
+        // Entry should NOT be stored under raw key
+        expect(cache._store.has(rawHash)).toBe(false);
+      });
+
+      test('globalScope: true stores cache keys without prefix', async () => {
+        const cache = makeCacheStore();
+        const client = new HttpClient({
+          name: 'clientA',
+          cache: { store: cache, globalScope: true },
+        });
+
+        nock(baseUrl).get('/global').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/global`);
+
+        const rawHash = hashRequest(`${baseUrl}/global`, {});
+
+        // Entry should be stored under raw key (no prefix)
+        expect(cache._store.has(rawHash)).toBe(true);
+      });
+
+      test('dedupe uses raw hash even when cache is scoped', async () => {
+        const registeredHashes: Array<string> = [];
+        const dedupeStub = {
+          async waitFor() {
+            return undefined;
+          },
+          async register(hash: string) {
+            registeredHashes.push(hash);
+            return 'job-1';
+          },
+          async complete() {},
+          async fail() {},
+          async isInProgress() {
+            return false;
+          },
+        } as const;
+
+        const cache = makeCacheStore();
+        const client = new HttpClient({
+          name: 'clientB',
+          cache: { store: cache },
+          dedupe: dedupeStub,
+        });
+
+        nock(baseUrl).get('/scoped-dedupe').reply(200, { v: 1 });
+
+        await client.get(`${baseUrl}/scoped-dedupe`);
+
+        const rawHash = hashRequest(`${baseUrl}/scoped-dedupe`, {});
+        // Dedupe should use the raw (unscoped) hash
+        expect(registeredHashes[0]).toBe(rawHash);
+      });
+
+      test('two clients sharing one store have isolated cache entries', async () => {
+        const cache = makeCacheStore();
+
+        const clientA = new HttpClient({
+          name: 'clientA',
+          cache: { store: cache },
+        });
+        const clientB = new HttpClient({
+          name: 'clientB',
+          cache: { store: cache },
+        });
+
+        nock(baseUrl).get('/shared').reply(200, { source: 'A' });
+        nock(baseUrl).get('/shared').reply(200, { source: 'B' });
+
+        await clientA.get(`${baseUrl}/shared`);
+        await clientB.get(`${baseUrl}/shared`);
+
+        const rawHash = hashRequest(`${baseUrl}/shared`, {});
+        // Both scoped entries should exist
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
+        // Unscoped key should not exist
+        expect(cache._store.has(rawHash)).toBe(false);
+      });
+    });
+
+    describe('resourceExtractor', () => {
+      test('overrides default origin-based resource extraction', async () => {
+        let recordedResource: string | undefined;
+        const rateLimitStub = {
+          async canProceed(resource: string) {
+            recordedResource = resource;
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: {
+            store: rateLimitStub,
+            resourceExtractor: (url) => {
+              const u = new URL(url);
+              return `${u.origin}${u.pathname}`;
+            },
+          },
+        });
+
+        nock(baseUrl).get('/items/42').reply(200, { id: 42 });
+
+        await client.get(`${baseUrl}/items/42`);
+
+        expect(recordedResource).toBe(`${baseUrl}/items/42`);
+      });
+
+      test('getResource uses origin by default', () => {
+        const client = new HttpClient({ name: 'test' });
+        const privateClient = client as unknown as {
+          getResource: (url: string) => string;
+        };
+
+        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(baseUrl);
+      });
+
+      test('getResource uses resourceExtractor when provided', () => {
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: {
+            resourceExtractor: (url) => `custom:${new URL(url).pathname}`,
+          },
+        });
+        const privateClient = client as unknown as {
+          getResource: (url: string) => string;
+        };
+
+        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(
+          'custom:/items',
+        );
+      });
+    });
+
+    describe('rateLimitConfigs', () => {
+      test('calls setResourceConfig on the store at construction', () => {
+        const setResourceConfigCalls: Array<{
+          resource: string;
+          config: { limit: number; windowMs: number };
+        }> = [];
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          setResourceConfig(
+            resource: string,
+            config: { limit: number; windowMs: number },
+          ) {
+            setResourceConfigCalls.push({ resource, config });
+          },
+        };
+
+        const configs = new Map<string, { limit: number; windowMs: number }>();
+        configs.set('https://api.github.com', {
+          limit: 5000,
+          windowMs: 3600_000,
+        });
+        configs.set('https://api.stripe.com', {
+          limit: 100,
+          windowMs: 60_000,
+        });
+
+        new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub, configs },
+        });
+
+        expect(setResourceConfigCalls).toHaveLength(2);
+        expect(setResourceConfigCalls[0]).toEqual({
+          resource: 'https://api.github.com',
+          config: { limit: 5000, windowMs: 3600_000 },
+        });
+        expect(setResourceConfigCalls[1]).toEqual({
+          resource: 'https://api.stripe.com',
+          config: { limit: 100, windowMs: 60_000 },
+        });
+      });
+
+      test('does not call setResourceConfig when store lacks it', () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const configs = new Map<string, { limit: number; windowMs: number }>();
+        configs.set('https://api.github.com', {
+          limit: 5000,
+          windowMs: 3600_000,
+        });
+
+        // Should not throw even though store has no setResourceConfig
+        expect(
+          () =>
+            new HttpClient({
+              name: 'test',
+              rateLimit: { store: rateLimitStub, configs },
+            }),
+        ).not.toThrow();
+      });
+    });
+
+    describe('defaultRateLimitConfig', () => {
+      test('calls setResourceConfig with __default__ key at construction', () => {
+        const setResourceConfigCalls: Array<{
+          resource: string;
+          config: { limit: number; windowMs: number };
+        }> = [];
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          setResourceConfig(
+            resource: string,
+            config: { limit: number; windowMs: number },
+          ) {
+            setResourceConfigCalls.push({ resource, config });
+          },
+        };
+
+        new HttpClient({
+          name: 'test',
+          rateLimit: {
+            store: rateLimitStub,
+            defaultConfig: { limit: 30, windowMs: 60_000 },
+          },
+        });
+
+        expect(setResourceConfigCalls).toHaveLength(1);
+        expect(setResourceConfigCalls[0]).toEqual({
+          resource: '__default__',
+          config: { limit: 30, windowMs: 60_000 },
+        });
+      });
+
+      test('does not call setResourceConfig for default when store lacks it', () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        // Should not throw
+        expect(
+          () =>
+            new HttpClient({
+              name: 'test',
+              rateLimit: {
+                store: rateLimitStub,
+                defaultConfig: { limit: 30, windowMs: 60_000 },
+              },
+            }),
+        ).not.toThrow();
+      });
+    });
+
+    describe('server cooldown delegation', () => {
+      test('delegates setCooldown/getCooldown/clearCooldown to rate limit store when available', async () => {
+        const cooldowns = new Map<string, number>();
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async setCooldown(origin: string, cooldownUntilMs: number) {
+            cooldowns.set(origin, cooldownUntilMs);
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub, throw: true },
+        });
+
+        // Trigger a 429 with Retry-After to invoke applyServerRateLimitHints
+        nock(baseUrl)
+          .get('/cooldown-delegate')
+          .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
+
+        await expect(
+          client.get(`${baseUrl}/cooldown-delegate`),
+        ).rejects.toThrow();
+
+        // Cooldown should be stored in the rate limit store, not the private Map
+        const origin = baseUrl;
+        expect(cooldowns.has(origin)).toBe(true);
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+        };
+        expect(privateClient.serverCooldowns.has(origin)).toBe(false);
+      });
+
+      test('readCooldown delegates to getCooldown on the store', async () => {
+        const cooldowns = new Map<string, number>();
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub },
+        });
+
+        const privateClient = client as unknown as {
+          readCooldown: (scope: string) => Promise<number | undefined>;
+        };
+
+        // No cooldown set
+        expect(await privateClient.readCooldown(baseUrl)).toBeUndefined();
+
+        // Set cooldown in the external store
+        cooldowns.set(baseUrl, Date.now() + 5000);
+        expect(await privateClient.readCooldown(baseUrl)).toBeGreaterThan(0);
+      });
+
+      test('removeCooldown delegates to clearCooldown on the store', async () => {
+        const cooldowns = new Map<string, number>();
+        cooldowns.set(baseUrl, Date.now() + 5000);
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub },
+        });
+
+        const privateClient = client as unknown as {
+          removeCooldown: (scope: string) => Promise<void>;
+        };
+
+        await privateClient.removeCooldown(baseUrl);
+        expect(cooldowns.has(baseUrl)).toBe(false);
+      });
+
+      test('falls back to private serverCooldowns when store has no cooldown methods', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub, throw: true },
+        });
+
+        // Trigger a 429 to invoke applyServerRateLimitHints
+        nock(baseUrl)
+          .get('/cooldown-fallback')
+          .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
+
+        await expect(
+          client.get(`${baseUrl}/cooldown-fallback`),
+        ).rejects.toThrow();
+
+        // Cooldown should be stored in the private Map
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+        };
+        expect(privateClient.serverCooldowns.has(baseUrl)).toBe(true);
+      });
+
+      test('readCooldown falls back to private Map when store lacks getCooldown', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub },
+        });
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+          readCooldown: (scope: string) => Promise<number | undefined>;
+        };
+
+        privateClient.serverCooldowns.set(baseUrl, Date.now() + 5000);
+        expect(await privateClient.readCooldown(baseUrl)).toBeGreaterThan(0);
+      });
+
+      test('removeCooldown falls back to private Map when store lacks clearCooldown', async () => {
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub },
+        });
+
+        const privateClient = client as unknown as {
+          serverCooldowns: Map<string, number>;
+          removeCooldown: (scope: string) => Promise<void>;
+        };
+
+        privateClient.serverCooldowns.set(baseUrl, Date.now() + 5000);
+        await privateClient.removeCooldown(baseUrl);
+        expect(privateClient.serverCooldowns.has(baseUrl)).toBe(false);
+      });
+
+      test('enforceServerCooldown uses store getCooldown and clearCooldown', async () => {
+        const cooldowns = new Map<string, number>();
+        // Set a cooldown that has already expired
+        cooldowns.set(baseUrl, Date.now() - 1000);
+
+        const rateLimitStub = {
+          async canProceed() {
+            return true;
+          },
+          async record() {},
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime() {
+            return 0;
+          },
+          async getCooldown(origin: string) {
+            return cooldowns.get(origin);
+          },
+          async clearCooldown(origin: string) {
+            cooldowns.delete(origin);
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: { store: rateLimitStub, throw: false, maxWaitTime: 5000 },
+        });
+
+        nock(baseUrl).get('/cooldown-enforce').reply(200, { ok: true });
+
+        // Expired cooldown should be cleared and request should proceed
+        const result = await client.get<{ ok: boolean }>(
+          `${baseUrl}/cooldown-enforce`,
+        );
+        expect(result).toEqual({ ok: true });
+        // clearCooldown should have been called
+        expect(cooldowns.has(baseUrl)).toBe(false);
+      });
+    });
+
+    describe('clearCache', () => {
+      test('passes name prefix to cache.clear by default', async () => {
+        let clearArg: string | undefined;
+        const cacheStub = {
+          async get() {
+            return undefined;
+          },
+          async set() {},
+          async delete() {},
+          async clear(scope?: string) {
+            clearArg = scope;
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'my-client',
+          cache: { store: cacheStub },
+        });
+
+        await client.clearCache();
+        expect(clearArg).toBe('my-client:');
+      });
+
+      test('passes undefined to cache.clear when globalScope is true', async () => {
+        let clearCalled = false;
+        let clearArg: string | undefined = 'sentinel';
+        const cacheStub = {
+          async get() {
+            return undefined;
+          },
+          async set() {},
+          async delete() {},
+          async clear(scope?: string) {
+            clearCalled = true;
+            clearArg = scope;
+          },
+        };
+
+        const client = new HttpClient({
+          name: 'test',
+          cache: { store: cacheStub, globalScope: true },
+        });
+
+        await client.clearCache();
+        expect(clearCalled).toBe(true);
+        expect(clearArg).toBeUndefined();
+      });
+
+      test('returns immediately when no cache store is set', async () => {
+        const client = new HttpClient({ name: 'test' });
+        // Should not throw
+        await expect(client.clearCache()).resolves.toBeUndefined();
+      });
+
+      test('clearCache only removes entries for the calling client', async () => {
+        const cache = makeCacheStore();
+
+        const clientA = new HttpClient({
+          name: 'clientA',
+          cache: { store: cache },
+        });
+        const clientB = new HttpClient({
+          name: 'clientB',
+          cache: { store: cache },
+        });
+
+        nock(baseUrl).get('/shared-clear').reply(200, { source: 'A' });
+        nock(baseUrl).get('/shared-clear').reply(200, { source: 'B' });
+
+        await clientA.get(`${baseUrl}/shared-clear`);
+        await clientB.get(`${baseUrl}/shared-clear`);
+
+        const rawHash = hashRequest(`${baseUrl}/shared-clear`, {});
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(true);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
+
+        // Clear only clientA's entries
+        await clientA.clearCache();
+
+        expect(cache._store.has(`clientA:${rawHash}`)).toBe(false);
+        expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
+      });
     });
   });
 });

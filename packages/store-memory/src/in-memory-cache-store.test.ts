@@ -556,6 +556,56 @@ describe('InMemoryCacheStore', () => {
     });
   });
 
+  describe('scoped clear', () => {
+    it('should remove only entries with matching key prefix', async () => {
+      await store.set('user:1:profile', 'alice', 60);
+      await store.set('user:1:settings', 'dark-mode', 60);
+      await store.set('user:2:profile', 'bob', 60);
+      await store.set('org:1:name', 'acme', 60);
+
+      await store.clear('user:1:');
+
+      expect(await store.get('user:1:profile')).toBeUndefined();
+      expect(await store.get('user:1:settings')).toBeUndefined();
+      expect(await store.get('user:2:profile')).toBe('bob');
+      expect(await store.get('org:1:name')).toBe('acme');
+
+      // Memory accounting should reflect the removal
+      const stats = store.getStats();
+      expect(stats.totalItems).toBe(2);
+    });
+
+    it('should be a no-op when no entries match the scope', async () => {
+      await store.set('key1', 'value1', 60);
+      await store.set('key2', 'value2', 60);
+
+      const statsBefore = store.getStats();
+      await store.clear('nonexistent:');
+      const statsAfter = store.getStats();
+
+      expect(statsAfter.totalItems).toBe(statsBefore.totalItems);
+      expect(statsAfter.memoryUsageBytes).toBe(statsBefore.memoryUsageBytes);
+      expect(await store.get('key1')).toBe('value1');
+      expect(await store.get('key2')).toBe('value2');
+    });
+
+    it('should clear everything when called without scope (backward compat)', async () => {
+      await store.set('a:1', 'v1', 60);
+      await store.set('b:2', 'v2', 60);
+      await store.set('c:3', 'v3', 60);
+
+      await store.clear();
+
+      expect(await store.get('a:1')).toBeUndefined();
+      expect(await store.get('b:2')).toBeUndefined();
+      expect(await store.get('c:3')).toBeUndefined();
+
+      const stats = store.getStats();
+      expect(stats.totalItems).toBe(0);
+      expect(stats.memoryUsageBytes).toBe(0);
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all data when destroyed', async () => {
       await store.set('key1', 'value1', 60);

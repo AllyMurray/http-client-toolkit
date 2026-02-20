@@ -25,7 +25,7 @@ The client determines cache freshness following RFC 9111 priority:
 1. `Cache-Control: max-age=N` — freshness lifetime is N seconds
 2. `Expires` header minus `Date` header
 3. Heuristic: 10% of (`Date` minus `Last-Modified`)
-4. No freshness info — falls back to `cacheTTL`
+4. No freshness info — falls back to `cache.ttl`
 
 ```
 Server: Cache-Control: max-age=300
@@ -39,8 +39,7 @@ Set the cache TTL (in seconds) when creating the client. This is used when respo
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
-  cacheTTL: 300, // 5 minutes
+  cache: { store: new InMemoryCacheStore(), ttl: 300 }, // 5 minutes
 });
 ```
 
@@ -125,17 +124,19 @@ Since this is a private client cache, only one entry is stored per URL. A Vary m
 
 ## Overrides
 
-The `cacheOverrides` option lets you selectively bypass certain cache directives:
+The `cache.overrides` option lets you selectively bypass certain cache directives:
 
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
-  cacheOverrides: {
-    ignoreNoStore: true,   // Cache even when no-store is set
-    ignoreNoCache: true,   // Skip revalidation even when no-cache is set
-    minimumTTL: 60,        // Floor: cache for at least 60 seconds
-    maximumTTL: 3600,      // Cap: cache for at most 1 hour
+  cache: {
+    store: new InMemoryCacheStore(),
+    overrides: {
+      ignoreNoStore: true,   // Cache even when no-store is set
+      ignoreNoCache: true,   // Skip revalidation even when no-cache is set
+      minimumTTL: 60,        // Floor: cache for at least 60 seconds
+      maximumTTL: 3600,      // Cap: cache for at most 1 hour
+    },
   },
 });
 ```
@@ -149,37 +150,38 @@ const client = new HttpClient({
 
 ## Per-Request Cache Configuration
 
-Both `cacheTTL` and `cacheOverrides` can be set per request, overriding the constructor defaults. This is useful when different endpoints have different caching needs.
+Both `cache.ttl` and `cache.overrides` can be set per request, overriding the constructor defaults. This is useful when different endpoints have different caching needs.
 
 ```typescript
 // Override TTL for a specific request
-await client.get(url, { cacheTTL: 120 });
+await client.get(url, { cache: { ttl: 120 } });
 
 // Override cache behavior for a specific request
 await client.get(url, {
-  cacheOverrides: { ignoreNoStore: true, minimumTTL: 60 },
+  cache: { overrides: { ignoreNoStore: true, minimumTTL: 60 } },
 });
 
 // Combine both
 await client.get(url, {
-  cacheTTL: 300,
-  cacheOverrides: { maximumTTL: 600 },
+  cache: { ttl: 300, overrides: { maximumTTL: 600 } },
 });
 ```
 
-Per-request `cacheOverrides` are **shallow-merged** with the constructor-level overrides — specified fields override, unspecified fields fall back to the constructor defaults:
+Per-request `cache.overrides` are **shallow-merged** with the constructor-level overrides — specified fields override, unspecified fields fall back to the constructor defaults:
 
 ```typescript
 const client = new HttpClient({
   name: 'my-api',
-  cache: new InMemoryCacheStore(),
-  cacheTTL: 300,
-  cacheOverrides: { minimumTTL: 60, maximumTTL: 3600 },
+  cache: {
+    store: new InMemoryCacheStore(),
+    ttl: 300,
+    overrides: { minimumTTL: 60, maximumTTL: 3600 },
+  },
 });
 
 // minimumTTL overridden to 120, maximumTTL stays 3600
 await client.get(url, {
-  cacheOverrides: { minimumTTL: 120 },
+  cache: { overrides: { minimumTTL: 120 } },
 });
 ```
 

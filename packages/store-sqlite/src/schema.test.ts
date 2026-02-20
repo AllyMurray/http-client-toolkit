@@ -8,6 +8,7 @@ import {
   cacheTable as _cacheTable,
   dedupeTable as _dedupeTable,
   rateLimitTable as _rateLimitTable,
+  serverCooldownTable as _serverCooldownTable,
 } from './schema.js';
 
 describe('Database Schema', () => {
@@ -58,6 +59,13 @@ describe('Database Schema', () => {
 
       CREATE INDEX IF NOT EXISTS rate_limits_resource_idx ON rate_limits (resource);
       CREATE INDEX IF NOT EXISTS rate_limits_timestamp_idx ON rate_limits (timestamp);
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS server_cooldowns (
+        origin TEXT PRIMARY KEY NOT NULL,
+        cooldown_until INTEGER NOT NULL
+      );
     `);
   });
 
@@ -316,6 +324,73 @@ describe('Database Schema', () => {
 
       const remaining = db
         .prepare('SELECT COUNT(*) as count FROM rate_limits')
+        .get();
+      expect(remaining.count).toBe(1);
+    });
+  });
+
+  describe('server_cooldowns table', () => {
+    it('should allow inserting cooldown entries', () => {
+      const stmt = db.prepare(`
+        INSERT INTO server_cooldowns (origin, cooldown_until)
+        VALUES (?, ?)
+      `);
+
+      const result = stmt.run('api.example.com', Date.now() + 60000);
+      expect(result.changes).toBe(1);
+    });
+
+    it('should enforce primary key on origin', () => {
+      const stmt = db.prepare(`
+        INSERT INTO server_cooldowns (origin, cooldown_until)
+        VALUES (?, ?)
+      `);
+
+      stmt.run('api.example.com', Date.now() + 60000);
+
+      expect(() => {
+        stmt.run('api.example.com', Date.now() + 120000);
+      }).toThrow();
+    });
+
+    it('should allow selecting by origin', () => {
+      const insertStmt = db.prepare(`
+        INSERT INTO server_cooldowns (origin, cooldown_until)
+        VALUES (?, ?)
+      `);
+
+      const cooldownUntil = Date.now() + 60000;
+      insertStmt.run('api.example.com', cooldownUntil);
+
+      const selectStmt = db.prepare(`
+        SELECT * FROM server_cooldowns WHERE origin = ?
+      `);
+
+      const result = selectStmt.get('api.example.com');
+      expect(result).toBeDefined();
+      expect(result.origin).toBe('api.example.com');
+      expect(result.cooldown_until).toBe(cooldownUntil);
+    });
+
+    it('should allow deleting expired cooldowns', () => {
+      const stmt = db.prepare(`
+        INSERT INTO server_cooldowns (origin, cooldown_until)
+        VALUES (?, ?)
+      `);
+
+      const now = Date.now();
+      stmt.run('expired-origin', now - 60000);
+      stmt.run('active-origin', now + 60000);
+
+      const deleteStmt = db.prepare(`
+        DELETE FROM server_cooldowns WHERE cooldown_until < ?
+      `);
+
+      const result = deleteStmt.run(now);
+      expect(result.changes).toBe(1);
+
+      const remaining = db
+        .prepare('SELECT COUNT(*) as count FROM server_cooldowns')
         .get();
       expect(remaining.count).toBe(1);
     });

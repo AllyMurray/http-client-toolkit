@@ -51,9 +51,9 @@ describe('createDashboard middleware', () => {
 
     const client = new HttpClient({
       name: 'test-client',
-      cache: cacheStore,
+      cache: { store: cacheStore },
       dedupe: dedupeStore,
-      rateLimit: rateLimitStore,
+      rateLimit: { store: rateLimitStore },
     });
 
     const middleware = createDashboard({
@@ -301,13 +301,13 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'client-a',
-              cache: cacheStoreA,
+              cache: { store: cacheStoreA },
             }),
           },
           {
             client: new HttpClient({
               name: 'client-b',
-              cache: cacheStoreB,
+              cache: { store: cacheStoreB },
             }),
           },
         ],
@@ -348,9 +348,9 @@ describe('createDashboard middleware', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -367,6 +367,591 @@ describe('createDashboard middleware', () => {
       );
       expect(status).toBe(200);
       expect(body.status).toBe('ok');
+    });
+  });
+
+  describe('dedup job not found', () => {
+    it('GET /api/clients/:name/dedup/jobs/:hash should return 404 for missing job', async () => {
+      const { status, body } = await fetchJson(
+        port,
+        '/api/clients/test-client/dedup/jobs/nonexistent',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toBe('Not found');
+    });
+  });
+
+  describe('method not allowed on dedup single job', () => {
+    it('PUT /api/clients/:name/dedup/jobs/:hash should return 405', async () => {
+      await dedupeStore.register('hash1');
+      await dedupeStore.complete('hash1', 'value');
+      const { status, body } = await fetchJson(
+        port,
+        '/api/clients/test-client/dedup/jobs/hash1',
+        { method: 'PUT' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+  });
+
+  describe('method not allowed on rate-limit single resource', () => {
+    it('PUT /api/clients/:name/rate-limit/resources/:name should return 405', async () => {
+      await rateLimitStore.record('api-resource');
+      const { status, body } = await fetchJson(
+        port,
+        '/api/clients/test-client/rate-limit/resources/api-resource',
+        { method: 'PUT' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+  });
+
+  describe('unknown subpath fall-through', () => {
+    it('GET /api/clients/:name/unknown should return 404', async () => {
+      const { status, body } = await fetchJson(
+        port,
+        '/api/clients/test-client/unknown',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toBe('Not found');
+    });
+  });
+
+  describe('partial store configurations', () => {
+    let partialServer: Server;
+    let partialPort: number;
+    let partialCacheStore: InMemoryCacheStore;
+    let partialDedupeStore: InMemoryDedupeStore;
+
+    afterEach(async () => {
+      if (partialServer) await closeServer(partialServer);
+      partialCacheStore?.destroy();
+      partialDedupeStore?.destroy();
+    });
+
+    it('health should return null for missing stores', async () => {
+      partialCacheStore = new InMemoryCacheStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'cache-only',
+              cache: { store: partialCacheStore },
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(partialPort, '/api/health');
+      expect(status).toBe(200);
+      expect(body.clients['cache-only'].cache).not.toBeNull();
+      expect(body.clients['cache-only'].dedup).toBeNull();
+      expect(body.clients['cache-only'].rateLimit).toBeNull();
+    });
+
+    it('clients should return null for missing stores', async () => {
+      partialCacheStore = new InMemoryCacheStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'cache-only',
+              cache: { store: partialCacheStore },
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(partialPort, '/api/clients');
+      expect(status).toBe(200);
+      expect(body.clients[0].stores.cache).not.toBeNull();
+      expect(body.clients[0].stores.dedup).toBeNull();
+      expect(body.clients[0].stores.rateLimit).toBeNull();
+    });
+
+    it('should return 404 for dedup routes when dedup not configured', async () => {
+      partialCacheStore = new InMemoryCacheStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'cache-only',
+              cache: { store: partialCacheStore },
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(
+        partialPort,
+        '/api/clients/cache-only/dedup/stats',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toContain('Dedup store not configured');
+    });
+
+    it('should return 404 for rate-limit routes when rateLimit not configured', async () => {
+      partialCacheStore = new InMemoryCacheStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'cache-only',
+              cache: { store: partialCacheStore },
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(
+        partialPort,
+        '/api/clients/cache-only/rate-limit/stats',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toContain('Rate limit store not configured');
+    });
+
+    it('health should return null for cache when only dedup configured', async () => {
+      partialDedupeStore = new InMemoryDedupeStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'dedup-only',
+              dedupe: partialDedupeStore,
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(partialPort, '/api/health');
+      expect(status).toBe(200);
+      expect(body.clients['dedup-only'].cache).toBeNull();
+      expect(body.clients['dedup-only'].dedup).not.toBeNull();
+      expect(body.clients['dedup-only'].rateLimit).toBeNull();
+    });
+
+    it('clients should return null for cache when only dedup configured', async () => {
+      partialDedupeStore = new InMemoryDedupeStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'dedup-only',
+              dedupe: partialDedupeStore,
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(partialPort, '/api/clients');
+      expect(status).toBe(200);
+      expect(body.clients[0].stores.cache).toBeNull();
+      expect(body.clients[0].stores.dedup).not.toBeNull();
+    });
+
+    it('should return 404 for cache routes when cache not configured', async () => {
+      partialDedupeStore = new InMemoryDedupeStore();
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'dedup-only',
+              dedupe: partialDedupeStore,
+            }),
+          },
+        ],
+      });
+
+      const result = await startServer(middleware);
+      partialServer = result.server;
+      partialPort = result.port;
+
+      const { status, body } = await fetchJson(
+        partialPort,
+        '/api/clients/dedup-only/cache/stats',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toContain('Cache store not configured');
+    });
+  });
+
+  describe('handler error paths', () => {
+    let errServer: Server;
+    let errPort: number;
+    let errCacheStore: InMemoryCacheStore;
+    let errDedupeStore: InMemoryDedupeStore;
+    let errRateLimitStore: InMemoryRateLimitStore;
+
+    afterEach(async () => {
+      if (errServer) await closeServer(errServer);
+      errCacheStore?.destroy();
+      errDedupeStore?.destroy();
+      errRateLimitStore?.destroy();
+    });
+
+    async function setupErrServer() {
+      const middleware = createDashboard({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'err-client',
+              cache: { store: errCacheStore },
+              dedupe: errDedupeStore,
+              rateLimit: { store: errRateLimitStore },
+            }),
+          },
+        ],
+      });
+      const result = await startServer(middleware);
+      errServer = result.server;
+      errPort = result.port;
+    }
+
+    it('cache stats error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      // Monkey-patch getStats to throw after adapter is created
+      const origGetStats = errCacheStore.getStats.bind(errCacheStore);
+      errCacheStore.getStats = () => {
+        throw new Error('stats boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('stats boom');
+
+      // Restore so destroy works
+      errCacheStore.getStats = origGetStats;
+    });
+
+    it('cache entries error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origListEntries = errCacheStore.listEntries.bind(errCacheStore);
+      errCacheStore.listEntries = () => {
+        throw new Error('list entries boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/entries',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('list entries boom');
+
+      errCacheStore.listEntries = origListEntries;
+    });
+
+    it('cache single entry error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      await errCacheStore.set('key1', 'value1', 60);
+
+      // Monkey-patch get to throw
+      const origGet = errCacheStore.get.bind(errCacheStore);
+      errCacheStore.get = () => {
+        throw new Error('get entry boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/entries/key1',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('get entry boom');
+
+      errCacheStore.get = origGet;
+    });
+
+    it('cache delete entry error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origDelete = errCacheStore.delete.bind(errCacheStore);
+      errCacheStore.delete = () => {
+        throw new Error('delete entry boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/entries/somekey',
+        { method: 'DELETE' },
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('delete entry boom');
+
+      errCacheStore.delete = origDelete;
+    });
+
+    it('cache clear error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origClear = errCacheStore.clear.bind(errCacheStore);
+      errCacheStore.clear = () => {
+        throw new Error('clear boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/entries',
+        { method: 'DELETE' },
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('clear boom');
+
+      errCacheStore.clear = origClear;
+    });
+
+    it('dedup stats error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origGetStats = errDedupeStore.getStats.bind(errDedupeStore);
+      errDedupeStore.getStats = () => {
+        throw new Error('dedup stats boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/dedup/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('dedup stats boom');
+
+      errDedupeStore.getStats = origGetStats;
+    });
+
+    it('dedup jobs list error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origListJobs = errDedupeStore.listJobs.bind(errDedupeStore);
+      errDedupeStore.listJobs = () => {
+        throw new Error('dedup jobs boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/dedup/jobs',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('dedup jobs boom');
+
+      errDedupeStore.listJobs = origListJobs;
+    });
+
+    it('dedup single job error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origListJobs = errDedupeStore.listJobs.bind(errDedupeStore);
+      errDedupeStore.listJobs = () => {
+        throw new Error('dedup job boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/dedup/jobs/somehash',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('dedup job boom');
+
+      errDedupeStore.listJobs = origListJobs;
+    });
+
+    it('rate-limit stats error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origGetStats = errRateLimitStore.getStats.bind(errRateLimitStore);
+      errRateLimitStore.getStats = () => {
+        throw new Error('rl stats boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/rate-limit/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rl stats boom');
+
+      errRateLimitStore.getStats = origGetStats;
+    });
+
+    it('rate-limit resources list error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origListResources =
+        errRateLimitStore.listResources.bind(errRateLimitStore);
+      errRateLimitStore.listResources = () => {
+        throw new Error('rl resources boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/rate-limit/resources',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rl resources boom');
+
+      errRateLimitStore.listResources = origListResources;
+    });
+
+    it('rate-limit single resource error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origGetStatus = errRateLimitStore.getStatus.bind(errRateLimitStore);
+      errRateLimitStore.getStatus = () => {
+        throw new Error('rl resource boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/rate-limit/resources/some-resource',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rl resource boom');
+
+      errRateLimitStore.getStatus = origGetStatus;
+    });
+
+    it('rate-limit update config error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origSetConfig =
+        errRateLimitStore.setResourceConfig.bind(errRateLimitStore);
+      errRateLimitStore.setResourceConfig = () => {
+        throw new Error('rl config boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/rate-limit/resources/some-resource/config',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 100, windowMs: 60000 }),
+        },
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rl config boom');
+
+      errRateLimitStore.setResourceConfig = origSetConfig;
+    });
+
+    it('rate-limit reset error returns 500', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      const origReset = errRateLimitStore.reset.bind(errRateLimitStore);
+      errRateLimitStore.reset = () => {
+        throw new Error('rl reset boom');
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/rate-limit/resources/some-resource/reset',
+        { method: 'POST' },
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rl reset boom');
+
+      errRateLimitStore.reset = origReset;
+    });
+
+    it('handler error with non-Error throw returns Unknown error', async () => {
+      errCacheStore = new InMemoryCacheStore();
+      errDedupeStore = new InMemoryDedupeStore();
+      errRateLimitStore = new InMemoryRateLimitStore();
+
+      errCacheStore.getStats = () => {
+        throw 'string error';
+      };
+
+      await setupErrServer();
+
+      const { status, body } = await fetchJson(
+        errPort,
+        '/api/clients/err-client/cache/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('Unknown error');
     });
   });
 });

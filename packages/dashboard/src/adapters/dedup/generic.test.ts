@@ -29,6 +29,14 @@ describe('createGenericDedupeAdapter', () => {
     expect(result.jobs).toEqual([]);
   });
 
+  it('should return stats message', async () => {
+    const adapter = createGenericDedupeAdapter(mockStore);
+    const stats = await adapter.getStats();
+    expect(stats).toEqual({
+      message: 'Stats not available for this store type',
+    });
+  });
+
   it('should return undefined for getJob', async () => {
     const adapter = createGenericDedupeAdapter(mockStore);
     const job = await adapter.getJob('any');

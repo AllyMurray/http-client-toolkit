@@ -483,11 +483,12 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
     return result.Item['status'] === 'pending';
   }
 
-  async clear(): Promise<void> {
+  async clear(scope?: string): Promise<void> {
     if (this.isDestroyed) {
       throw new Error('Dedupe store has been destroyed');
     }
 
+    const prefix = scope ? `DEDUPE#${scope}` : 'DEDUPE#';
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 
     do {
@@ -497,7 +498,7 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
           new ScanCommand({
             TableName: this.tableName,
             FilterExpression: 'begins_with(pk, :prefix)',
-            ExpressionAttributeValues: { ':prefix': 'DEDUPE#' },
+            ExpressionAttributeValues: { ':prefix': prefix },
             ProjectionExpression: 'pk, sk',
             ExclusiveStartKey: lastEvaluatedKey,
           }),
@@ -526,11 +527,21 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
         | undefined;
     } while (lastEvaluatedKey);
 
-    for (const settle of this.jobSettlers.values()) {
-      settle(undefined);
+    if (!scope) {
+      for (const settle of this.jobSettlers.values()) {
+        settle(undefined);
+      }
+      this.jobPromises.clear();
+      this.jobSettlers.clear();
+    } else {
+      for (const [hash, settle] of this.jobSettlers) {
+        if (hash.startsWith(scope)) {
+          settle(undefined);
+          this.jobSettlers.delete(hash);
+          this.jobPromises.delete(hash);
+        }
+      }
     }
-    this.jobPromises.clear();
-    this.jobSettlers.clear();
   }
 
   async close(): Promise<void> {

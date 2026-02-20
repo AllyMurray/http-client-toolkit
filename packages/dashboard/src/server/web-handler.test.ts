@@ -39,9 +39,9 @@ describe('createDashboardHandler', () => {
         {
           client: new HttpClient({
             name: 'test-client',
-            cache: cacheStore,
+            cache: { store: cacheStore },
             dedupe: dedupeStore,
-            rateLimit: rateLimitStore,
+            rateLimit: { store: rateLimitStore },
           }),
         },
       ],
@@ -90,6 +90,17 @@ describe('createDashboardHandler', () => {
       );
       expect(status).toBe(200);
       expect(body.entries).toHaveLength(2);
+    });
+
+    it('GET /api/clients/:name/cache/entries with query params should paginate', async () => {
+      await cacheStore.set('key1', 'value1', 60);
+      await cacheStore.set('key2', 'value2', 60);
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/cache/entries?page=0&limit=1',
+      );
+      expect(status).toBe(200);
+      expect(body.entries).toHaveLength(1);
     });
 
     it('GET /api/clients/:name/cache/entries/:hash should return entry', async () => {
@@ -154,6 +165,37 @@ describe('createDashboardHandler', () => {
       expect(status).toBe(404);
       expect(body.error).toBe('Cache store not configured');
     });
+
+    it('should return 405 for unsupported method on single cache entry', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/cache/entries/key1',
+        { method: 'PATCH' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+
+    it('should return 500 when cache adapter throws', async () => {
+      cacheStore.getStats = () => {
+        throw new Error('cache boom');
+      };
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/cache/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('cache boom');
+    });
+
+    it('should return 404 for unknown cache subpath', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/cache/unknown-route',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toBe('Not found');
+    });
   });
 
   describe('dedup API', () => {
@@ -177,13 +219,32 @@ describe('createDashboardHandler', () => {
       expect(body.jobs).toHaveLength(1);
     });
 
+    it('GET /api/clients/:name/dedup/jobs/:hash should return a single job', async () => {
+      await dedupeStore.register('hash1');
+      await dedupeStore.complete('hash1', 'value');
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/dedup/jobs/hash1',
+      );
+      expect(status).toBe(200);
+      expect(body.hash).toBe('hash1');
+    });
+
+    it('GET /api/clients/:name/dedup/jobs/:hash should return 404 for missing job', async () => {
+      const { status } = await fetchJson(
+        handler,
+        '/api/clients/test-client/dedup/jobs/nonexistent',
+      );
+      expect(status).toBe(404);
+    });
+
     it('should return 404 when dedup store not configured', async () => {
       const h = createDashboardHandler({
         clients: [
           {
             client: new HttpClient({
               name: 'no-dedup',
-              cache: cacheStore,
+              cache: { store: cacheStore },
             }),
           },
         ],
@@ -194,6 +255,37 @@ describe('createDashboardHandler', () => {
       );
       expect(status).toBe(404);
       expect(body.error).toBe('Dedup store not configured');
+    });
+
+    it('should return 405 for unsupported method on single dedup job', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/dedup/jobs/hash1',
+        { method: 'PATCH' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+
+    it('should return 500 when dedup adapter throws', async () => {
+      dedupeStore.getStats = () => {
+        throw new Error('dedup boom');
+      };
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/dedup/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('dedup boom');
+    });
+
+    it('should return 404 for unknown dedup subpath', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/dedup/unknown-route',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toBe('Not found');
     });
   });
 
@@ -228,13 +320,38 @@ describe('createDashboardHandler', () => {
       expect(body.reset).toBe(true);
     });
 
+    it('PUT /api/clients/:name/rate-limit/resources/:name/config should update config', async () => {
+      await rateLimitStore.record('api-resource');
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/rate-limit/resources/api-resource/config',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 100, windowMs: 60000 }),
+        },
+      );
+      expect(status).toBe(200);
+      expect(body.updated).toBe(true);
+    });
+
+    it('GET /api/clients/:name/rate-limit/resources/:name should return resource status', async () => {
+      await rateLimitStore.record('api-resource');
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/rate-limit/resources/api-resource',
+      );
+      expect(status).toBe(200);
+      expect(body.resource).toBe('api-resource');
+    });
+
     it('should return 404 when rate limit store not configured', async () => {
       const h = createDashboardHandler({
         clients: [
           {
             client: new HttpClient({
               name: 'no-rl',
-              cache: cacheStore,
+              cache: { store: cacheStore },
             }),
           },
         ],
@@ -246,11 +363,60 @@ describe('createDashboardHandler', () => {
       expect(status).toBe(404);
       expect(body.error).toBe('Rate limit store not configured');
     });
+
+    it('should return 405 for unsupported method on single rate-limit resource', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/rate-limit/resources/res1',
+        { method: 'PATCH' },
+      );
+      expect(status).toBe(405);
+      expect(body.error).toBe('Method not allowed');
+    });
+
+    it('should return 500 when rate-limit adapter throws', async () => {
+      rateLimitStore.getStats = () => {
+        throw new Error('rate-limit boom');
+      };
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/rate-limit/stats',
+      );
+      expect(status).toBe(500);
+      expect(body.error).toBe('rate-limit boom');
+    });
+
+    it('should return 404 for unknown rate-limit subpath', async () => {
+      const { status, body } = await fetchJson(
+        handler,
+        '/api/clients/test-client/rate-limit/unknown-route',
+      );
+      expect(status).toBe(404);
+      expect(body.error).toBe('Not found');
+    });
   });
 
   it('should return 404 for unknown API routes', async () => {
     const { status } = await fetchJson(handler, '/api/unknown');
     expect(status).toBe(404);
+  });
+
+  it('should return 404 for client route with no subpath', async () => {
+    const { status, body } = await fetchJson(
+      handler,
+      '/api/clients/test-client',
+    );
+    expect(status).toBe(404);
+    expect(body.error).toBe('Not found');
+  });
+
+  it('should return 404 for unknown client subpath', async () => {
+    const { status, body } = await fetchJson(
+      handler,
+      '/api/clients/test-client/unknown-store/stats',
+    );
+    expect(status).toBe(404);
+    expect(body.error).toBe('Not found');
   });
 
   it('should return 404 for unknown client', async () => {
@@ -268,6 +434,19 @@ describe('createDashboardHandler', () => {
     expect(res.headers.get('content-type')).toBe('text/html');
   });
 
+  it('should return 500 for handler-level errors', async () => {
+    const badRequest = new Request('http://localhost/api/health');
+    Object.defineProperty(badRequest, 'url', {
+      get() {
+        throw new Error('bad url');
+      },
+    });
+    const res = await handler(badRequest);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Internal server error');
+  });
+
   describe('basePath support', () => {
     it('should strip basePath from URL', async () => {
       const h = createDashboardHandler({
@@ -275,9 +454,9 @@ describe('createDashboardHandler', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -286,6 +465,25 @@ describe('createDashboardHandler', () => {
       const { status, body } = await fetchJson(h, '/dashboard/api/health');
       expect(status).toBe(200);
       expect(body.status).toBe('ok');
+    });
+
+    it('should serve SPA fallback when URL equals basePath exactly', async () => {
+      const h = createDashboardHandler({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'test-client',
+              cache: { store: cacheStore },
+              dedupe: dedupeStore,
+              rateLimit: { store: rateLimitStore },
+            }),
+          },
+        ],
+        basePath: '/dashboard',
+      });
+      const res = await h(makeRequest('/dashboard'));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('text/html');
     });
   });
 
@@ -299,10 +497,16 @@ describe('createDashboardHandler', () => {
       const h = createDashboardHandler({
         clients: [
           {
-            client: new HttpClient({ name: 'client-a', cache: cacheA }),
+            client: new HttpClient({
+              name: 'client-a',
+              cache: { store: cacheA },
+            }),
           },
           {
-            client: new HttpClient({ name: 'client-b', cache: cacheB }),
+            client: new HttpClient({
+              name: 'client-b',
+              cache: { store: cacheB },
+            }),
           },
         ],
       });
@@ -321,6 +525,73 @@ describe('createDashboardHandler', () => {
 
       cacheA.destroy();
       cacheB.destroy();
+    });
+  });
+
+  describe('partial store configurations', () => {
+    it('health should return null for cache when only dedup configured', async () => {
+      const dedupOnly = new InMemoryDedupeStore();
+      const h = createDashboardHandler({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'dedup-only',
+              dedupe: dedupOnly,
+            }),
+          },
+        ],
+      });
+
+      const { status, body } = await fetchJson(h, '/api/health');
+      expect(status).toBe(200);
+      expect(body.clients['dedup-only'].cache).toBeNull();
+      expect(body.clients['dedup-only'].dedup).not.toBeNull();
+      expect(body.clients['dedup-only'].rateLimit).toBeNull();
+
+      dedupOnly.destroy();
+    });
+
+    it('health should return null for dedup when only cache configured', async () => {
+      const cacheOnly = new InMemoryCacheStore();
+      const h = createDashboardHandler({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'cache-only',
+              cache: { store: cacheOnly },
+            }),
+          },
+        ],
+      });
+
+      const { status, body } = await fetchJson(h, '/api/health');
+      expect(status).toBe(200);
+      expect(body.clients['cache-only'].cache).not.toBeNull();
+      expect(body.clients['cache-only'].dedup).toBeNull();
+      expect(body.clients['cache-only'].rateLimit).toBeNull();
+
+      cacheOnly.destroy();
+    });
+
+    it('clients should return null for cache when only dedup configured', async () => {
+      const dedupOnly = new InMemoryDedupeStore();
+      const h = createDashboardHandler({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'dedup-only',
+              dedupe: dedupOnly,
+            }),
+          },
+        ],
+      });
+
+      const { status, body } = await fetchJson(h, '/api/clients');
+      expect(status).toBe(200);
+      expect(body.clients[0].stores.cache).toBeNull();
+      expect(body.clients[0].stores.dedup).not.toBeNull();
+
+      dedupOnly.destroy();
     });
   });
 });

@@ -105,9 +105,9 @@ describe('createDashboardHandler integration', () => {
         {
           client: new HttpClient({
             name: 'test-client',
-            cache: cacheStore,
+            cache: { store: cacheStore },
             dedupe: dedupeStore,
-            rateLimit: rateLimitStore,
+            rateLimit: { store: rateLimitStore },
           }),
         },
       ],
@@ -343,9 +343,9 @@ describe('createDashboardHandler integration', () => {
           {
             client: new HttpClient({
               name: 'test-client',
-              cache: cacheStore,
+              cache: { store: cacheStore },
               dedupe: dedupeStore,
-              rateLimit: rateLimitStore,
+              rateLimit: { store: rateLimitStore },
             }),
           },
         ],
@@ -389,13 +389,13 @@ describe('createDashboardHandler integration', () => {
           {
             client: new HttpClient({
               name: 'client-a',
-              cache: cacheStoreA,
+              cache: { store: cacheStoreA },
             }),
           },
           {
             client: new HttpClient({
               name: 'client-b',
-              cache: cacheStoreB,
+              cache: { store: cacheStoreB },
             }),
           },
         ],

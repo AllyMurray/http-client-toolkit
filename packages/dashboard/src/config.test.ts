@@ -26,7 +26,9 @@ function makeClient(opts: { name: string; cache?: boolean; dedupe?: boolean }) {
   return new HttpClient({
     name: opts.name,
     cache:
-      opts.cache !== false ? trackedStore(new InMemoryCacheStore()) : undefined,
+      opts.cache !== false
+        ? { store: trackedStore(new InMemoryCacheStore()) }
+        : undefined,
     dedupe: opts.dedupe ? trackedStore(new InMemoryDedupeStore()) : undefined,
   });
 }
@@ -150,7 +152,7 @@ describe('validateStandaloneOptions', () => {
 describe('normalizeClient', () => {
   it('should extract stores from HttpClient', () => {
     const cache = trackedStore(new InMemoryCacheStore());
-    const client = new HttpClient({ name: 'test', cache });
+    const client = new HttpClient({ name: 'test', cache: { store: cache } });
     const normalized = normalizeClient({ client });
     expect(normalized.name).toBe('test');
     expect(normalized.cacheStore).toBe(cache);
