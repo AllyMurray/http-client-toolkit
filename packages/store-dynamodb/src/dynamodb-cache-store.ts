@@ -179,6 +179,9 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throwIfDynamoTableMissing(error, this.tableName);
       throw error;
     }
+
+    // Clean up any TAG items referencing this hash
+    await this.deleteTagsForHash(hash);
   }
 
   async clear(scope?: string): Promise<void> {
@@ -186,7 +189,20 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
 
-    const prefix = scope ? `CACHE#${scope}` : 'CACHE#';
+    const cachePrefix = scope ? `CACHE#${scope}` : 'CACHE#';
+
+    // When clearing all (no scope), also delete TAG# items to prevent
+    // stale tag mappings from invalidating future cache entries.
+    const filterExpression = scope
+      ? 'begins_with(pk, :cachePrefix)'
+      : 'begins_with(pk, :cachePrefix) OR begins_with(pk, :tagPrefix)';
+    const expressionValues: Record<string, string> = {
+      ':cachePrefix': cachePrefix,
+    };
+    if (!scope) {
+      expressionValues[':tagPrefix'] = 'TAG#';
+    }
+
     let lastEvaluatedKey: Record<string, unknown> | undefined;
 
     do {
@@ -195,8 +211,8 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
         scanResult = await this.docClient.send(
           new ScanCommand({
             TableName: this.tableName,
-            FilterExpression: 'begins_with(pk, :prefix)',
-            ExpressionAttributeValues: { ':prefix': prefix },
+            FilterExpression: filterExpression,
+            ExpressionAttributeValues: expressionValues,
             ProjectionExpression: 'pk, sk',
             ExclusiveStartKey: lastEvaluatedKey,
           }),
@@ -234,6 +250,10 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
   ): Promise<void> {
     // Write the cache entry using existing set() logic
     await this.set(hash, value, ttlSeconds);
+
+    // Remove any existing tag mappings for this hash before writing new ones
+    // to prevent stale tags from persisting across updates.
+    await this.deleteTagsForHash(hash);
 
     if (tags.length === 0) return;
 
@@ -388,6 +408,45 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
 
   destroy(): void {
     this.close();
+  }
+
+  private async deleteTagsForHash(hash: string): Promise<void> {
+    const sk = `CACHE#${hash}`;
+    let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+    do {
+      let scanResult;
+      try {
+        scanResult = await this.docClient.send(
+          new ScanCommand({
+            TableName: this.tableName,
+            FilterExpression: 'begins_with(pk, :tagPrefix) AND sk = :sk',
+            ExpressionAttributeValues: {
+              ':tagPrefix': 'TAG#',
+              ':sk': sk,
+            },
+            ProjectionExpression: 'pk, sk',
+            ExclusiveStartKey: lastEvaluatedKey,
+          }),
+        );
+      } catch (error: unknown) {
+        throwIfDynamoTableMissing(error, this.tableName);
+        throw error;
+      }
+
+      const items = scanResult.Items ?? [];
+      if (items.length > 0) {
+        await batchDeleteWithRetries(
+          this.docClient,
+          this.tableName,
+          items.map((item) => ({ pk: item['pk'], sk: item['sk'] })),
+        );
+      }
+
+      lastEvaluatedKey = scanResult.LastEvaluatedKey as
+        | Record<string, unknown>
+        | undefined;
+    } while (lastEvaluatedKey);
   }
 
   private assertValidHash(hash: string): void {
