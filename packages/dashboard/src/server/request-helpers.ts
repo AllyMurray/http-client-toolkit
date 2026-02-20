@@ -8,7 +8,11 @@ export function parseUrl(
   const url = new URL(raw, 'http://localhost');
 
   let pathname = url.pathname;
-  if (basePath !== '/' && pathname.startsWith(basePath)) {
+  if (
+    basePath !== '/' &&
+    pathname.startsWith(basePath) &&
+    (pathname.length === basePath.length || pathname[basePath.length] === '/')
+  ) {
     pathname = pathname.slice(basePath.length) || '/';
   }
 

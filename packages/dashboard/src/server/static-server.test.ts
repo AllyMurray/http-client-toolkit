@@ -223,4 +223,25 @@ describe('serveStatic', () => {
     expect(res._headers['Content-Type']).toBe('text/html');
     expect(res._body).toContain('Dashboard client not built');
   });
+
+  it('should reject path traversal attempts with 400', async () => {
+    const { serveStatic } = await importFresh();
+
+    const res = mockResponse();
+    const result = serveStatic(res, '/../../../etc/passwd');
+
+    expect(result).toBe(true);
+    expect(res._status).toBe(400);
+    expect(res._body).toBe('Bad request');
+  });
+
+  it('should reject encoded path traversal attempts', async () => {
+    const { serveStatic } = await importFresh();
+
+    const res = mockResponse();
+    const result = serveStatic(res, '/../server/middleware.ts');
+
+    expect(result).toBe(true);
+    expect(res._status).toBe(400);
+  });
 });
