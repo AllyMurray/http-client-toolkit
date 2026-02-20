@@ -40,10 +40,19 @@ export function extractParam(
   return pathParts[paramIndex];
 }
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
+
 export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
     req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => {

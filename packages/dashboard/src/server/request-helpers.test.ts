@@ -138,4 +138,18 @@ describe('readJsonBody', () => {
     stream.destroy(new Error('stream failure'));
     await expect(promise).rejects.toThrow('stream failure');
   });
+
+  it('should reject when body exceeds 1MB size limit', async () => {
+    const stream = new PassThrough();
+    const req = stream as unknown as IncomingMessage;
+    const promise = readJsonBody(req);
+
+    // Write chunks totaling over 1MB
+    const chunk = Buffer.alloc(512 * 1024, 'a');
+    stream.write(chunk);
+    stream.write(chunk);
+    stream.write(chunk); // 1.5MB total
+
+    await expect(promise).rejects.toThrow('Request body too large');
+  });
 });
