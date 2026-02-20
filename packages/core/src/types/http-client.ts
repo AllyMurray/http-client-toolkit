@@ -59,6 +59,16 @@ export interface HttpClientContract {
   /** The store instances backing this client. */
   readonly stores: HttpClientStores;
   /**
+   * Invalidate all cache entries associated with the given tag.
+   * @returns The number of cache entries that were deleted, or 0 if no cache store is configured.
+   */
+  invalidateByTag(tag: string): Promise<number>;
+  /**
+   * Invalidate all cache entries associated with any of the given tags.
+   * @returns The number of cache entries that were deleted, or 0 if no cache store is configured.
+   */
+  invalidateByTags(tags: Array<string>): Promise<number>;
+  /**
    * Perform a GET request.
    *
    * @param url     Full request URL
@@ -93,7 +103,11 @@ export interface HttpClientContract {
        * Per-request cache options. `ttl` overrides constructor-level TTL;
        * `overrides` are shallow-merged with constructor-level cache overrides.
        */
-      cache?: { ttl?: number; overrides?: CacheOverrideOptions };
+      cache?: {
+        ttl?: number;
+        overrides?: CacheOverrideOptions;
+        tags?: Array<string>;
+      };
     },
   ): Promise<Result>;
 }

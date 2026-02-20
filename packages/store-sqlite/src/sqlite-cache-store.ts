@@ -1,8 +1,8 @@
 import type { CacheStore } from '@http-client-toolkit/core';
 import Database from 'better-sqlite3';
-import { and, eq, gt, lt, count, sql } from 'drizzle-orm';
+import { and, eq, gt, lt, count, sql, inArray } from 'drizzle-orm';
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { cacheTable } from './schema.js';
+import { cacheTable, cacheTagsTable } from './schema.js';
 
 export interface SQLiteCacheStoreOptions {
   /** File path or existing `better-sqlite3` connection. Defaults to `':memory:'`. */
@@ -153,6 +153,7 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
       throw new Error('Cache store has been destroyed');
     }
     await this.db.delete(cacheTable).where(eq(cacheTable.hash, hash));
+    await this.db.delete(cacheTagsTable).where(eq(cacheTagsTable.hash, hash));
   }
 
   async clear(scope?: string): Promise<void> {
@@ -161,11 +162,105 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
     }
     if (!scope) {
       await this.db.delete(cacheTable);
+      await this.db.delete(cacheTagsTable);
       return;
     }
+    // Find hashes that match the scope, then clean up their tags
+    const matchingEntries = await this.db
+      .select({ hash: cacheTable.hash })
+      .from(cacheTable)
+      .where(sql`${cacheTable.hash} LIKE ${scope + '%'}`);
+
+    if (matchingEntries.length > 0) {
+      const hashes = matchingEntries.map((e) => e.hash);
+      await this.db
+        .delete(cacheTagsTable)
+        .where(inArray(cacheTagsTable.hash, hashes));
+    }
+
     await this.db
       .delete(cacheTable)
       .where(sql`${cacheTable.hash} LIKE ${scope + '%'}`);
+  }
+
+  async setWithTags(
+    hash: string,
+    value: T,
+    ttlSeconds: number,
+    tags: Array<string>,
+  ): Promise<void> {
+    if (this.isDestroyed) {
+      throw new Error('Cache store has been destroyed');
+    }
+
+    // Write the cache entry
+    await this.set(hash, value, ttlSeconds);
+
+    // Replace tag associations within a transaction-like flow:
+    // 1. Remove old tags for this hash
+    await this.db.delete(cacheTagsTable).where(eq(cacheTagsTable.hash, hash));
+
+    // 2. Insert new tag rows
+    if (tags.length > 0) {
+      await this.db
+        .insert(cacheTagsTable)
+        .values(tags.map((tag) => ({ tag, hash })));
+    }
+  }
+
+  async invalidateByTag(tag: string): Promise<number> {
+    if (this.isDestroyed) {
+      throw new Error('Cache store has been destroyed');
+    }
+
+    // Find all hashes associated with this tag
+    const tagRows = await this.db
+      .select({ hash: cacheTagsTable.hash })
+      .from(cacheTagsTable)
+      .where(eq(cacheTagsTable.tag, tag));
+
+    if (tagRows.length === 0) return 0;
+
+    const hashes = tagRows.map((row) => row.hash);
+
+    // Delete cache entries
+    await this.db.delete(cacheTable).where(inArray(cacheTable.hash, hashes));
+
+    // Delete all tag associations for these hashes
+    await this.db
+      .delete(cacheTagsTable)
+      .where(inArray(cacheTagsTable.hash, hashes));
+
+    return hashes.length;
+  }
+
+  async invalidateByTags(tags: Array<string>): Promise<number> {
+    if (this.isDestroyed) {
+      throw new Error('Cache store has been destroyed');
+    }
+
+    if (tags.length === 0) return 0;
+
+    // Find all hashes associated with any of the tags
+    const tagRows = await this.db
+      .select({ hash: cacheTagsTable.hash })
+      .from(cacheTagsTable)
+      .where(inArray(cacheTagsTable.tag, tags));
+
+    if (tagRows.length === 0) return 0;
+
+    // Deduplicate hashes
+    const hashes = [...new Set(tagRows.map((row) => row.hash))];
+
+    // Delete cache entries
+    await this.db.delete(cacheTable).where(inArray(cacheTable.hash, hashes));
+
+    // Delete all tag associations for these hashes
+    await this.db
+      .delete(cacheTagsTable)
+      .where(inArray(cacheTagsTable.hash, hashes));
+
+    return hashes.length;
   }
 
   /**
@@ -245,6 +340,20 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
    */
   async cleanup(): Promise<void> {
     const now = Date.now();
+
+    // Find expired hashes to clean up their tags
+    const expiredRows = await this.db
+      .select({ hash: cacheTable.hash })
+      .from(cacheTable)
+      .where(and(gt(cacheTable.expiresAt, 0), lt(cacheTable.expiresAt, now)));
+
+    if (expiredRows.length > 0) {
+      const hashes = expiredRows.map((row) => row.hash);
+      await this.db
+        .delete(cacheTagsTable)
+        .where(inArray(cacheTagsTable.hash, hashes));
+    }
+
     await this.db
       .delete(cacheTable)
       .where(and(gt(cacheTable.expiresAt, 0), lt(cacheTable.expiresAt, now)));
@@ -288,6 +397,23 @@ export class SQLiteCacheStore<T = unknown> implements CacheStore<T> {
     // Create index on expires_at for efficient cleanup
     this.db.run(sql`
       CREATE INDEX IF NOT EXISTS idx_cache_expires_at ON cache(expires_at)
+    `);
+
+    // Create cache_tags table for tag-based invalidation
+    this.db.run(sql`
+      CREATE TABLE IF NOT EXISTS cache_tags (
+        tag TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        PRIMARY KEY (tag, hash)
+      )
+    `);
+
+    // Indexes for efficient lookups in both directions
+    this.db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_cache_tags_tag ON cache_tags(tag)
+    `);
+    this.db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_cache_tags_hash ON cache_tags(hash)
     `);
   }
 

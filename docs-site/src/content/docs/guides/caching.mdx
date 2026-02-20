@@ -189,6 +189,36 @@ await client.get(url, {
 For a clean way to organise per-request config, see the [Recommended Usage](/http-client-toolkit/guides/recommended-usage/) guide.
 :::
 
+## Tag-Based Invalidation
+
+Tag cache entries with arbitrary labels, then invalidate all entries sharing a tag after a mutation. This is useful for CRUD APIs where creating or updating a resource should bust related list and detail caches.
+
+```typescript
+// Tag responses during GET requests
+const user = await client.get('/api/users/123', {
+  cache: { tags: ['users', 'user:123'] },
+});
+const users = await client.get('/api/users', {
+  cache: { tags: ['users'] },
+});
+
+// After a mutation, invalidate related caches
+await client.invalidateByTag('user:123');  // busts /users/123 cache
+await client.invalidateByTags(['users']);   // busts both /users and /users/123 caches
+```
+
+Both methods return the number of cache entries that were invalidated.
+
+Tags are scoped per client — they follow the same `cacheScope` prefix as cache keys, so multiple clients sharing a store won't collide. When `globalScope: true` is set, tags are stored unscoped.
+
+### Re-tagging
+
+Calling `get()` with tags on an already-cached URL replaces the old tag associations when the cache entry is refreshed (e.g. after a `stale-while-revalidate` background fetch).
+
+### Empty tags
+
+Passing an empty `tags` array (or omitting `tags`) uses regular `set()` — no tag overhead.
+
 ## Private Cache Semantics
 
 HttpClient operates as a **private cache** (a client library, not a shared proxy), so:

@@ -29,4 +29,32 @@ export interface CacheStore<T = unknown> {
    *              prefix are removed. When omitted, all entries are cleared.
    */
   clear(scope?: string): Promise<void>;
+
+  /**
+   * Store a value with associated tags for later invalidation.
+   * @param hash The hash key for the cached item
+   * @param value The value to cache
+   * @param ttlSeconds TTL in seconds after which the item expires
+   * @param tags Array of string tags to associate with this cache entry
+   */
+  setWithTags(
+    hash: string,
+    value: T,
+    ttlSeconds: number,
+    tags: Array<string>,
+  ): Promise<void>;
+
+  /**
+   * Delete all cache entries associated with the given tag.
+   * @param tag The tag to invalidate
+   * @returns The number of cache entries that were deleted
+   */
+  invalidateByTag(tag: string): Promise<number>;
+
+  /**
+   * Delete all cache entries associated with any of the given tags.
+   * @param tags The tags to invalidate
+   * @returns The number of cache entries that were deleted
+   */
+  invalidateByTags(tags: Array<string>): Promise<number>;
 }

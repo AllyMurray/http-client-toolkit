@@ -9,6 +9,7 @@ import {
   DeleteCommand,
   ScanCommand,
   BatchWriteCommand,
+  QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -496,6 +497,312 @@ describe('DynamoDBCacheStore', () => {
       const getInput = ddbMock.commandCalls(GetCommand)[0]!.args[0].input;
       expect(getInput.Key?.pk).toBe('CACHE#my-hash');
       expect(getInput.Key?.sk).toBe('CACHE#my-hash');
+    });
+  });
+
+  describe('tag-based invalidation', () => {
+    it('setWithTags writes cache entry and tag items', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      await store.setWithTags('hash1', 'value1', 60, ['tagA', 'tagB']);
+
+      expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
+      expect(ddbMock).toHaveReceivedCommandTimes(BatchWriteCommand, 1);
+
+      const batchInput =
+        ddbMock.commandCalls(BatchWriteCommand)[0]!.args[0].input;
+      const requests = batchInput.RequestItems?.['http-client-toolkit'] ?? [];
+      expect(requests).toHaveLength(2);
+
+      const tagA = requests[0]!.PutRequest!.Item;
+      expect(tagA?.pk).toBe('TAG#tagA');
+      expect(tagA?.sk).toBe('CACHE#hash1');
+      expect(tagA?.ttl).toBeGreaterThanOrEqual(nowEpoch + 60);
+      expect(tagA?.ttl).toBeLessThanOrEqual(nowEpoch + 61);
+
+      const tagB = requests[1]!.PutRequest!.Item;
+      expect(tagB?.pk).toBe('TAG#tagB');
+      expect(tagB?.sk).toBe('CACHE#hash1');
+      expect(tagB?.ttl).toBeGreaterThanOrEqual(nowEpoch + 60);
+      expect(tagB?.ttl).toBeLessThanOrEqual(nowEpoch + 61);
+    });
+
+    it('setWithTags skips tag writes when tags array is empty', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+
+      await store.setWithTags('hash1', 'value1', 60, []);
+
+      expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+    });
+
+    it('setWithTags handles zero TTL for tags', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      await store.setWithTags('hash1', 'value1', 0, ['tagA']);
+
+      const batchInput =
+        ddbMock.commandCalls(BatchWriteCommand)[0]!.args[0].input;
+      const requests = batchInput.RequestItems?.['http-client-toolkit'] ?? [];
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.PutRequest!.Item?.ttl).toBe(0);
+    });
+
+    it('setWithTags handles negative TTL for tags', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      await store.setWithTags('hash1', 'value1', -1, ['tagA']);
+
+      const batchInput =
+        ddbMock.commandCalls(BatchWriteCommand)[0]!.args[0].input;
+      const requests = batchInput.RequestItems?.['http-client-toolkit'] ?? [];
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.PutRequest!.Item?.ttl).toBeCloseTo(nowEpoch, 0);
+    });
+
+    it('invalidateByTag queries and deletes tag items and cache entries', async () => {
+      ddbMock.on(QueryCommand).resolvesOnce({
+        Items: [
+          { pk: 'TAG#tagA', sk: 'CACHE#hash1' },
+          { pk: 'TAG#tagA', sk: 'CACHE#hash2' },
+        ],
+      });
+      ddbMock.on(BatchWriteCommand).resolves({});
+
+      const count = await store.invalidateByTag('tagA');
+
+      expect(count).toBe(2);
+      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
+
+      const queryInput = ddbMock.commandCalls(QueryCommand)[0]!.args[0].input;
+      expect(queryInput.KeyConditionExpression).toBe('pk = :pk');
+      expect(queryInput.ExpressionAttributeValues?.[':pk']).toBe('TAG#tagA');
+
+      // Should delete both cache entries and both tag items (4 deletes total)
+      const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
+      const allDeleteRequests = batchCalls.flatMap(
+        (call) =>
+          call.args[0].input.RequestItems?.['http-client-toolkit'] ?? [],
+      );
+
+      const deleteKeys = allDeleteRequests.map((req) => req.DeleteRequest!.Key);
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#hash1',
+        sk: 'CACHE#hash1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#hash2',
+        sk: 'CACHE#hash2',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#hash1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#hash2',
+      });
+    });
+
+    it('invalidateByTag returns 0 when no tag items found', async () => {
+      ddbMock.on(QueryCommand).resolvesOnce({ Items: [] });
+
+      const count = await store.invalidateByTag('tagA');
+
+      expect(count).toBe(0);
+      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+    });
+
+    it('invalidateByTags aggregates across multiple tags and deduplicates', async () => {
+      // First tag query: tagA has hash1 and hash2
+      ddbMock
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [
+            { pk: 'TAG#tagA', sk: 'CACHE#hash1' },
+            { pk: 'TAG#tagA', sk: 'CACHE#hash2' },
+          ],
+        })
+        // Second tag query: tagB has hash2 and hash3 (hash2 is duplicate)
+        .resolvesOnce({
+          Items: [
+            { pk: 'TAG#tagB', sk: 'CACHE#hash2' },
+            { pk: 'TAG#tagB', sk: 'CACHE#hash3' },
+          ],
+        });
+      ddbMock.on(BatchWriteCommand).resolves({});
+
+      const count = await store.invalidateByTags(['tagA', 'tagB']);
+
+      // Should return 3 unique hashes (hash1, hash2, hash3)
+      expect(count).toBe(3);
+      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 2);
+
+      // Verify delete keys: 3 unique cache entries + 4 tag items = 7 total deletes
+      const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
+      const allDeleteRequests = batchCalls.flatMap(
+        (call) =>
+          call.args[0].input.RequestItems?.['http-client-toolkit'] ?? [],
+      );
+
+      const deleteKeys = allDeleteRequests.map((req) => req.DeleteRequest!.Key);
+
+      // Cache entries (deduplicated)
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#hash1',
+        sk: 'CACHE#hash1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#hash2',
+        sk: 'CACHE#hash2',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#hash3',
+        sk: 'CACHE#hash3',
+      });
+
+      // CACHE#hash2 cache entry should only appear once
+      const hash2CacheDeletes = deleteKeys.filter(
+        (key) => key?.pk === 'CACHE#hash2' && key?.sk === 'CACHE#hash2',
+      );
+      expect(hash2CacheDeletes).toHaveLength(1);
+
+      // All 4 tag items should be deleted
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#hash1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#hash2',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagB',
+        sk: 'CACHE#hash2',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagB',
+        sk: 'CACHE#hash3',
+      });
+    });
+
+    it('invalidateByTags returns 0 for empty tags array', async () => {
+      const count = await store.invalidateByTags([]);
+
+      expect(count).toBe(0);
+      expect(ddbMock).not.toHaveReceivedCommand(QueryCommand);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+    });
+
+    it('invalidateByTags returns 0 when tags have no associated entries', async () => {
+      ddbMock.on(QueryCommand).resolves({ Items: [] });
+
+      const count = await store.invalidateByTags(['nonexistent']);
+
+      expect(count).toBe(0);
+      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
+      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+    });
+
+    it('invalidateByTag throws on destroyed store', async () => {
+      store.destroy();
+
+      await expect(store.invalidateByTag('tagA')).rejects.toThrow(
+        'Cache store has been destroyed',
+      );
+    });
+
+    it('invalidateByTags throws on destroyed store', async () => {
+      store.destroy();
+
+      await expect(store.invalidateByTags(['tagA'])).rejects.toThrow(
+        'Cache store has been destroyed',
+      );
+    });
+
+    it('invalidateByTag throws table-missing error', async () => {
+      ddbMock.on(QueryCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.invalidateByTag('tagA')).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('invalidateByTag throws table-missing on batch delete', async () => {
+      ddbMock.on(QueryCommand).resolvesOnce({
+        Items: [{ pk: 'TAG#tagA', sk: 'CACHE#hash1' }],
+      });
+      ddbMock.on(BatchWriteCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.invalidateByTag('tagA')).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('invalidateByTags throws table-missing error on query', async () => {
+      ddbMock.on(QueryCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.invalidateByTags(['tagA'])).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('invalidateByTags throws table-missing error on batch delete', async () => {
+      ddbMock
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [{ pk: 'TAG#tagA', sk: 'CACHE#hash1' }],
+        })
+        .resolvesOnce({
+          Items: [{ pk: 'TAG#tagB', sk: 'CACHE#hash2' }],
+        });
+      ddbMock.on(BatchWriteCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(store.invalidateByTags(['tagA', 'tagB'])).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
+    });
+
+    it('setWithTags throws table-missing on BatchWriteCommand', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(BatchWriteCommand).rejectsOnce(
+        new ResourceNotFoundException({
+          message: 'Requested resource not found',
+          $metadata: {},
+        }),
+      );
+
+      await expect(
+        store.setWithTags('hash1', 'value1', 60, ['tagA']),
+      ).rejects.toThrow(
+        'was not found. Create the table using your infrastructure',
+      );
     });
   });
 });

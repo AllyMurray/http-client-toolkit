@@ -27,6 +27,9 @@ describe('HttpClient', () => {
     const cache = {
       get: async () => undefined,
       set: async () => {},
+      setWithTags: async () => {},
+      invalidateByTag: async () => 0,
+      invalidateByTags: async () => 0,
       delete: async () => {},
       clear: async () => {},
     };
@@ -522,6 +525,20 @@ describe('HttpClient', () => {
       async set(hash: string) {
         observedHashes.push(hash);
       },
+      async setWithTags(
+        hash: string,
+        _v: unknown,
+        _t: number,
+        _tags: Array<string>,
+      ) {
+        observedHashes.push(hash);
+      },
+      async invalidateByTag() {
+        return 0;
+      },
+      async invalidateByTags() {
+        return 0;
+      },
       async delete() {},
       async clear() {},
     } as const;
@@ -549,6 +566,20 @@ describe('HttpClient', () => {
       },
       async set(hash: string) {
         observedHashes.push(hash);
+      },
+      async setWithTags(
+        hash: string,
+        _v: unknown,
+        _t: number,
+        _tags: Array<string>,
+      ) {
+        observedHashes.push(hash);
+      },
+      async invalidateByTag() {
+        return 0;
+      },
+      async invalidateByTags() {
+        return 0;
       },
       async delete() {},
       async clear() {},
@@ -581,6 +612,20 @@ describe('HttpClient', () => {
       },
       async set(hash: string) {
         observedHashes.push(hash);
+      },
+      async setWithTags(
+        hash: string,
+        _v: unknown,
+        _t: number,
+        _tags: Array<string>,
+      ) {
+        observedHashes.push(hash);
+      },
+      async invalidateByTag() {
+        return 0;
+      },
+      async invalidateByTags() {
+        return 0;
       },
       async delete() {},
       async clear() {},
@@ -625,6 +670,13 @@ describe('HttpClient', () => {
         return freshEntry;
       },
       async set() {},
+      async setWithTags() {},
+      async invalidateByTag() {
+        return 0;
+      },
+      async invalidateByTags() {
+        return 0;
+      },
       async delete() {},
       async clear() {},
     } as const;
@@ -1097,6 +1149,20 @@ describe('HttpClient', () => {
         },
         async set(hash: string, value: unknown, ttl: number) {
           store.set(hash, { value, ttl });
+        },
+        async setWithTags(
+          hash: string,
+          value: unknown,
+          ttl: number,
+          _tags: Array<string>,
+        ) {
+          store.set(hash, { value, ttl });
+        },
+        async invalidateByTag(_tag: string) {
+          return 0;
+        },
+        async invalidateByTags(_tags: Array<string>) {
+          return 0;
         },
         async delete(hash: string) {
           store.delete(hash);
@@ -3248,6 +3314,20 @@ describe('HttpClient', () => {
         async set(hash: string, value: unknown, ttl: number) {
           store.set(hash, { value, ttl });
         },
+        async setWithTags(
+          hash: string,
+          value: unknown,
+          ttl: number,
+          _tags: Array<string>,
+        ) {
+          store.set(hash, { value, ttl });
+        },
+        async invalidateByTag(_tag: string) {
+          return 0;
+        },
+        async invalidateByTags(_tags: Array<string>) {
+          return 0;
+        },
         async delete(hash: string) {
           store.delete(hash);
         },
@@ -4182,6 +4262,234 @@ describe('HttpClient', () => {
         expect(cache._store.has(`clientA:${rawHash}`)).toBe(false);
         expect(cache._store.has(`clientB:${rawHash}`)).toBe(true);
       });
+    });
+  });
+
+  describe('tag-based cache invalidation', () => {
+    function makeTaggableCacheStore() {
+      const store = new Map<string, { value: unknown; ttl: number }>();
+      const tagToHashes = new Map<string, Set<string>>();
+      const hashToTags = new Map<string, Set<string>>();
+      const calls: Array<{ method: string; args: Array<unknown> }> = [];
+      return {
+        async get(hash: string) {
+          return store.get(hash)?.value;
+        },
+        async set(hash: string, value: unknown, ttl: number) {
+          store.set(hash, { value, ttl });
+        },
+        async setWithTags(
+          hash: string,
+          value: unknown,
+          ttl: number,
+          tags: Array<string>,
+        ) {
+          calls.push({ method: 'setWithTags', args: [hash, value, ttl, tags] });
+          store.set(hash, { value, ttl });
+          // Remove old tag associations
+          const oldTags = hashToTags.get(hash);
+          if (oldTags) {
+            for (const t of oldTags) tagToHashes.get(t)?.delete(hash);
+          }
+          hashToTags.set(hash, new Set(tags));
+          for (const tag of tags) {
+            let hashes = tagToHashes.get(tag);
+            if (!hashes) {
+              hashes = new Set();
+              tagToHashes.set(tag, hashes);
+            }
+            hashes.add(hash);
+          }
+        },
+        async invalidateByTag(tag: string) {
+          calls.push({ method: 'invalidateByTag', args: [tag] });
+          const hashes = tagToHashes.get(tag);
+          if (!hashes) return 0;
+          let count = 0;
+          for (const hash of hashes) {
+            if (store.delete(hash)) count++;
+            hashToTags.delete(hash);
+          }
+          tagToHashes.delete(tag);
+          return count;
+        },
+        async invalidateByTags(tags: Array<string>) {
+          calls.push({ method: 'invalidateByTags', args: [tags] });
+          const allHashes = new Set<string>();
+          for (const tag of tags) {
+            const hashes = tagToHashes.get(tag);
+            if (hashes) {
+              for (const h of hashes) allHashes.add(h);
+              tagToHashes.delete(tag);
+            }
+          }
+          let count = 0;
+          for (const hash of allHashes) {
+            if (store.delete(hash)) count++;
+            hashToTags.delete(hash);
+          }
+          return count;
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear() {
+          store.clear();
+          tagToHashes.clear();
+          hashToTags.clear();
+        },
+        _store: store,
+        _calls: calls,
+        _tagToHashes: tagToHashes,
+      };
+    }
+
+    test('passes tags to setWithTags when cache.tags option is provided', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
+
+      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+
+      await client.get(`${baseUrl}/users`, {
+        cache: { tags: ['users'] },
+      });
+
+      const setWithTagsCalls = cache._calls.filter(
+        (c) => c.method === 'setWithTags',
+      );
+      expect(setWithTagsCalls).toHaveLength(1);
+      expect(setWithTagsCalls[0]!.args[3]).toEqual(['users']);
+    });
+
+    test('uses regular set when no tags provided', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache, globalScope: true },
+      });
+
+      nock(baseUrl).get('/items').reply(200, { data: 'value' });
+
+      await client.get(`${baseUrl}/items`);
+
+      const setWithTagsCalls = cache._calls.filter(
+        (c) => c.method === 'setWithTags',
+      );
+      expect(setWithTagsCalls).toHaveLength(0);
+
+      // Verify the value was still cached via regular set
+      const hash = hashRequest(`${baseUrl}/items`, {});
+      expect(cache._store.has(hash)).toBe(true);
+    });
+
+    test('scopes tags with client name by default', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'myapp',
+        cache: { store: cache },
+      });
+
+      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+
+      await client.get(`${baseUrl}/users`, {
+        cache: { tags: ['users'] },
+      });
+
+      const setWithTagsCalls = cache._calls.filter(
+        (c) => c.method === 'setWithTags',
+      );
+      expect(setWithTagsCalls).toHaveLength(1);
+      expect(setWithTagsCalls[0]!.args[3]).toEqual(['myapp:users']);
+    });
+
+    test('does not scope tags when globalScope is true', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'myapp',
+        cache: { store: cache, globalScope: true },
+      });
+
+      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+
+      await client.get(`${baseUrl}/users`, {
+        cache: { tags: ['users', 'user:123'] },
+      });
+
+      const setWithTagsCalls = cache._calls.filter(
+        (c) => c.method === 'setWithTags',
+      );
+      expect(setWithTagsCalls).toHaveLength(1);
+      expect(setWithTagsCalls[0]!.args[3]).toEqual(['users', 'user:123']);
+    });
+
+    test('invalidateByTag delegates to store with scoped tag', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'myapp',
+        cache: { store: cache },
+      });
+
+      await client.invalidateByTag('users');
+
+      const invalidateCalls = cache._calls.filter(
+        (c) => c.method === 'invalidateByTag',
+      );
+      expect(invalidateCalls).toHaveLength(1);
+      expect(invalidateCalls[0]!.args[0]).toBe('myapp:users');
+    });
+
+    test('invalidateByTags delegates to store with scoped tags', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'myapp',
+        cache: { store: cache },
+      });
+
+      await client.invalidateByTags(['users', 'posts']);
+
+      const invalidateCalls = cache._calls.filter(
+        (c) => c.method === 'invalidateByTags',
+      );
+      expect(invalidateCalls).toHaveLength(1);
+      expect(invalidateCalls[0]!.args[0]).toEqual([
+        'myapp:users',
+        'myapp:posts',
+      ]);
+    });
+
+    test('invalidateByTag returns 0 when no cache store', async () => {
+      const client = new HttpClient({ name: 'test' });
+
+      const result = await client.invalidateByTag('users');
+
+      expect(result).toBe(0);
+    });
+
+    test('invalidateByTags returns 0 when no cache store', async () => {
+      const client = new HttpClient({ name: 'test' });
+
+      const result = await client.invalidateByTags(['users', 'posts']);
+
+      expect(result).toBe(0);
+    });
+
+    test('invalidateByTag with globalScope passes raw tag', async () => {
+      const cache = makeTaggableCacheStore();
+      const client = new HttpClient({
+        name: 'myapp',
+        cache: { store: cache, globalScope: true },
+      });
+
+      await client.invalidateByTag('users');
+
+      const invalidateCalls = cache._calls.filter(
+        (c) => c.method === 'invalidateByTag',
+      );
+      expect(invalidateCalls).toHaveLength(1);
+      expect(invalidateCalls[0]!.args[0]).toBe('users');
     });
   });
 });

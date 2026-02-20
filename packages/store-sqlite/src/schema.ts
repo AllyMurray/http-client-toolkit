@@ -32,7 +32,14 @@ export const serverCooldownTable = sqliteTable('server_cooldowns', {
   cooldownUntil: integer('cooldown_until').notNull(),
 });
 
+// Cache tags table for tag-based cache invalidation
+export const cacheTagsTable = sqliteTable('cache_tags', {
+  tag: text('tag').notNull(),
+  hash: text('hash').notNull(),
+});
+
 export type CacheRow = typeof cacheTable.$inferSelect;
+export type CacheTagRow = typeof cacheTagsTable.$inferSelect;
 export type DedupeRow = typeof dedupeTable.$inferSelect;
 export type RateLimitRow = typeof rateLimitTable.$inferSelect;
 export type ServerCooldownRow = typeof serverCooldownTable.$inferSelect;

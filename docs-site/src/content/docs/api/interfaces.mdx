@@ -18,6 +18,9 @@ import type { CacheStore } from '@http-client-toolkit/core';
 | `set` | `(hash: string, value: T, ttlSeconds: number) => Promise<void>` | Store a value with TTL |
 | `delete` | `(hash: string) => Promise<void>` | Remove a cached entry |
 | `clear` | `(scope?: string) => Promise<void>` | Remove cached entries. When `scope` is provided, only entries whose key starts with that prefix are removed. When omitted, all entries are cleared |
+| `setWithTags` | `(hash: string, value: T, ttlSeconds: number, tags: string[]) => Promise<void>` | Store a value with TTL and associate it with tags for later invalidation |
+| `invalidateByTag` | `(tag: string) => Promise<number>` | Delete all entries associated with a tag. Returns the count of entries removed |
+| `invalidateByTags` | `(tags: string[]) => Promise<number>` | Delete all entries associated with any of the given tags. Returns the count of unique entries removed |
 
 ### TTL Semantics
 
@@ -133,6 +136,18 @@ class RedisCacheStore<T> implements CacheStore<T> {
   async clear(scope?: string): Promise<void> {
     // ... Redis FLUSHDB or pattern delete
     // When scope is provided, only delete keys starting with that prefix
+  }
+
+  async setWithTags(hash: string, value: T, ttlSeconds: number, tags: string[]): Promise<void> {
+    // ... Redis SET + SADD for each tag
+  }
+
+  async invalidateByTag(tag: string): Promise<number> {
+    // ... Redis SMEMBERS + DEL
+  }
+
+  async invalidateByTags(tags: string[]): Promise<number> {
+    // ... Redis SUNION + DEL
   }
 }
 ```

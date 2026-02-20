@@ -701,4 +701,161 @@ describe('SQLiteCacheStore', () => {
       }
     });
   });
+
+  describe('tag-based invalidation', () => {
+    it('setWithTags stores a value that can be retrieved with get', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      const value = await store.get('key1');
+      expect(value).toBe('value1');
+    });
+
+    it('invalidateByTag deletes all entries with that tag', async () => {
+      await store.setWithTags('user1', 'alice', 60, ['users']);
+      await store.setWithTags('user2', 'bob', 60, ['users']);
+      await store.setWithTags('other1', 'data', 60, ['other']);
+
+      const count = await store.invalidateByTag('users');
+      expect(count).toBe(2);
+
+      expect(await store.get('user1')).toBeUndefined();
+      expect(await store.get('user2')).toBeUndefined();
+      expect(await store.get('other1')).toBe('data');
+    });
+
+    it('invalidateByTags deletes entries across multiple tags', async () => {
+      await store.setWithTags('entry-a', 'a', 60, ['alpha']);
+      await store.setWithTags('entry-b', 'b', 60, ['beta']);
+      await store.setWithTags('entry-c', 'c', 60, ['gamma']);
+
+      const count = await store.invalidateByTags(['alpha', 'beta']);
+      expect(count).toBe(2);
+
+      expect(await store.get('entry-a')).toBeUndefined();
+      expect(await store.get('entry-b')).toBeUndefined();
+      expect(await store.get('entry-c')).toBe('c');
+    });
+
+    it('invalidateByTag returns 0 for unknown tag', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['known']);
+      const count = await store.invalidateByTag('unknown');
+      expect(count).toBe(0);
+
+      // Original entry is untouched
+      expect(await store.get('key1')).toBe('value1');
+    });
+
+    it('invalidateByTags returns 0 for empty array', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      const count = await store.invalidateByTags([]);
+      expect(count).toBe(0);
+
+      // Original entry is untouched
+      expect(await store.get('key1')).toBe('value1');
+    });
+
+    it('invalidateByTags returns 0 for non-existent tags', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      const count = await store.invalidateByTags(['unknown-tag']);
+      expect(count).toBe(0);
+
+      // Original entry is untouched
+      expect(await store.get('key1')).toBe('value1');
+    });
+
+    it('re-tagging replaces old associations', async () => {
+      await store.setWithTags('key1', 'v1', 60, ['old-tag']);
+      await store.setWithTags('key1', 'v2', 60, ['new-tag']);
+
+      // Old tag should no longer invalidate the entry
+      const countOld = await store.invalidateByTag('old-tag');
+      expect(countOld).toBe(0);
+      expect(await store.get('key1')).toBe('v2');
+
+      // New tag should invalidate the entry
+      const countNew = await store.invalidateByTag('new-tag');
+      expect(countNew).toBe(1);
+      expect(await store.get('key1')).toBeUndefined();
+    });
+
+    it('delete removes tag associations', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      await store.delete('key1');
+
+      // Tag should no longer reference anything
+      const count = await store.invalidateByTag('tag-a');
+      expect(count).toBe(0);
+    });
+
+    it('clear removes all tag associations', async () => {
+      // Unscoped clear
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      await store.setWithTags('key2', 'value2', 60, ['tag-b']);
+      await store.clear();
+
+      expect(await store.invalidateByTag('tag-a')).toBe(0);
+      expect(await store.invalidateByTag('tag-b')).toBe(0);
+
+      // Scoped clear
+      await store.setWithTags('scopeA:key1', 'a1', 60, ['tag-x']);
+      await store.setWithTags('scopeB:key1', 'b1', 60, ['tag-y']);
+      await store.clear('scopeA:');
+
+      expect(await store.invalidateByTag('tag-x')).toBe(0);
+      expect(await store.get('scopeB:key1')).toBe('b1');
+    });
+
+    it('entry with multiple tags is deleted by any of them', async () => {
+      await store.setWithTags('multi', 'value', 60, ['tag-a', 'tag-b']);
+
+      const count = await store.invalidateByTag('tag-a');
+      expect(count).toBe(1);
+      expect(await store.get('multi')).toBeUndefined();
+
+      // tag-b should also have been cleaned up since the hash was removed
+      const countB = await store.invalidateByTag('tag-b');
+      expect(countB).toBe(0);
+    });
+
+    it('invalidateByTags deduplicates hashes across tags', async () => {
+      await store.setWithTags('shared', 'value', 60, ['tag-a', 'tag-b']);
+
+      // Both tags point to the same hash; count should be 1, not 2
+      const count = await store.invalidateByTags(['tag-a', 'tag-b']);
+      expect(count).toBe(1);
+      expect(await store.get('shared')).toBeUndefined();
+    });
+
+    it('cleanup of expired items cleans up tag associations', async () => {
+      await store.setWithTags('expiring', 'value', 0.001, ['tag-exp']);
+      await store.setWithTags('permanent', 'value', 60, ['tag-perm']);
+
+      // Wait for the entry to expire
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await store.cleanup();
+
+      // Expired entry's tags should be cleaned up
+      const countExp = await store.invalidateByTag('tag-exp');
+      expect(countExp).toBe(0);
+
+      // Permanent entry should still be accessible
+      expect(await store.get('permanent')).toBe('value');
+    });
+
+    it('throws when called after destroy', async () => {
+      store.destroy();
+
+      await expect(
+        store.setWithTags('key', 'value', 60, ['tag']),
+      ).rejects.toThrow('Cache store has been destroyed');
+
+      await expect(store.invalidateByTag('tag')).rejects.toThrow(
+        'Cache store has been destroyed',
+      );
+
+      await expect(store.invalidateByTags(['tag'])).rejects.toThrow(
+        'Cache store has been destroyed',
+      );
+    });
+  });
 });

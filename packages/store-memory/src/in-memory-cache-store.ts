@@ -27,6 +27,8 @@ export interface InMemoryCacheStoreOptions {
 
 export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
   private cache = new Map<string, CacheItem<T>>();
+  private tagToHashes = new Map<string, Set<string>>();
+  private hashToTags = new Map<string, Set<string>>();
   private cleanupInterval?: NodeJS.Timeout;
   private readonly maxItems: number;
   private readonly maxMemoryBytes: number;
@@ -100,11 +102,14 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
       this.totalSize -= existing.size;
     }
     this.cache.delete(hash);
+    this.removeTagAssociations(hash);
   }
 
   async clear(scope?: string): Promise<void> {
     if (!scope) {
       this.cache.clear();
+      this.tagToHashes.clear();
+      this.hashToTags.clear();
       this.totalSize = 0;
       return;
     }
@@ -121,7 +126,112 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
         this.totalSize -= item.size;
       }
       this.cache.delete(key);
+      this.removeTagAssociations(key);
     }
+  }
+
+  async setWithTags(
+    hash: string,
+    value: T,
+    ttlSeconds: number,
+    tags: Array<string>,
+  ): Promise<void> {
+    await this.set(hash, value, ttlSeconds);
+
+    // Remove old tag associations for this hash
+    this.removeTagAssociations(hash);
+
+    // Set up new associations
+    this.hashToTags.set(hash, new Set(tags));
+    for (const tag of tags) {
+      let hashes = this.tagToHashes.get(tag);
+      if (!hashes) {
+        hashes = new Set();
+        this.tagToHashes.set(tag, hashes);
+      }
+      hashes.add(hash);
+    }
+  }
+
+  async invalidateByTag(tag: string): Promise<number> {
+    const hashes = this.tagToHashes.get(tag);
+    if (!hashes || hashes.size === 0) return 0;
+
+    let count = 0;
+    for (const hash of hashes) {
+      const existing = this.cache.get(hash);
+      if (existing) {
+        this.totalSize -= existing.size;
+        this.cache.delete(hash);
+        count++;
+      }
+      // Clean up this hash's tag associations (removing from other tags too)
+      const associatedTags = this.hashToTags.get(hash);
+      if (associatedTags) {
+        for (const t of associatedTags) {
+          if (t !== tag) {
+            this.tagToHashes.get(t)?.delete(hash);
+          }
+        }
+        this.hashToTags.delete(hash);
+      }
+    }
+    this.tagToHashes.delete(tag);
+    return count;
+  }
+
+  async invalidateByTags(tags: Array<string>): Promise<number> {
+    // Collect all unique hashes across all tags
+    const allHashes = new Set<string>();
+    for (const tag of tags) {
+      const hashes = this.tagToHashes.get(tag);
+      if (hashes) {
+        for (const h of hashes) allHashes.add(h);
+      }
+    }
+
+    let count = 0;
+    for (const hash of allHashes) {
+      const existing = this.cache.get(hash);
+      if (existing) {
+        this.totalSize -= existing.size;
+        this.cache.delete(hash);
+        count++;
+      }
+      // Clean up all tag associations for this hash
+      const associatedTags = this.hashToTags.get(hash);
+      if (associatedTags) {
+        for (const t of associatedTags) {
+          this.tagToHashes.get(t)?.delete(hash);
+        }
+        this.hashToTags.delete(hash);
+      }
+    }
+
+    // Clean up empty tag sets
+    for (const tag of tags) {
+      const remaining = this.tagToHashes.get(tag);
+      if (remaining && remaining.size === 0) {
+        this.tagToHashes.delete(tag);
+      }
+    }
+
+    return count;
+  }
+
+  private removeTagAssociations(hash: string): void {
+    const tags = this.hashToTags.get(hash);
+    if (!tags) return;
+    for (const tag of tags) {
+      const hashes = this.tagToHashes.get(tag);
+      if (hashes) {
+        hashes.delete(hash);
+        if (hashes.size === 0) {
+          this.tagToHashes.delete(tag);
+        }
+      }
+    }
+    this.hashToTags.delete(hash);
   }
 
   /**
@@ -178,6 +288,7 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
         this.totalSize -= item.size;
       }
       this.cache.delete(hash);
+      this.removeTagAssociations(hash);
     }
   }
 
@@ -218,6 +329,7 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
         const [key, item] = entry;
         this.totalSize -= item.size;
         this.cache.delete(key);
+        this.removeTagAssociations(key);
       }
     }
   }
@@ -291,6 +403,8 @@ export class InMemoryCacheStore<T = unknown> implements CacheStore<T> {
       this.cleanupInterval = undefined;
     }
     this.cache.clear();
+    this.tagToHashes.clear();
+    this.hashToTags.clear();
     this.totalSize = 0;
   }
 

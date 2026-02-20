@@ -627,4 +627,177 @@ describe('InMemoryCacheStore', () => {
       }).not.toThrow();
     });
   });
+
+  describe('tag-based invalidation', () => {
+    it('setWithTags stores a value that can be retrieved with get', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      const value = await store.get('key1');
+      expect(value).toBe('value1');
+    });
+
+    it('invalidateByTag deletes all entries with that tag', async () => {
+      await store.setWithTags('user1', 'alice', 60, ['users']);
+      await store.setWithTags('user2', 'bob', 60, ['users']);
+      await store.setWithTags('other1', 'misc', 60, ['other']);
+
+      const count = await store.invalidateByTag('users');
+      expect(count).toBe(2);
+
+      expect(await store.get('user1')).toBeUndefined();
+      expect(await store.get('user2')).toBeUndefined();
+      expect(await store.get('other1')).toBe('misc');
+    });
+
+    it('invalidateByTags deletes entries across multiple tags', async () => {
+      await store.setWithTags('entry-a', 'a', 60, ['tag-x']);
+      await store.setWithTags('entry-b', 'b', 60, ['tag-y']);
+      await store.setWithTags('entry-c', 'c', 60, ['tag-z']);
+
+      const count = await store.invalidateByTags(['tag-x', 'tag-y']);
+      expect(count).toBe(2);
+
+      expect(await store.get('entry-a')).toBeUndefined();
+      expect(await store.get('entry-b')).toBeUndefined();
+      expect(await store.get('entry-c')).toBe('c');
+    });
+
+    it('invalidateByTag returns 0 for unknown tag', async () => {
+      const count = await store.invalidateByTag('nonexistent');
+      expect(count).toBe(0);
+    });
+
+    it('invalidateByTags returns 0 for empty array', async () => {
+      const count = await store.invalidateByTags([]);
+      expect(count).toBe(0);
+    });
+
+    it('re-tagging replaces old associations', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['a']);
+      await store.setWithTags('key1', 'value1-updated', 60, ['b']);
+
+      const countA = await store.invalidateByTag('a');
+      expect(countA).toBe(0);
+
+      const countB = await store.invalidateByTag('b');
+      expect(countB).toBe(1);
+      expect(await store.get('key1')).toBeUndefined();
+    });
+
+    it('delete removes tag associations', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      await store.delete('key1');
+
+      const count = await store.invalidateByTag('tag-a');
+      expect(count).toBe(0);
+    });
+
+    it('clear removes all tag associations', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+      await store.setWithTags('key2', 'value2', 60, ['tag-b']);
+      await store.clear();
+
+      const countA = await store.invalidateByTag('tag-a');
+      const countB = await store.invalidateByTag('tag-b');
+      expect(countA).toBe(0);
+      expect(countB).toBe(0);
+    });
+
+    it('scoped clear removes tag associations for matching entries', async () => {
+      await store.setWithTags('user:1:profile', 'alice', 60, ['users']);
+      await store.setWithTags('org:1:name', 'acme', 60, ['orgs']);
+
+      await store.clear('user:1:');
+
+      const countUsers = await store.invalidateByTag('users');
+      expect(countUsers).toBe(0);
+
+      const countOrgs = await store.invalidateByTag('orgs');
+      expect(countOrgs).toBe(1);
+      expect(await store.get('org:1:name')).toBeUndefined();
+    });
+
+    it('LRU eviction cleans up tag associations', async () => {
+      const lruStore = new InMemoryCacheStore({ maxItems: 2 });
+
+      try {
+        await lruStore.setWithTags('key1', 'value1', 60, ['tag-a']);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await lruStore.setWithTags('key2', 'value2', 60, ['tag-b']);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        // Adding a third item should evict the oldest (key1)
+        await lruStore.setWithTags('key3', 'value3', 60, ['tag-c']);
+
+        expect(await lruStore.get('key1')).toBeUndefined();
+
+        const count = await lruStore.invalidateByTag('tag-a');
+        expect(count).toBe(0);
+      } finally {
+        lruStore.destroy();
+      }
+    });
+
+    it('cleanup of expired items cleans up tag associations', async () => {
+      const cleanupStore = new InMemoryCacheStore({ cleanupIntervalMs: 10 });
+
+      try {
+        await cleanupStore.setWithTags('expiring', 'value', 0.001, ['tag-a']);
+
+        // Wait for cleanup to run
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        const count = await cleanupStore.invalidateByTag('tag-a');
+        expect(count).toBe(0);
+      } finally {
+        cleanupStore.destroy();
+      }
+    });
+
+    it('entry with multiple tags is deleted by any of them', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['a', 'b']);
+
+      const countA = await store.invalidateByTag('a');
+      expect(countA).toBe(1);
+      expect(await store.get('key1')).toBeUndefined();
+
+      // Tag 'b' should no longer reference the deleted entry
+      const countB = await store.invalidateByTag('b');
+      expect(countB).toBe(0);
+    });
+
+    it('invalidateByTags deduplicates hashes across tags', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['a', 'b']);
+
+      const count = await store.invalidateByTags(['a', 'b']);
+      expect(count).toBe(1);
+      expect(await store.get('key1')).toBeUndefined();
+    });
+
+    it('destroy clears tag maps', async () => {
+      await store.setWithTags('key1', 'value1', 60, ['tag-a']);
+
+      store.destroy();
+
+      const value = await store.get('key1');
+      expect(value).toBeUndefined();
+    });
+
+    it('memory accounting is correct after tag invalidation', async () => {
+      await store.setWithTags('key1', 'x'.repeat(256), 60, ['tag-a']);
+      await store.setWithTags('key2', 'y'.repeat(256), 60, ['tag-a']);
+      await store.setWithTags('key3', 'z'.repeat(256), 60, ['tag-b']);
+
+      const statsBefore = store.getStats();
+      expect(statsBefore.totalItems).toBe(3);
+      expect(statsBefore.memoryUsageBytes).toBeGreaterThan(0);
+
+      await store.invalidateByTag('tag-a');
+
+      const statsAfter = store.getStats();
+      expect(statsAfter.totalItems).toBe(1);
+      expect(statsAfter.memoryUsageBytes).toBeGreaterThan(0);
+      expect(statsAfter.memoryUsageBytes).toBeLessThan(
+        statsBefore.memoryUsageBytes,
+      );
+    });
+  });
 });

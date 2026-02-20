@@ -357,6 +357,45 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
+   * Prefix a tag with the cache scope when configured.
+   */
+  private scopeTag(tag: string): string {
+    return this.options.cacheScope ? `${this.options.cacheScope}:${tag}` : tag;
+  }
+
+  /**
+   * Prefix multiple tags with the cache scope when configured.
+   */
+  private scopeTags(tags: Array<string>): Array<string> {
+    return this.options.cacheScope
+      ? tags.map((tag) => `${this.options.cacheScope}:${tag}`)
+      : tags;
+  }
+
+  /**
+   * Write a cache entry, associating tags when provided.
+   */
+  private async cacheSet(
+    hash: string,
+    value: unknown,
+    ttl: number,
+    tags?: Array<string>,
+  ): Promise<void> {
+    /* v8 ignore next -- callers always gate on this.stores.cache */
+    if (!this.stores.cache) return;
+    if (tags && tags.length > 0) {
+      await this.stores.cache.setWithTags(
+        hash,
+        value,
+        ttl,
+        this.scopeTags(tags),
+      );
+    } else {
+      await this.stores.cache.set(hash, value, ttl);
+    }
+  }
+
+  /**
    * Extract endpoint and params from URL for request hashing
    * @param url The full URL
    * @returns Object with endpoint and params for hashing
@@ -683,6 +722,7 @@ export class HttpClient implements HttpClientContract {
       cacheTTL: number;
       cacheOverrides?: CacheOverrideOptions;
     },
+    tags?: Array<string>,
   ): Promise<void> {
     const fetchHeaders = new Headers(requestHeaders);
     if (entry.metadata.etag) {
@@ -718,7 +758,7 @@ export class HttpClient implements HttpClientContract {
           calculateStoreTTL(refreshed.metadata, resolvedTTL),
           resolvedOverrides,
         );
-        await this.stores.cache?.set(hash, refreshed, ttl);
+        await this.cacheSet(hash, refreshed, ttl, tags);
         return;
       }
 
@@ -747,7 +787,7 @@ export class HttpClient implements HttpClientContract {
           calculateStoreTTL(newEntry.metadata, resolvedTTL),
           resolvedOverrides,
         );
-        await this.stores.cache?.set(hash, newEntry, ttl);
+        await this.cacheSet(hash, newEntry, ttl, tags);
       }
     } catch {
       // Background revalidation failures are silently ignored.
@@ -1113,6 +1153,26 @@ export class HttpClient implements HttpClientContract {
     );
   }
 
+  /**
+   * Invalidate all cache entries associated with the given tag.
+   * Tags are scoped to this client unless `cache.globalScope` is `true`.
+   * @returns The number of cache entries that were deleted, or 0 if no cache store is configured.
+   */
+  async invalidateByTag(tag: string): Promise<number> {
+    if (!this.stores.cache) return 0;
+    return this.stores.cache.invalidateByTag(this.scopeTag(tag));
+  }
+
+  /**
+   * Invalidate all cache entries associated with any of the given tags.
+   * Tags are scoped to this client unless `cache.globalScope` is `true`.
+   * @returns The number of cache entries that were deleted, or 0 if no cache store is configured.
+   */
+  async invalidateByTags(tags: Array<string>): Promise<number> {
+    if (!this.stores.cache) return 0;
+    return this.stores.cache.invalidateByTags(this.scopeTags(tags));
+  }
+
   async get<Result>(
     url: string,
     options: {
@@ -1120,7 +1180,11 @@ export class HttpClient implements HttpClientContract {
       priority?: RequestPriority;
       headers?: Record<string, string>;
       retry?: RetryOptions | false;
-      cache?: { ttl?: number; overrides?: CacheOverrideOptions };
+      cache?: {
+        ttl?: number;
+        overrides?: CacheOverrideOptions;
+        tags?: Array<string>;
+      };
     } = {},
   ): Promise<Result> {
     const { signal, priority = 'background', headers } = options;
@@ -1182,6 +1246,7 @@ export class HttpClient implements HttpClientContract {
                   entry,
                   headers,
                   cacheConfig,
+                  options.cache?.tags,
                 );
                 this.pendingRevalidations.push(revalidation);
                 // Cleanup resolved promises periodically
@@ -1270,9 +1335,12 @@ export class HttpClient implements HttpClientContract {
           cacheConfig.cacheOverrides,
         );
 
-        if (this.stores.cache) {
-          await this.stores.cache.set(cacheHash, refreshedEntry, ttl);
-        }
+        await this.cacheSet(
+          cacheHash,
+          refreshedEntry,
+          ttl,
+          options.cache?.tags,
+        );
 
         const result = refreshedEntry.value as Result;
 
@@ -1324,7 +1392,7 @@ export class HttpClient implements HttpClientContract {
             calculateStoreTTL(entry.metadata, cacheConfig.cacheTTL),
             cacheConfig.cacheOverrides,
           );
-          await this.stores.cache.set(cacheHash, entry, ttl);
+          await this.cacheSet(cacheHash, entry, ttl, options.cache?.tags);
         }
       }
 

@@ -79,7 +79,7 @@ The `url` must be an absolute URL (e.g. `https://api.example.com/items`).
 | `priority` | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores |
 | `headers` | `Record<string, string>` | — | Custom headers sent with the request; also used for Vary-based cache matching |
 | `retry` | `RetryOptions \| false` | — | Per-request retry override. Pass `false` to disable retries for this request |
-| `cache` | `{ ttl?: number; overrides?: CacheOverrideOptions }` | — | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level |
+| `cache` | `{ ttl?: number; overrides?: CacheOverrideOptions; tags?: string[] }` | — | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level; `tags` associates the cached entry with tags for later invalidation |
 
 ## Request Flow
 
@@ -148,6 +148,22 @@ The client respects `Cache-Control`, `ETag`, `Last-Modified`, and `Expires` head
 | `ignoreNoCache` | `boolean` | Skip revalidation even when `no-cache` is set |
 | `minimumTTL` | `number` | Floor on header-derived freshness (seconds) |
 | `maximumTTL` | `number` | Cap on header-derived freshness (seconds) |
+
+### `invalidateByTag(tag)`
+
+Invalidates all cache entries associated with the given tag. Returns the number of entries removed.
+
+```typescript
+const count = await client.invalidateByTag('users');
+```
+
+### `invalidateByTags(tags)`
+
+Invalidates all cache entries associated with any of the given tags. Returns the number of unique entries removed.
+
+```typescript
+const count = await client.invalidateByTags(['users', 'user:123']);
+```
 
 ### `flushRevalidations()`
 
