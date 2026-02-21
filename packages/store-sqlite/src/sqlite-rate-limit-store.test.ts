@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type { RateLimitConfig } from '@http-client-toolkit/core';
 import Database from 'better-sqlite3';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SQLiteRateLimitStore } from './sqlite-rate-limit-store.js';
 
 describe('SQLiteRateLimitStore', () => {
@@ -102,19 +102,24 @@ describe('SQLiteRateLimitStore', () => {
         defaultConfig: { limit: 2, windowMs: 50 },
       });
       const resource = 'test-resource';
+      const now = Date.now();
+      const dateSpy = vi.spyOn(Date, 'now');
 
       try {
+        dateSpy.mockReturnValue(now);
+
         // Fill up the limit
         await shortWindowStore.record(resource);
         await shortWindowStore.record(resource);
 
         expect(await shortWindowStore.canProceed(resource)).toBe(false);
 
-        // Wait for window to expire
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Advance past the window
+        dateSpy.mockReturnValue(now + 100);
 
         expect(await shortWindowStore.canProceed(resource)).toBe(true);
       } finally {
+        dateSpy.mockRestore();
         shortWindowStore.destroy();
       }
     });
@@ -125,14 +130,17 @@ describe('SQLiteRateLimitStore', () => {
         defaultConfig: { limit: 3, windowMs: 100 },
       });
       const resource = 'test-resource';
+      const now = Date.now();
+      const dateSpy = vi.spyOn(Date, 'now');
 
       try {
-        // Make 2 requests
+        // Make 2 requests at time 0
+        dateSpy.mockReturnValue(now);
         await shortWindowStore.record(resource);
         await shortWindowStore.record(resource);
 
-        // Wait half the window time
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Advance to half the window (50ms)
+        dateSpy.mockReturnValue(now + 50);
 
         // Make 1 more request (should be allowed)
         expect(await shortWindowStore.canProceed(resource)).toBe(true);
@@ -141,14 +149,15 @@ describe('SQLiteRateLimitStore', () => {
         // Should be at limit now
         expect(await shortWindowStore.canProceed(resource)).toBe(false);
 
-        // Wait for first requests to expire
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        // Advance to 110ms — first 2 requests (at t=0) expire, 3rd (at t=50) remains
+        dateSpy.mockReturnValue(now + 110);
 
         // Should be able to make 2 more requests
         expect(await shortWindowStore.canProceed(resource)).toBe(true);
         await shortWindowStore.record(resource);
         expect(await shortWindowStore.canProceed(resource)).toBe(true);
       } finally {
+        dateSpy.mockRestore();
         shortWindowStore.destroy();
       }
     });
