@@ -40,3 +40,7 @@ CLAUDE.md
 .claude/skills
 .codex/
 .opencode/
+
+# Git worktrees (Crystal)
+/worktrees/
+/worktree-*/
