@@ -8,7 +8,11 @@ export function parseUrl(
   const url = new URL(raw, 'http://localhost');
 
   let pathname = url.pathname;
-  if (basePath !== '/' && pathname.startsWith(basePath)) {
+  if (
+    basePath !== '/' &&
+    pathname.startsWith(basePath) &&
+    (pathname.length === basePath.length || pathname[basePath.length] === '/')
+  ) {
     pathname = pathname.slice(basePath.length) || '/';
   }
 
@@ -36,10 +40,19 @@ export function extractParam(
   return pathParts[paramIndex];
 }
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
+
 export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
     req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => {

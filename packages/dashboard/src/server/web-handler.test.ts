@@ -594,4 +594,74 @@ describe('createDashboardHandler', () => {
       dedupOnly.destroy();
     });
   });
+
+  describe('readonly mode', () => {
+    let readonlyHandler: DashboardFetchHandler;
+    let roCacheStore: InMemoryCacheStore;
+    let roRateLimitStore: InMemoryRateLimitStore;
+
+    beforeEach(() => {
+      roCacheStore = new InMemoryCacheStore();
+      roRateLimitStore = new InMemoryRateLimitStore();
+
+      readonlyHandler = createDashboardHandler({
+        clients: [
+          {
+            client: new HttpClient({
+              name: 'test-client',
+              cache: { store: roCacheStore },
+              rateLimit: { store: roRateLimitStore },
+            }),
+          },
+        ],
+        readonly: true,
+      });
+    });
+
+    afterEach(() => {
+      roCacheStore.destroy();
+      roRateLimitStore.destroy();
+    });
+
+    it('should allow GET requests in readonly mode', async () => {
+      const { status } = await fetchJson(
+        readonlyHandler,
+        '/api/clients/test-client/cache/stats',
+      );
+      expect(status).toBe(200);
+    });
+
+    it('should block DELETE requests in readonly mode', async () => {
+      const { status, body } = await fetchJson(
+        readonlyHandler,
+        '/api/clients/test-client/cache/entries',
+        { method: 'DELETE' },
+      );
+      expect(status).toBe(403);
+      expect(body.error).toBe('Dashboard is in readonly mode');
+    });
+
+    it('should block PUT requests in readonly mode', async () => {
+      const { status, body } = await fetchJson(
+        readonlyHandler,
+        '/api/clients/test-client/rate-limit/resources/api/config',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ limit: 100, windowMs: 60000 }),
+        },
+      );
+      expect(status).toBe(403);
+      expect(body.error).toBe('Dashboard is in readonly mode');
+    });
+
+    it('should block POST requests in readonly mode', async () => {
+      const { status, body } = await fetchJson(
+        readonlyHandler,
+        '/api/clients/test-client/rate-limit/resources/api/reset',
+        { method: 'POST' },
+      );
+      expect(status).toBe(403);
+      expect(body.error).toBe('Dashboard is in readonly mode');
+    });
+  });
 });

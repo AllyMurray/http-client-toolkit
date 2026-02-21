@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname, extname } from 'path';
+import { join, dirname, extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {
   detectCacheAdapter,
@@ -61,7 +61,7 @@ function getCurrentDir(): string {
 function getClientDir(): string {
   if (clientDir) return clientDir;
   const currentDir = getCurrentDir();
-  clientDir = join(currentDir, '..', 'dist', 'client');
+  clientDir = resolve(currentDir, '..', 'dist', 'client');
   return clientDir;
 }
 
@@ -93,7 +93,10 @@ function serveStaticWeb(pathname: string): Response {
 
   /* v8 ignore start -- static file serving requires real dist/client build artifacts */
   if (pathname !== '/' && pathname !== '/index.html') {
-    const filePath = join(dir, pathname);
+    const filePath = resolve(join(dir, pathname));
+    if (!filePath.startsWith(dir + '/')) {
+      return new Response('Bad request', { status: 400 });
+    }
     if (existsSync(filePath)) {
       try {
         const content = readFileSync(filePath);
@@ -191,7 +194,14 @@ async function routeApi(
       return errorResponse(`Unknown client: ${clientName}`, 404);
     }
 
-    return routeClientApi(request, subPath, method, client, query);
+    return routeClientApi(
+      request,
+      subPath,
+      method,
+      client,
+      query,
+      ctx.readonly,
+    );
   }
 
   // Unknown API route
@@ -202,13 +212,21 @@ async function routeApi(
   return null;
 }
 
+function isMutatingMethod(method: string): boolean {
+  return method === 'DELETE' || method === 'PUT' || method === 'POST';
+}
+
 async function routeClientApi(
   request: Request,
   subPath: string,
   method: string,
   client: ClientContext,
   query: URLSearchParams,
+  readonly: boolean,
 ): Promise<Response> {
+  if (readonly && isMutatingMethod(method)) {
+    return errorResponse('Dashboard is in readonly mode', 403);
+  }
   // Cache routes
   if (subPath.startsWith('/cache')) {
     if (!client.cache) return errorResponse('Cache store not configured', 404);
@@ -417,13 +435,19 @@ export function createDashboardHandler(
   const ctx: MultiClientContext = {
     clients,
     pollIntervalMs: opts.pollIntervalMs,
+    readonly: opts.readonly,
   };
 
   return async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);
       let pathname = url.pathname;
-      if (opts.basePath !== '/' && pathname.startsWith(opts.basePath)) {
+      if (
+        opts.basePath !== '/' &&
+        pathname.startsWith(opts.basePath) &&
+        (pathname.length === opts.basePath.length ||
+          pathname[opts.basePath.length] === '/')
+      ) {
         pathname = pathname.slice(opts.basePath.length) || '/';
       }
 

@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
 import type { ServerResponse } from 'http';
-import { join, dirname, extname } from 'path';
+import { join, dirname, extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const MIME_TYPES: Record<string, string> = {
@@ -35,7 +35,7 @@ function getClientDir(): string {
   const currentDir = getCurrentDir();
   // In built output: lib/index.js → dist/client/
   // Navigate from lib/ up to package root, then into dist/client
-  clientDir = join(currentDir, '..', 'dist', 'client');
+  clientDir = resolve(currentDir, '..', 'dist', 'client');
   return clientDir;
 }
 
@@ -65,7 +65,12 @@ export function serveStatic(res: ServerResponse, pathname: string): boolean {
 
   // Try to serve a static file
   if (pathname !== '/' && pathname !== '/index.html') {
-    const filePath = join(dir, pathname);
+    const filePath = resolve(join(dir, pathname));
+    if (!filePath.startsWith(dir + '/')) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Bad request');
+      return true;
+    }
     if (existsSync(filePath)) {
       try {
         const content = readFileSync(filePath);

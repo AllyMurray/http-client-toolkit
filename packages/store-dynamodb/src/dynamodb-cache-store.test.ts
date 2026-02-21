@@ -55,13 +55,15 @@ describe('DynamoDBCacheStore', () => {
       expect(value).toBeUndefined();
     });
 
-    it('should delete values', async () => {
+    it('should delete values and clean up associated tags', async () => {
       ddbMock.on(DeleteCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
       await expect(store.delete('key1')).resolves.not.toThrow();
     });
 
     it('should handle deletion of non-existent keys', async () => {
       ddbMock.on(DeleteCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
       await expect(store.delete('non-existent')).resolves.not.toThrow();
     });
 
@@ -81,13 +83,18 @@ describe('DynamoDBCacheStore', () => {
       await expect(store.clear()).resolves.not.toThrow();
     });
 
-    it('should use CACHE# prefix filter when clearing without scope', async () => {
+    it('should use CACHE# and TAG# prefix filter when clearing without scope', async () => {
       ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
       await store.clear();
 
       const scanInput = ddbMock.commandCalls(ScanCommand)[0]!.args[0].input;
-      expect(scanInput.FilterExpression).toBe('begins_with(pk, :prefix)');
-      expect(scanInput.ExpressionAttributeValues?.[':prefix']).toBe('CACHE#');
+      expect(scanInput.FilterExpression).toBe(
+        'begins_with(pk, :cachePrefix) OR begins_with(pk, :tagPrefix)',
+      );
+      expect(scanInput.ExpressionAttributeValues?.[':cachePrefix']).toBe(
+        'CACHE#',
+      );
+      expect(scanInput.ExpressionAttributeValues?.[':tagPrefix']).toBe('TAG#');
     });
 
     it('should use CACHE#<scope> prefix filter when clearing with scope', async () => {
@@ -99,8 +106,8 @@ describe('DynamoDBCacheStore', () => {
       await store.clear('my-scope');
 
       const scanInput = ddbMock.commandCalls(ScanCommand)[0]!.args[0].input;
-      expect(scanInput.FilterExpression).toBe('begins_with(pk, :prefix)');
-      expect(scanInput.ExpressionAttributeValues?.[':prefix']).toBe(
+      expect(scanInput.FilterExpression).toBe('begins_with(pk, :cachePrefix)');
+      expect(scanInput.ExpressionAttributeValues?.[':cachePrefix']).toBe(
         'CACHE#my-scope',
       );
     });
@@ -147,6 +154,7 @@ describe('DynamoDBCacheStore', () => {
         },
       });
       ddbMock.on(DeleteCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // delete → deleteTagsForHash
       const value = await store.get('key1');
       expect(value).toBeUndefined();
     });
@@ -317,10 +325,12 @@ describe('DynamoDBCacheStore', () => {
         },
       });
       ddbMock.on(DeleteCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // delete → deleteTagsForHash
 
       const value = await store.get('corrupt');
       expect(value).toBeUndefined();
-      expect(ddbMock.calls()).toHaveLength(2);
+      // GetCommand + DeleteCommand + ScanCommand (tag cleanup)
+      expect(ddbMock.calls()).toHaveLength(3);
     });
   });
 
@@ -503,6 +513,7 @@ describe('DynamoDBCacheStore', () => {
   describe('tag-based invalidation', () => {
     it('setWithTags writes cache entry and tag items', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // deleteTagsForHash
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       const nowEpoch = Math.floor(Date.now() / 1000);
@@ -531,15 +542,18 @@ describe('DynamoDBCacheStore', () => {
 
     it('setWithTags skips tag writes when tags array is empty', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // deleteTagsForHash
 
       await store.setWithTags('hash1', 'value1', 60, []);
 
       expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
+      // BatchWriteCommand should not be called (no new tags, no old tags to clean)
       expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
     });
 
     it('setWithTags handles zero TTL for tags', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // deleteTagsForHash
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       await store.setWithTags('hash1', 'value1', 0, ['tagA']);
@@ -553,6 +567,7 @@ describe('DynamoDBCacheStore', () => {
 
     it('setWithTags handles negative TTL for tags', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // deleteTagsForHash
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       const nowEpoch = Math.floor(Date.now() / 1000);
@@ -789,8 +804,104 @@ describe('DynamoDBCacheStore', () => {
       );
     });
 
+    it('delete should clean up associated tag items', async () => {
+      ddbMock.on(DeleteCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({
+        Items: [
+          { pk: 'TAG#tagA', sk: 'CACHE#hash1' },
+          { pk: 'TAG#tagB', sk: 'CACHE#hash1' },
+        ],
+      });
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      await store.delete('hash1');
+
+      // Verify the scan looked for TAG items referencing this hash
+      const scanInput = ddbMock.commandCalls(ScanCommand)[0]!.args[0].input;
+      expect(scanInput.FilterExpression).toBe(
+        'begins_with(pk, :tagPrefix) AND sk = :sk',
+      );
+      expect(scanInput.ExpressionAttributeValues?.[':sk']).toBe('CACHE#hash1');
+
+      // Verify the tag items were deleted
+      const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
+      const allDeleteRequests = batchCalls.flatMap(
+        (call) =>
+          call.args[0].input.RequestItems?.['http-client-toolkit'] ?? [],
+      );
+      const deleteKeys = allDeleteRequests.map((req) => req.DeleteRequest!.Key);
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#hash1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagB',
+        sk: 'CACHE#hash1',
+      });
+    });
+
+    it('setWithTags should clean up old tags before writing new ones', async () => {
+      ddbMock.on(PutCommand).resolvesOnce({});
+      // deleteTagsForHash finds old tag items
+      ddbMock.on(ScanCommand).resolvesOnce({
+        Items: [{ pk: 'TAG#oldTag', sk: 'CACHE#hash1' }],
+      });
+      // First BatchWrite: delete old tags, Second BatchWrite: write new tags
+      ddbMock.on(BatchWriteCommand).resolves({});
+
+      await store.setWithTags('hash1', 'value1', 60, ['newTag']);
+
+      // Verify old tag was deleted and new tag was written
+      const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
+      expect(batchCalls.length).toBe(2);
+
+      // First batch: delete old tag
+      const deleteRequests =
+        batchCalls[0]!.args[0].input.RequestItems?.['http-client-toolkit'] ??
+        [];
+      expect(deleteRequests[0]!.DeleteRequest!.Key).toEqual({
+        pk: 'TAG#oldTag',
+        sk: 'CACHE#hash1',
+      });
+
+      // Second batch: write new tag
+      const putRequests =
+        batchCalls[1]!.args[0].input.RequestItems?.['http-client-toolkit'] ??
+        [];
+      expect(putRequests[0]!.PutRequest!.Item?.pk).toBe('TAG#newTag');
+      expect(putRequests[0]!.PutRequest!.Item?.sk).toBe('CACHE#hash1');
+    });
+
+    it('clear without scope should also delete TAG items', async () => {
+      ddbMock.on(ScanCommand).resolvesOnce({
+        Items: [
+          { pk: 'CACHE#k1', sk: 'CACHE#k1' },
+          { pk: 'TAG#tagA', sk: 'CACHE#k1' },
+        ],
+      });
+      ddbMock.on(BatchWriteCommand).resolvesOnce({});
+
+      await store.clear();
+
+      const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
+      const allDeleteRequests = batchCalls.flatMap(
+        (call) =>
+          call.args[0].input.RequestItems?.['http-client-toolkit'] ?? [],
+      );
+      const deleteKeys = allDeleteRequests.map((req) => req.DeleteRequest!.Key);
+      expect(deleteKeys).toContainEqual({
+        pk: 'CACHE#k1',
+        sk: 'CACHE#k1',
+      });
+      expect(deleteKeys).toContainEqual({
+        pk: 'TAG#tagA',
+        sk: 'CACHE#k1',
+      });
+    });
+
     it('setWithTags throws table-missing on BatchWriteCommand', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
+      ddbMock.on(ScanCommand).resolvesOnce({ Items: [] }); // deleteTagsForHash
       ddbMock.on(BatchWriteCommand).rejectsOnce(
         new ResourceNotFoundException({
           message: 'Requested resource not found',

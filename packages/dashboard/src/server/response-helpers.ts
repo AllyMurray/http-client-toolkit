@@ -29,3 +29,7 @@ export function sendNotFound(res: ServerResponse): void {
 export function sendMethodNotAllowed(res: ServerResponse): void {
   sendError(res, 'Method not allowed', 405);
 }
+
+export function sendForbidden(res: ServerResponse): void {
+  sendError(res, 'Dashboard is in readonly mode', 403);
+}

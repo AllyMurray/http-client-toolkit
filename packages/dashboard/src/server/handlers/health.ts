@@ -16,6 +16,7 @@ export interface ClientContext {
 export interface MultiClientContext {
   clients: Map<string, ClientContext>;
   pollIntervalMs: number;
+  readonly: boolean;
 }
 
 function clientStoreInfo(client: ClientContext) {
