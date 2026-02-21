@@ -14,9 +14,43 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 npm install @http-client-toolkit/store-sqlite
 ```
 
-## Database Configuration
+## Quick Start (Factory)
 
-All SQLite stores accept either a **file path** or an existing **better-sqlite3 Database instance**.
+The `createSQLiteStores` factory is the recommended way to set up all stores with a shared database connection:
+
+```typescript
+import { HttpClient } from '@http-client-toolkit/core';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
+
+const stores = createSQLiteStores({ database: './app.db' });
+
+const client = new HttpClient({
+  name: 'my-api',
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
+  rateLimit: { store: stores.rateLimit },
+});
+
+// Cleanup: closes all stores and the shared database connection
+await stores.close();
+```
+
+The factory accepts per-store options:
+
+```typescript
+const stores = createSQLiteStores({
+  database: './app.db',
+  cache: { cleanupIntervalMs: 0 },
+  dedupe: { jobTimeoutMs: 10_000 },
+  rateLimit: { defaultConfig: { limit: 100, windowMs: 60_000 } },
+});
+```
+
+By default, the factory uses `':memory:'` (non-persistent).
+
+## Individual Stores
+
+You can also create stores individually. Each accepts either a **file path** or an existing **better-sqlite3 Database instance**.
 
 ### Shared Database Instance
 

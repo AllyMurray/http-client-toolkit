@@ -194,8 +194,40 @@ Resources:
 
 ## Usage
 
+### Factory (recommended)
+
+The `createDynamoDBStores` factory creates all stores sharing a single client and table:
+
 ```typescript
 import { HttpClient } from '@http-client-toolkit/core';
+import { createDynamoDBStores } from '@http-client-toolkit/store-dynamodb';
+
+const stores = createDynamoDBStores({ region: 'us-east-1' });
+
+const client = new HttpClient({
+  name: 'my-api',
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
+  rateLimit: { store: stores.rateLimit },
+});
+
+// Cleanup: closes all stores and destroys the shared client
+await stores.close();
+```
+
+You can also pass an existing client:
+
+```typescript
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { createDynamoDBStores } from '@http-client-toolkit/store-dynamodb';
+
+const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
+const stores = createDynamoDBStores({ client: dynamoClient });
+```
+
+### Individual stores
+
+```typescript
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBCacheStore,
@@ -205,12 +237,9 @@ import {
 
 const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
 
-const client = new HttpClient({
-  name: 'my-api',
-  cache: new DynamoDBCacheStore({ client: dynamoClient }),
-  dedupe: new DynamoDBDedupeStore({ client: dynamoClient }),
-  rateLimit: new DynamoDBRateLimitStore({ client: dynamoClient }),
-});
+const cache = new DynamoDBCacheStore({ client: dynamoClient });
+const dedupe = new DynamoDBDedupeStore({ client: dynamoClient });
+const rateLimit = new DynamoDBRateLimitStore({ client: dynamoClient });
 ```
 
 All stores accept a `DynamoDBDocumentClient`, a plain `DynamoDBClient` (auto-wrapped), or no client (created internally with optional `region`).
