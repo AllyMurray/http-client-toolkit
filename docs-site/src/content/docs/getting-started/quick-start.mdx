@@ -74,21 +74,19 @@ For data that should survive process restarts, use SQLite stores:
 
 ```typescript
 import { HttpClient } from '@http-client-toolkit/core';
-import Database from 'better-sqlite3';
-import {
-  SQLiteCacheStore,
-  SQLiteDedupeStore,
-  SQLiteRateLimitStore,
-} from '@http-client-toolkit/store-sqlite';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
 
-const db = new Database('./app.db');
+const stores = createSQLiteStores({ database: './app.db' });
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: { store: new SQLiteCacheStore({ database: db }) },
-  dedupe: new SQLiteDedupeStore({ database: db }),
-  rateLimit: { store: new SQLiteRateLimitStore({ database: db }) },
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
+  rateLimit: { store: stores.rateLimit },
 });
+
+// Cleanup
+await stores.close();
 ```
 
 ## Distributed / Serverless
@@ -97,21 +95,19 @@ For multi-instance or serverless environments, use DynamoDB stores:
 
 ```typescript
 import { HttpClient } from '@http-client-toolkit/core';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBCacheStore,
-  DynamoDBDedupeStore,
-  DynamoDBRateLimitStore,
-} from '@http-client-toolkit/store-dynamodb';
+import { createDynamoDBStores } from '@http-client-toolkit/store-dynamodb';
 
-const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
+const stores = createDynamoDBStores({ region: 'us-east-1' });
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: { store: new DynamoDBCacheStore({ client: dynamoClient }) },
-  dedupe: new DynamoDBDedupeStore({ client: dynamoClient }),
-  rateLimit: { store: new DynamoDBRateLimitStore({ client: dynamoClient }) },
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
+  rateLimit: { store: stores.rateLimit },
 });
+
+// Cleanup
+await stores.close();
 ```
 
 :::note
@@ -124,24 +120,21 @@ Here's a more complete example using SQLite with adaptive rate limiting, respons
 
 ```typescript
 import { HttpClient, HttpClientError } from '@http-client-toolkit/core';
-import Database from 'better-sqlite3';
-import {
-  SQLiteCacheStore,
-  SQLiteDedupeStore,
-  SqliteAdaptiveRateLimitStore,
-} from '@http-client-toolkit/store-sqlite';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
 
-const db = new Database('./http-store.db');
+const stores = createSQLiteStores({
+  database: './http-store.db',
+  rateLimit: {
+    defaultConfig: { limit: 200, windowMs: 3_600_000 },
+  },
+});
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: { store: new SQLiteCacheStore({ database: db }), ttl: 600 },
-  dedupe: new SQLiteDedupeStore({ database: db }),
+  cache: { store: stores.cache, ttl: 600 },
+  dedupe: stores.dedupe,
   rateLimit: {
-    store: new SqliteAdaptiveRateLimitStore({
-      database: db,
-      defaultConfig: { limit: 200, windowMs: 3_600_000 },
-    }),
+    store: stores.adaptiveRateLimit,
     throw: false,
     maxWaitTime: 30_000,
   },

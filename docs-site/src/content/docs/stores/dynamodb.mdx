@@ -192,9 +192,45 @@ Enable DynamoDB native TTL on the `ttl` attribute for automatic item expiration.
   </TabItem>
 </Tabs>
 
-## Client Configuration
+## Quick Start (Factory)
 
-All DynamoDB stores accept a `DynamoDBDocumentClient`, a plain `DynamoDBClient` (auto-wrapped), or no client (created internally with optional `region`):
+The `createDynamoDBStores` factory is the recommended way to set up all stores with a shared client:
+
+```typescript
+import { HttpClient } from '@http-client-toolkit/core';
+import { createDynamoDBStores } from '@http-client-toolkit/store-dynamodb';
+
+const stores = createDynamoDBStores({ region: 'us-east-1' });
+
+const client = new HttpClient({
+  name: 'my-api',
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
+  rateLimit: { store: stores.rateLimit },
+});
+
+// Cleanup: closes all stores and destroys the shared client
+await stores.close();
+```
+
+You can pass an existing client and per-store options:
+
+```typescript
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { createDynamoDBStores } from '@http-client-toolkit/store-dynamodb';
+
+const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
+const stores = createDynamoDBStores({
+  client: dynamoClient,
+  rateLimit: { defaultConfig: { limit: 100, windowMs: 60_000 } },
+});
+```
+
+When you pass your own client, the factory will **not** destroy it on `close()` — you retain ownership.
+
+## Individual Stores
+
+You can also create stores individually. All accept a `DynamoDBDocumentClient`, a plain `DynamoDBClient` (auto-wrapped), or no client (created internally with optional `region`):
 
 ```typescript
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
