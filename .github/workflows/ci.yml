@@ -24,6 +24,17 @@ jobs:
           node-version: 22.x
           cache: pnpm
 
+      - name: Reject major version changesets
+        if: vars.ALLOW_MAJOR_VERSION != 'true'
+        run: |
+          for file in .changeset/*.md; do
+            [ "$(basename "$file")" = "README.md" ] && continue
+            if grep -qE '^\s*".+":\s*major\s*$' "$file"; then
+              echo "::error::Major changeset found in $file. Major version bumps are blocked. Set the ALLOW_MAJOR_VERSION repo variable to 'true' to allow."
+              exit 1
+            fi
+          done
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
