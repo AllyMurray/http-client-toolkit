@@ -1,5 +1,15 @@
 # @http-client-toolkit/dashboard
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [b55885b]
+  - @http-client-toolkit/store-dynamodb@3.0.0
+  - @http-client-toolkit/store-sqlite@3.0.0
+  - @http-client-toolkit/core@3.0.0
+  - @http-client-toolkit/store-memory@3.0.0
+
 ## 2.0.1
 
 ### Patch Changes

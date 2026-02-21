@@ -1,5 +1,15 @@
 # @http-client-toolkit/store-dynamodb
 
+## 3.0.0
+
+### Minor Changes
+
+- b55885b: Add shared-database factory functions (`createStores`) for DynamoDB and SQLite stores
+
+### Patch Changes
+
+- @http-client-toolkit/core@3.0.0
+
 ## 2.0.1
 
 ### Patch Changes

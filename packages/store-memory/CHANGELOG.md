@@ -1,5 +1,11 @@
 # @http-client-toolkit/store-memory
 
+## 3.0.0
+
+### Patch Changes
+
+- @http-client-toolkit/core@3.0.0
+
 ## 2.0.1
 
 ### Patch Changes
