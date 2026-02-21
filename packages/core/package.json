@@ -50,7 +50,7 @@
     "lib/**"
   ],
   "homepage": "https://github.com/AllyMurray/http-client-toolkit#readme",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "bugs": {
     "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
   },

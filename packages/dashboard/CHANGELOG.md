@@ -1,5 +1,16 @@
 # @http-client-toolkit/dashboard
 
+## 2.0.1
+
+### Patch Changes
+
+- 4b88c5e: Fix path traversal vulnerability in dashboard static file serving, add readonly mode for mutation endpoints, add request body size limit, and clean up stale DynamoDB TAG items on delete/clear/update
+- Updated dependencies [4b88c5e]
+  - @http-client-toolkit/store-dynamodb@2.0.1
+  - @http-client-toolkit/core@2.0.1
+  - @http-client-toolkit/store-memory@2.0.1
+  - @http-client-toolkit/store-sqlite@2.0.1
+
 ## 2.0.0
 
 ### Patch Changes
