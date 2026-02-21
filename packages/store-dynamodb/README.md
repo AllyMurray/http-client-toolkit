@@ -206,9 +206,9 @@ const stores = createDynamoDBStores({ region: 'us-east-1' });
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: stores.cache,
+  cache: { store: stores.cache },
   dedupe: stores.dedupe,
-  rateLimit: stores.rateLimit,
+  rateLimit: { store: stores.rateLimit },
 });
 
 // Cleanup: closes all stores and destroys the shared client

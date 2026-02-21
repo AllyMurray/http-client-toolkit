@@ -163,19 +163,22 @@ export const githubClient = new HttpClient({
     }),
   },
 });
+```
 
-// lib/stripe.ts
+```typescript
+// lib/stripe.ts — SQLite for persistence
 import { HttpClient } from '@http-client-toolkit/core';
-import { InMemoryCacheStore, InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
+
+const stores = createSQLiteStores({
+  database: './stripe-store.db',
+  rateLimit: { defaultConfig: { limit: 25, windowMs: 1_000 } },
+});
 
 export const stripeClient = new HttpClient({
   name: 'stripe',
-  cache: { store: new InMemoryCacheStore() },
-  rateLimit: {
-    store: new InMemoryRateLimitStore({
-      defaultConfig: { limit: 25, windowMs: 1_000 },
-    }),
-  },
+  cache: { store: stores.cache },
+  rateLimit: { store: stores.rateLimit },
 });
 ```
 
@@ -183,27 +186,27 @@ This is the right default for most applications. Each API has its own rate limit
 
 ### Shared Stores
 
-When multiple clients should share the same underlying storage — for example, a single SQLite database or a shared cache pool — pass the same store instance to each client:
+When multiple clients should share the same underlying storage — for example, a single SQLite database or a shared cache pool — pass the same store instances to each client.
+
+For persistent backends like SQLite, use the factory to create a shared set of stores with a single database connection:
 
 ```typescript
 // lib/stores.ts
-import { InMemoryCacheStore, InMemoryDedupeStore } from '@http-client-toolkit/store-memory';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
 
-// Shared across all clients
-export const sharedCache = new InMemoryCacheStore();
-export const sharedDedupe = new InMemoryDedupeStore();
+export const stores = createSQLiteStores({ database: './app.db' });
 ```
 
 ```typescript
 // lib/github.ts
 import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
-import { sharedCache, sharedDedupe } from './stores.js';
+import { stores } from './stores.js';
 
 export const githubClient = new HttpClient({
   name: 'github',
-  cache: { store: sharedCache },
-  dedupe: sharedDedupe,
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
   rateLimit: {
     store: new InMemoryRateLimitStore({
       defaultConfig: { limit: 100, windowMs: 60_000 },
@@ -214,12 +217,12 @@ export const githubClient = new HttpClient({
 // lib/stripe.ts
 import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
-import { sharedCache, sharedDedupe } from './stores.js';
+import { stores } from './stores.js';
 
 export const stripeClient = new HttpClient({
   name: 'stripe',
-  cache: { store: sharedCache },
-  dedupe: sharedDedupe,
+  cache: { store: stores.cache },
+  dedupe: stores.dedupe,
   rateLimit: {
     store: new InMemoryRateLimitStore({
       defaultConfig: { limit: 25, windowMs: 1_000 },
@@ -228,9 +231,19 @@ export const stripeClient = new HttpClient({
 });
 ```
 
+The same pattern works with in-memory stores when you don't need persistence:
+
+```typescript
+// lib/stores.ts
+import { InMemoryCacheStore, InMemoryDedupeStore } from '@http-client-toolkit/store-memory';
+
+export const sharedCache = new InMemoryCacheStore();
+export const sharedDedupe = new InMemoryDedupeStore();
+```
+
 Cache and dedup are shared so both clients write to and read from the same pool. Each client's cache keys are automatically prefixed with its name (e.g. `github:` and `stripe:`), so entries don't collide even in the same store. Rate limiting is kept separate because each API enforces its own limits.
 
-This pattern is especially useful with persistent backends like SQLite, where you want a single database file rather than one per client. It also means the [dashboard](/dashboard/overview/) shows the same cache data regardless of which client you select.
+This also means the [dashboard](/dashboard/overview/) shows the same cache data regardless of which client you select.
 
 ### When to Share
 

@@ -26,9 +26,9 @@ const stores = createSQLiteStores({ database: './app.db' });
 
 const client = new HttpClient({
   name: 'my-api',
-  cache: stores.cache,
+  cache: { store: stores.cache },
   dedupe: stores.dedupe,
-  rateLimit: stores.rateLimit,
+  rateLimit: { store: stores.rateLimit },
 });
 
 const data = await client.get<{ name: string }>(
