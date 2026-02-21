@@ -14,10 +14,36 @@ Requires Node.js >= 20.
 
 ## Usage
 
-All stores accept either a file path or an existing `better-sqlite3` Database instance. Passing a shared instance lets multiple stores operate on the same database file:
+### Factory (recommended)
+
+The `createSQLiteStores` factory creates all stores sharing a single database connection:
 
 ```typescript
 import { HttpClient } from '@http-client-toolkit/core';
+import { createSQLiteStores } from '@http-client-toolkit/store-sqlite';
+
+const stores = createSQLiteStores({ database: './app.db' });
+
+const client = new HttpClient({
+  name: 'my-api',
+  cache: stores.cache,
+  dedupe: stores.dedupe,
+  rateLimit: stores.rateLimit,
+});
+
+const data = await client.get<{ name: string }>(
+  'https://api.example.com/user/1',
+);
+
+// Cleanup: stops timers and closes the shared database connection
+await stores.close();
+```
+
+### Individual stores
+
+All stores also accept either a file path or an existing `better-sqlite3` Database instance. Passing a shared instance lets multiple stores operate on the same database file:
+
+```typescript
 import Database from 'better-sqlite3';
 import {
   SQLiteCacheStore,
@@ -27,16 +53,9 @@ import {
 
 const db = new Database('./app.db');
 
-const client = new HttpClient({
-  name: 'my-api',
-  cache: new SQLiteCacheStore({ database: db }),
-  dedupe: new SQLiteDedupeStore({ database: db }),
-  rateLimit: new SQLiteRateLimitStore({ database: db }),
-});
-
-const data = await client.get<{ name: string }>(
-  'https://api.example.com/user/1',
-);
+const cache = new SQLiteCacheStore({ database: db });
+const dedupe = new SQLiteDedupeStore({ database: db });
+const rateLimit = new SQLiteRateLimitStore({ database: db });
 ```
 
 By default, stores use `':memory:'` (non-persistent). When a file path is passed instead of a Database instance, the store manages its own connection and will close it when `close()` is called.

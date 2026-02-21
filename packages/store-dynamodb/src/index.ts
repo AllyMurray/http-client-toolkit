@@ -2,11 +2,16 @@ export { DynamoDBCacheStore } from './dynamodb-cache-store.js';
 export { DynamoDBDedupeStore } from './dynamodb-dedupe-store.js';
 export { DynamoDBRateLimitStore } from './dynamodb-rate-limit-store.js';
 export { DynamoDBAdaptiveRateLimitStore } from './dynamodb-adaptive-rate-limit-store.js';
+export { createDynamoDBStores } from './create-stores.js';
 
 export type { DynamoDBCacheStoreOptions } from './dynamodb-cache-store.js';
 export type { DynamoDBDedupeStoreOptions } from './dynamodb-dedupe-store.js';
 export type { DynamoDBRateLimitStoreOptions } from './dynamodb-rate-limit-store.js';
 export type { DynamoDBAdaptiveRateLimitStoreOptions } from './dynamodb-adaptive-rate-limit-store.js';
+export type {
+  CreateDynamoDBStoresOptions,
+  DynamoDBStores,
+} from './create-stores.js';
 
 export { DEFAULT_TABLE_NAME, TABLE_SCHEMA } from './table.js';
 

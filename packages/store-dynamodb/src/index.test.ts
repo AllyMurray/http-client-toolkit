@@ -9,4 +9,8 @@ describe('store-dynamodb index exports', () => {
     expect(dynamodb.DEFAULT_TABLE_NAME).toBe('http-client-toolkit');
     expect(dynamodb.TABLE_SCHEMA).toBeDefined();
   });
+
+  it('exports createDynamoDBStores factory', () => {
+    expect(dynamodb.createDynamoDBStores).toBeTypeOf('function');
+  });
 });

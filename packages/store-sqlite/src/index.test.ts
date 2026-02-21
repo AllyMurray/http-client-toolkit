@@ -10,4 +10,8 @@ describe('store-sqlite index exports', () => {
     expect(sqlite.dedupeTable).toBeDefined();
     expect(sqlite.rateLimitTable).toBeDefined();
   });
+
+  it('exports createSQLiteStores factory', () => {
+    expect(sqlite.createSQLiteStores).toBeTypeOf('function');
+  });
 });
