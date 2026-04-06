@@ -3794,8 +3794,8 @@ describe('HttpClient', () => {
           resourceKeyResolver: (url) =>
             new URL(url).pathname.startsWith('/api/issue/')
               ? 'issues'
-              : new URL(url).pathname.split('/').filter(Boolean).at(-1) ??
-                'unknown',
+              : (new URL(url).pathname.split('/').filter(Boolean).at(-1) ??
+                'unknown'),
           rateLimit: { store: rateLimitStub, throw: false },
         });
 
