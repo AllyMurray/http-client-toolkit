@@ -302,7 +302,7 @@ describe('HttpClient', () => {
     );
 
     await expect(client.get(`${baseUrl}/blocked-by-cooldown`)).rejects.toThrow(
-      /Rate limit exceeded for origin/,
+      /Rate limit exceeded for resource/,
     );
   });
 
@@ -322,7 +322,7 @@ describe('HttpClient', () => {
     expect(result.ok).toBe(true);
 
     await expect(client.get(`${baseUrl}/cooldown-active`)).rejects.toThrow(
-      /Rate limit exceeded for origin/,
+      /Rate limit exceeded for resource/,
     );
   });
 
@@ -352,7 +352,7 @@ describe('HttpClient', () => {
     expect(result.ok).toBe(true);
 
     await expect(client.get(`${baseUrl}/custom-cooldown`)).rejects.toThrow(
-      /Rate limit exceeded for origin/,
+      /Rate limit exceeded for resource/,
     );
   });
 
@@ -907,8 +907,7 @@ describe('HttpClient', () => {
         remaining?: number;
         resetMs?: number;
       };
-      getOriginScope: (url: string) => string;
-      getResource: (url: string) => string;
+      resolveRateLimitKey: (url: string) => string;
     };
 
     expect(privateClient.normalizeHeaderNames(undefined, ['x-a'])).toEqual([
@@ -958,9 +957,11 @@ describe('HttpClient', () => {
     });
     expect(privateClient.parseCombinedRateLimitHeader(undefined)).toEqual({});
 
-    expect(privateClient.getOriginScope('not-a-url')).toBe('unknown');
-    expect(privateClient.getResource('/still-not-a-url')).toBe('unknown');
-    expect(privateClient.getResource(`${baseUrl}/`)).toBe(baseUrl);
+    expect(privateClient.resolveRateLimitKey('not-a-url')).toBe('unknown');
+    expect(privateClient.resolveRateLimitKey('/still-not-a-url')).toBe(
+      'unknown',
+    );
+    expect(privateClient.resolveRateLimitKey(`${baseUrl}/`)).toBe(baseUrl);
 
     const privateApplyClient = client as unknown as {
       applyServerRateLimitHints: (
@@ -1003,7 +1004,7 @@ describe('HttpClient', () => {
 
     const privateClient = client as unknown as {
       serverCooldowns: Map<string, number>;
-      getOriginScope: (url: string) => string;
+      resolveRateLimitKey: (url: string) => string;
       enforceServerCooldown: (
         url: string,
         signal?: AbortSignal,
@@ -1015,7 +1016,7 @@ describe('HttpClient', () => {
       ) => Promise<boolean>;
     };
 
-    const scope = privateClient.getOriginScope(baseUrl);
+    const scope = privateClient.resolveRateLimitKey(baseUrl);
     privateClient.serverCooldowns.set(scope, Date.now() + 1);
     await expect(
       privateClient.enforceServerCooldown(`${baseUrl}/cooldown-wait`),
@@ -1127,11 +1128,11 @@ describe('HttpClient', () => {
 
     const waitingPrivate = waitingClient as unknown as {
       serverCooldowns: Map<string, number>;
-      getOriginScope: (url: string) => string;
+      resolveRateLimitKey: (url: string) => string;
       enforceServerCooldown: (url: string) => Promise<void>;
     };
 
-    const scope = waitingPrivate.getOriginScope(baseUrl);
+    const scope = waitingPrivate.resolveRateLimitKey(baseUrl);
     waitingPrivate.serverCooldowns.set(scope, Date.now() + 50);
 
     await expect(
@@ -3700,12 +3701,119 @@ describe('HttpClient', () => {
       });
     });
 
-    describe('resourceExtractor', () => {
-      test('overrides default origin-based resource extraction', async () => {
-        let recordedResource: string | undefined;
+    describe('resourceKeyResolver', () => {
+      test('uses the origin by default', () => {
+        const client = new HttpClient({ name: 'test' });
+        const privateClient = client as unknown as {
+          resolveRateLimitKey: (url: string) => string;
+        };
+
+        expect(privateClient.resolveRateLimitKey(`${baseUrl}/items`)).toBe(
+          baseUrl,
+        );
+      });
+
+      test('uses HttpClientOptions.resourceKeyResolver when provided', () => {
+        const client = new HttpClient({
+          name: 'test',
+          resourceKeyResolver: (url) => `custom:${new URL(url).pathname}`,
+        });
+        const privateClient = client as unknown as {
+          resolveRateLimitKey: (url: string) => string;
+        };
+
+        expect(privateClient.resolveRateLimitKey(`${baseUrl}/items`)).toBe(
+          'custom:/items',
+        );
+      });
+
+      test('falls back to legacy rateLimit.resourceExtractor', () => {
+        const client = new HttpClient({
+          name: 'test',
+          rateLimit: {
+            resourceExtractor: (url) => `legacy:${new URL(url).pathname}`,
+          },
+        });
+        const privateClient = client as unknown as {
+          resolveRateLimitKey: (url: string) => string;
+        };
+
+        expect(privateClient.resolveRateLimitKey(`${baseUrl}/items`)).toBe(
+          'legacy:/items',
+        );
+      });
+
+      test('prefers resourceKeyResolver over legacy resourceExtractor', () => {
+        const client = new HttpClient({
+          name: 'test',
+          resourceKeyResolver: () => 'top-level',
+          rateLimit: {
+            resourceExtractor: () => 'legacy',
+          },
+        });
+        const privateClient = client as unknown as {
+          resolveRateLimitKey: (url: string) => string;
+        };
+
+        expect(privateClient.resolveRateLimitKey(`${baseUrl}/items`)).toBe(
+          'top-level',
+        );
+      });
+
+      test('uses the custom resolver for canProceed, getWaitTime, and record', async () => {
+        nock(baseUrl).get('/api/issues').reply(200, { ok: true });
+
+        const calls = {
+          canProceed: [] as Array<string>,
+          getWaitTime: [] as Array<string>,
+          record: [] as Array<string>,
+        };
+        let canProceedChecks = 0;
+
         const rateLimitStub = {
           async canProceed(resource: string) {
-            recordedResource = resource;
+            calls.canProceed.push(resource);
+            canProceedChecks += 1;
+            return canProceedChecks > 1;
+          },
+          async record(resource: string) {
+            calls.record.push(resource);
+          },
+          async getStatus() {
+            return { remaining: 1, resetTime: new Date(), limit: 60 };
+          },
+          async reset() {},
+          async getWaitTime(resource: string) {
+            calls.getWaitTime.push(resource);
+            return 0;
+          },
+        } as const;
+
+        const client = new HttpClient({
+          name: 'test',
+          resourceKeyResolver: (url) =>
+            new URL(url).pathname.startsWith('/api/issue/')
+              ? 'issues'
+              : new URL(url).pathname.split('/').filter(Boolean).at(-1) ??
+                'unknown',
+          rateLimit: { store: rateLimitStub, throw: false },
+        });
+
+        await client.get(`${baseUrl}/api/issues`);
+
+        expect(calls.canProceed).toEqual(['issues', 'issues']);
+        expect(calls.getWaitTime).toEqual(['issues']);
+        expect(calls.record).toEqual(['issues']);
+      });
+
+      test('normalizes retrieve and list URLs into the same rate-limit bucket', async () => {
+        nock(baseUrl)
+          .get('/api/issue/4000-123')
+          .reply(429, { message: 'slow down' }, { 'Retry-After': '1' });
+
+        const cooldowns = new Map<string, number>();
+        const rateLimitStub = {
+          async canProceed() {
             return true;
           },
           async record() {},
@@ -3716,48 +3824,37 @@ describe('HttpClient', () => {
           async getWaitTime() {
             return 0;
           },
-        } as const;
+          async setCooldown(resource: string, cooldownUntilMs: number) {
+            cooldowns.set(resource, cooldownUntilMs);
+          },
+          async getCooldown(resource: string) {
+            return cooldowns.get(resource);
+          },
+          async clearCooldown(resource: string) {
+            cooldowns.delete(resource);
+          },
+        };
 
         const client = new HttpClient({
           name: 'test',
-          rateLimit: {
-            store: rateLimitStub,
-            resourceExtractor: (url) => {
-              const u = new URL(url);
-              return `${u.origin}${u.pathname}`;
-            },
+          resourceKeyResolver: (url) => {
+            const path = new URL(url).pathname;
+            if (path === '/api/issues' || path.startsWith('/api/issue/')) {
+              return 'issues';
+            }
+            return path.split('/').filter(Boolean).at(-1) ?? 'unknown';
           },
+          rateLimit: { store: rateLimitStub, throw: true },
         });
 
-        nock(baseUrl).get('/items/42').reply(200, { id: 42 });
+        await expect(
+          client.get(`${baseUrl}/api/issue/4000-123`),
+        ).rejects.toThrow(HttpClientError);
 
-        await client.get(`${baseUrl}/items/42`);
+        expect(cooldowns.has('issues')).toBe(true);
 
-        expect(recordedResource).toBe(`${baseUrl}/items/42`);
-      });
-
-      test('getResource uses origin by default', () => {
-        const client = new HttpClient({ name: 'test' });
-        const privateClient = client as unknown as {
-          getResource: (url: string) => string;
-        };
-
-        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(baseUrl);
-      });
-
-      test('getResource uses resourceExtractor when provided', () => {
-        const client = new HttpClient({
-          name: 'test',
-          rateLimit: {
-            resourceExtractor: (url) => `custom:${new URL(url).pathname}`,
-          },
-        });
-        const privateClient = client as unknown as {
-          getResource: (url: string) => string;
-        };
-
-        expect(privateClient.getResource(`${baseUrl}/items`)).toBe(
-          'custom:/items',
+        await expect(client.get(`${baseUrl}/api/issues`)).rejects.toThrow(
+          /Rate limit exceeded for resource 'issues'/,
         );
       });
     });

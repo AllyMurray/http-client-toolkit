@@ -28,6 +28,7 @@ new HttpClient(options)
 | `cache` | `HttpClientCacheOptions` | — | Cache configuration (see below) |
 | `dedupe` | `DedupeStore<T>` | — | Request deduplication |
 | `rateLimit` | `HttpClientRateLimitOptions` | — | Rate limit configuration (see below) |
+| `resourceKeyResolver` | `(url: string) => string` | URL origin | Resolve the logical rate-limit resource key for a URL |
 | `fetchFn` | `(url: string, init?: RequestInit) => Promise<Response>` | `globalThis.fetch` | Custom fetch implementation |
 | `requestInterceptor` | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | — | Pre-request hook to modify the outgoing request |
 | `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response` | — | Post-response hook to inspect/modify the raw Response |
@@ -56,6 +57,8 @@ new HttpClient(options)
 | `resourceExtractor` | `(url: string) => string` | URL origin | Extract rate-limit resource key from URL |
 | `configs` | `RateLimitConfigMap` | — | Per-resource rate limit configurations |
 | `defaultConfig` | `RateLimitConfig` | — | Fallback rate limit config when no per-resource config matches |
+
+`resourceKeyResolver` applies everywhere the client performs rate-limit accounting, including store checks and server cooldowns. `rateLimit.resourceExtractor` remains supported for compatibility, but `resourceKeyResolver` takes precedence when both are provided.
 
 ## Methods
 

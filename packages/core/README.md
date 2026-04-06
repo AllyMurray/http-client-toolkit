@@ -97,6 +97,7 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 | `cacheOverrides`      | `CacheOverrideOptions`                     | -        | Override cache header behaviors         |
 | `retry`               | `RetryOptions \| false`                    | -        | Retry config; `false` disables globally |
 | `rateLimitHeaders`    | `RateLimitHeaderConfig`                    | defaults | Configure standard/custom header names  |
+| `resourceKeyResolver` | `(url: string) => string`                  | URL origin | Customize how rate-limit resource keys are derived |
 
 ### Request Flow
 
@@ -151,6 +152,27 @@ const client = new HttpClient({
     retryAfter: ['RetryAfterSeconds'],
     remaining: ['Remaining-Requests'],
     reset: ['Window-Reset-Seconds'],
+  },
+});
+```
+
+### Custom Rate-Limit Buckets
+
+Use `resourceKeyResolver` when list and retrieve routes should share the same
+rate-limit bucket:
+
+```typescript
+const client = new HttpClient({
+  name: 'issues-api',
+  resourceKeyResolver: (url) => {
+    const path = new URL(url).pathname;
+    if (path === '/api/issues' || path.startsWith('/api/issue/')) {
+      return 'issues';
+    }
+    return new URL(url).origin;
+  },
+  rateLimit: {
+    store: rateLimitStore,
   },
 });
 ```

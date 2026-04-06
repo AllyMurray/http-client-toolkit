@@ -170,7 +170,7 @@ All clients share one database and one set of stores, but cache entries are scop
 |---------|-------------------|---------------|
 | **Cache** | Private — keys prefixed with client name (e.g. `github:hash`) | Set `globalScope: true` to share cache entries across clients |
 | **Dedup** | Shared — uses the raw request hash with no client prefix | Dedup is always shared when clients use the same store, which is usually desirable |
-| **Rate limit** | Shared by resource — tracked per URL origin, not per client | Use `resourceExtractor` to customise how resources are derived from URLs |
+| **Rate limit** | Shared by resource — tracked per URL origin, not per client | Use `resourceKeyResolver` to customise how resources are derived from URLs |
 
 ### Sharing Cache Across Clients
 
