@@ -106,6 +106,13 @@ jobs:
           git add .
           git commit -m "chore: release packages"
 
+      - name: Setup npm for trusted publishing
+        if: steps.release_mode.outputs.should_publish == 'true'
+        run: |
+          pnpm add -g npm@11.6.2
+          node --version
+          npm --version
+
       - name: Publish packages
         if: steps.release_mode.outputs.should_publish == 'true'
         run: npx changeset publish --access public
