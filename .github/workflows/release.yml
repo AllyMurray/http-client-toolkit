@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish_existing:
+        description: Publish the currently versioned packages on the selected ref without requiring changesets
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -71,34 +77,55 @@ jobs:
             echo "No changesets found, skipping publish"
           fi
 
+      - name: Decide release mode
+        id: release_mode
+        run: |
+          HAS_CHANGESETS="${{ steps.changesets.outputs.has_changesets }}"
+          PUBLISH_EXISTING="${{ github.event_name == 'workflow_dispatch' && inputs.publish_existing }}"
+
+          if [ "$HAS_CHANGESETS" = "true" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "should_version=true" >> "$GITHUB_OUTPUT"
+            echo "mode=version-and-publish" >> "$GITHUB_OUTPUT"
+          elif [ "$PUBLISH_EXISTING" = "true" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "should_version=false" >> "$GITHUB_OUTPUT"
+            echo "mode=publish-existing" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "should_version=false" >> "$GITHUB_OUTPUT"
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Release mode: $(cat "$GITHUB_OUTPUT" | tail -n 1)"
+
       - name: Version packages
-        if: steps.changesets.outputs.has_changesets == 'true'
+        if: steps.release_mode.outputs.should_version == 'true'
         run: |
           npx changeset version
           git add .
           git commit -m "chore: release packages"
-          git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update npm for trusted publishing
-        if: steps.changesets.outputs.has_changesets == 'true'
-        run: npm install -g npm@latest
 
       - name: Publish packages
-        if: steps.changesets.outputs.has_changesets == 'true'
+        if: steps.release_mode.outputs.should_publish == 'true'
         run: npx changeset publish --access public
         env:
           NPM_CONFIG_PROVENANCE: true
 
+      - name: Push release commit
+        if: steps.release_mode.outputs.should_version == 'true'
+        run: git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push tags
-        if: steps.changesets.outputs.has_changesets == 'true'
+        if: steps.release_mode.outputs.should_publish == 'true'
         run: git push origin --tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub releases
-        if: steps.changesets.outputs.has_changesets == 'true'
+        if: steps.release_mode.outputs.should_publish == 'true'
         run: |
           for TAG in $(git tag --points-at HEAD); do
             echo "Creating release for $TAG"
