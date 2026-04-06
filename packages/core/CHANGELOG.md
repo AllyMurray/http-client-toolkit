@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 4.0.0
+
+### Minor Changes
+
+- c94f7c6: Add a top-level `resourceKeyResolver` option for rate-limit bucketing, deprecate legacy `rateLimit.resourceExtractor`, and preserve backward-compatible fallback behavior.
+
 ## 3.0.0
 
 ## 2.0.1
