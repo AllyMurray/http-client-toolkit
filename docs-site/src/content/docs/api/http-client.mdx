@@ -54,11 +54,11 @@ new HttpClient(options)
 | `throw` | `boolean` | `true` | Throw when rate limited vs. wait |
 | `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
 | `headers` | `RateLimitHeaderConfig` | defaults | Configure standard/custom header names |
-| `resourceExtractor` | `(url: string) => string` | URL origin | Extract rate-limit resource key from URL |
+| `resourceExtractor` | `(url: string) => string` | URL origin | Deprecated. Use `resourceKeyResolver` instead |
 | `configs` | `RateLimitConfigMap` | — | Per-resource rate limit configurations |
 | `defaultConfig` | `RateLimitConfig` | — | Fallback rate limit config when no per-resource config matches |
 
-`resourceKeyResolver` applies everywhere the client performs rate-limit accounting, including store checks and server cooldowns. `rateLimit.resourceExtractor` remains supported for compatibility, but `resourceKeyResolver` takes precedence when both are provided.
+`resourceKeyResolver` applies everywhere the client performs rate-limit accounting, including store checks and server cooldowns. `rateLimit.resourceExtractor` is deprecated, retained for compatibility, and only used when `resourceKeyResolver` is not provided.
 
 ## Methods
 

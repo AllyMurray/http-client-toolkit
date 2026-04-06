@@ -177,6 +177,9 @@ const client = new HttpClient({
 });
 ```
 
+`rateLimit.resourceExtractor` is deprecated and kept temporarily for backward
+compatibility.
+
 ### Exports
 
 - `HttpClient` - Main client class
