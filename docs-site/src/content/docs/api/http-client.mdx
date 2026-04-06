@@ -28,6 +28,7 @@ new HttpClient(options)
 | `cache` | `HttpClientCacheOptions` | — | Cache configuration (see below) |
 | `dedupe` | `DedupeStore<T>` | — | Request deduplication |
 | `rateLimit` | `HttpClientRateLimitOptions` | — | Rate limit configuration (see below) |
+| `resourceKeyResolver` | `(url: string) => string` | URL origin | Resolve the logical rate-limit resource key for a URL |
 | `fetchFn` | `(url: string, init?: RequestInit) => Promise<Response>` | `globalThis.fetch` | Custom fetch implementation |
 | `requestInterceptor` | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | — | Pre-request hook to modify the outgoing request |
 | `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response` | — | Post-response hook to inspect/modify the raw Response |
@@ -53,9 +54,11 @@ new HttpClient(options)
 | `throw` | `boolean` | `true` | Throw when rate limited vs. wait |
 | `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
 | `headers` | `RateLimitHeaderConfig` | defaults | Configure standard/custom header names |
-| `resourceExtractor` | `(url: string) => string` | URL origin | Extract rate-limit resource key from URL |
+| `resourceExtractor` | `(url: string) => string` | URL origin | Deprecated. Use `resourceKeyResolver` instead |
 | `configs` | `RateLimitConfigMap` | — | Per-resource rate limit configurations |
 | `defaultConfig` | `RateLimitConfig` | — | Fallback rate limit config when no per-resource config matches |
+
+`resourceKeyResolver` applies everywhere the client performs rate-limit accounting, including store checks and server cooldowns. `rateLimit.resourceExtractor` is deprecated, retained for compatibility, and only used when `resourceKeyResolver` is not provided.
 
 ## Methods
 

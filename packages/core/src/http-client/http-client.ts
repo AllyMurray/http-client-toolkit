@@ -121,8 +121,13 @@ export interface HttpClientRateLimitOptions {
    * Extract a rate-limit resource key from a URL.
    * Defaults to returning the origin (e.g. "https://api.github.com").
    */
+  /** @deprecated Prefer HttpClientOptions.resourceKeyResolver. */
   resourceExtractor?: (url: string) => string;
-  /** Per-resource rate limit configs. Keys should match resourceExtractor output. */
+  /**
+   * Per-resource rate limit configs.
+   * Keys should match `HttpClientOptions.resourceKeyResolver` output, or
+   * `resourceExtractor` output when using the legacy rate-limit option.
+   */
   configs?: RateLimitConfigMap;
   /** Default rate limit config for resources not in configs. */
   defaultConfig?: RateLimitConfig;
@@ -140,6 +145,11 @@ export interface HttpClientOptions {
   dedupe?: DedupeStore;
   /** Rate limiting configuration and optional store. */
   rateLimit?: HttpClientRateLimitOptions;
+  /**
+   * Resolve the logical rate-limit resource key for a URL.
+   * Defaults to returning the URL origin (e.g. "https://api.github.com").
+   */
+  resourceKeyResolver?: (url: string) => string;
   /**
    * Custom fetch implementation. Defaults to `globalThis.fetch`.
    * Use this to intercept/transform at the fetch level — e.g., resolving
@@ -231,6 +241,7 @@ export class HttpClient implements HttpClientContract {
     retry?: HttpClientOptions['retry'];
     cacheOverrides?: CacheOverrideOptions;
     cacheScope?: string;
+    resourceKeyResolver?: (url: string) => string;
     resourceExtractor?: (url: string) => string;
     rateLimitConfigs?: RateLimitConfigMap;
     defaultRateLimitConfig?: RateLimitConfig;
@@ -258,6 +269,7 @@ export class HttpClient implements HttpClientContract {
       cacheOverrides: options.cache?.overrides,
       cacheScope:
         options.cache && !options.cache.globalScope ? options.name : undefined,
+      resourceKeyResolver: options.resourceKeyResolver,
       resourceExtractor: options.rateLimit?.resourceExtractor,
       rateLimitConfigs: options.rateLimit?.configs,
       defaultRateLimitConfig: options.rateLimit?.defaultConfig,
@@ -333,13 +345,19 @@ export class HttpClient implements HttpClientContract {
   }
 
   /**
-   * Derive the rate-limit resource key for a URL.
-   * Uses `resourceExtractor` when provided, otherwise defaults to the URL origin.
+   * Derive the rate-limit key for a URL.
+   * Uses `resourceKeyResolver` when provided, then the legacy
+   * `rateLimit.resourceExtractor`, otherwise defaults to the URL origin.
    */
-  private getResource(url: string): string {
+  private resolveRateLimitKey(url: string): string {
+    if (this.options.resourceKeyResolver) {
+      return this.options.resourceKeyResolver(url);
+    }
+
     if (this.options.resourceExtractor) {
       return this.options.resourceExtractor(url);
     }
+
     try {
       return new URL(url).origin;
     } catch {
@@ -427,14 +445,6 @@ export class HttpClient implements HttpClientContract {
     });
 
     return { endpoint, params };
-  }
-
-  private getOriginScope(url: string): string {
-    try {
-      return new URL(url).origin;
-    } catch {
-      return 'unknown';
-    }
   }
 
   private getHeaderValue(
@@ -583,7 +593,7 @@ export class HttpClient implements HttpClientContract {
       return;
     }
 
-    const scope = this.getOriginScope(url);
+    const scope = this.resolveRateLimitKey(url);
     const cooldownUntilMs = Date.now() + waitMs;
 
     if (this.stores.rateLimit?.setCooldown) {
@@ -613,7 +623,7 @@ export class HttpClient implements HttpClientContract {
     signal?: AbortSignal,
     forceWait = false,
   ): Promise<void> {
-    const scope = this.getOriginScope(url);
+    const scope = this.resolveRateLimitKey(url);
     const startedAt = Date.now();
 
     // Re-check cooldown after each sleep so we never proceed while a server
@@ -633,7 +643,7 @@ export class HttpClient implements HttpClientContract {
 
       if (this.options.throwOnRateLimit && !forceWait) {
         throw new Error(
-          `Rate limit exceeded for origin '${scope}'. Wait ${waitMs}ms before retrying.`,
+          `Rate limit exceeded for resource '${scope}'. Wait ${waitMs}ms before retrying.`,
         );
       }
 
@@ -642,7 +652,7 @@ export class HttpClient implements HttpClientContract {
 
       if (remainingWaitBudgetMs <= 0) {
         throw new Error(
-          `Rate limit wait exceeded maxWaitTime (${this.options.maxWaitTime}ms) for origin '${scope}'.`,
+          `Rate limit wait exceeded maxWaitTime (${this.options.maxWaitTime}ms) for resource '${scope}'.`,
         );
       }
 
@@ -1191,7 +1201,7 @@ export class HttpClient implements HttpClientContract {
     const { endpoint, params } = this.parseUrlForHashing(url);
     const rawHash = hashRequest(endpoint, params);
     const cacheHash = this.scopeKey(rawHash);
-    const resource = this.getResource(url);
+    const resource = this.resolveRateLimitKey(url);
     const cacheConfig = this.resolveCacheConfig(
       options.cache?.ttl,
       options.cache?.overrides,

@@ -23,6 +23,6 @@ export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
 
 /**
  * Map of resource keys to their rate-limit configurations.
- * Keys should match the output of `resourceExtractor`.
+ * Keys should match the output of the client's rate-limit resource key resolver.
  */
 export type RateLimitConfigMap = Map<string, RateLimitConfig>;

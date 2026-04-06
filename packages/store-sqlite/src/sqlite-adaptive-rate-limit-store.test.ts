@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { RateLimitConfig } from '@http-client-toolkit/core';
 import Database from 'better-sqlite3';
@@ -9,14 +10,15 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('SqliteAdaptiveRateLimitStore', () => {
   let store: SqliteAdaptiveRateLimitStore;
-  const testDbPath = path.join(__dirname, 'test-adaptive-rate-limit.db');
+  let testDirPath: string;
+  let testDbPath: string;
   const defaultConfig: RateLimitConfig = { limit: 200, windowMs: 3600000 }; // 1 hour
 
   beforeEach(() => {
-    // Clean up any existing test database
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
-    }
+    testDirPath = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'sqlite-adaptive-rate-limit-'),
+    );
+    testDbPath = path.join(testDirPath, 'test-adaptive-rate-limit.db');
 
     store = new SqliteAdaptiveRateLimitStore({
       database: testDbPath,
@@ -38,8 +40,8 @@ describe('SqliteAdaptiveRateLimitStore', () => {
     if (store) {
       await store.close();
     }
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
+    if (testDirPath && fs.existsSync(testDirPath)) {
+      fs.rmSync(testDirPath, { recursive: true, force: true });
     }
   });
 
