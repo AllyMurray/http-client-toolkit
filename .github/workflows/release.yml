@@ -1,5 +1,9 @@
 name: release
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches:
@@ -29,11 +33,8 @@ jobs:
 
       - name: Configure git
         run: |
-          AUTHOR_NAME=$(git log -1 --pretty=format:'%an')
-          AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
-          echo "Setting git config to: $AUTHOR_NAME <$AUTHOR_EMAIL>"
-          git config user.name "$AUTHOR_NAME"
-          git config user.email "$AUTHOR_EMAIL"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4.2.0
@@ -77,6 +78,14 @@ jobs:
             echo "No changesets found, skipping publish"
           fi
 
+      - name: Validate recovery ref
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_existing
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::publish_existing is only allowed from main"
+            exit 1
+          fi
+
       - name: Decide release mode
         id: release_mode
         run: |
@@ -105,42 +114,6 @@ jobs:
           npx changeset version
           git add .
           git commit -m "chore: release packages"
-
-      - name: Setup npm for trusted publishing
-        if: steps.release_mode.outputs.should_publish == 'true'
-        run: |
-          pnpm add -g npm@11.6.2
-          PNPM_GLOBAL_BIN="$(pnpm bin -g)"
-          echo "$PNPM_GLOBAL_BIN" >> "$GITHUB_PATH"
-          export PATH="$PNPM_GLOBAL_BIN:$PATH"
-          node --version
-          npm --version
-          which npm
-
-      - name: Debug trusted publishing context
-        if: steps.release_mode.outputs.should_publish == 'true'
-        run: |
-          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
-          echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
-          echo "GITHUB_REF=$GITHUB_REF"
-          echo "GITHUB_REF_NAME=$GITHUB_REF_NAME"
-          echo "GITHUB_SHA=$GITHUB_SHA"
-          echo "RUNNER_OS=$RUNNER_OS"
-          echo "node=$(node --version)"
-          echo "npm=$(npm --version)"
-          echo "npm_path=$(which npm)"
-
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
-            echo "oidc_request_url=present"
-          else
-            echo "oidc_request_url=missing"
-          fi
-
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
-            echo "oidc_request_token=present"
-          else
-            echo "oidc_request_token=missing"
-          fi
 
       - name: Publish packages
         if: steps.release_mode.outputs.should_publish == 'true'
