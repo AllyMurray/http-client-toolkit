@@ -44,9 +44,9 @@
     "zod": "^3.24.1"
   },
   "peerDependencies": {
-    "@http-client-toolkit/store-memory": "workspace:*",
-    "@http-client-toolkit/store-sqlite": "workspace:*",
-    "@http-client-toolkit/store-dynamodb": "workspace:*"
+    "@http-client-toolkit/store-memory": "workspace:^",
+    "@http-client-toolkit/store-sqlite": "workspace:^",
+    "@http-client-toolkit/store-dynamodb": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@http-client-toolkit/store-memory": {
