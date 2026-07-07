@@ -250,4 +250,4 @@ The dashboard exposes a REST API that the React SPA consumes. All store endpoint
 
 ## Future Improvements
 
-- **Retry metrics** — Show requests that required retries and their success rate. The core `HttpClient` retry loop currently doesn't persist metrics, so this would require adding internal retry tracking (total attempts, successes after retry, final failures) and exposing it via a new dashboard adapter.
+- **Retry metrics** — Show requests that required retries and their success rate by collecting `retry:scheduled`, `retry:exhausted`, `request:success`, and `request:error` events from `HttpClient` observability and exposing aggregated metrics through a dashboard adapter.

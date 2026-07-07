@@ -25,6 +25,7 @@ import {
   HttpClientContract,
   type CacheOverrideOptions,
   type HttpErrorContext,
+  type HttpClientEvent,
   type RetryContext,
   type RetryOptions,
 } from '../types/index.js';
@@ -202,6 +203,10 @@ export interface HttpClientOptions {
    * Pass an options object to enable retries with custom settings.
    */
   retry?: RetryOptions | false;
+  /** Structured lifecycle events for metrics, logs, and tracing. */
+  observability?: {
+    onEvent?: (event: HttpClientEvent) => void | Promise<void>;
+  };
 }
 
 interface RateLimitHeaderConfig {
@@ -216,9 +221,28 @@ interface ParsedResponseBody {
   data: unknown;
 }
 
+interface RequestEventContext {
+  requestId: string;
+  url: string;
+  method: string;
+  resourceKey: string;
+  cacheKey?: string;
+  startedAt: number;
+}
+
+interface EventBaseFields {
+  clientName: string;
+  requestId: string;
+  url: string;
+  method: string;
+  resourceKey: string;
+  timestamp: number;
+}
+
 export {
   type CacheOverrideOptions,
   type HttpErrorContext,
+  type HttpClientEvent,
   type RetryContext,
   type RetryOptions,
 };
@@ -228,6 +252,7 @@ export class HttpClient implements HttpClientContract {
   public readonly stores: HttpClientStores;
   private serverCooldowns = new Map<string, number>();
   private pendingRevalidations: Array<Promise<void>> = [];
+  private requestSequence = 0;
   private options: {
     cacheTTL: number;
     throwOnRateLimit: boolean;
@@ -246,6 +271,7 @@ export class HttpClient implements HttpClientContract {
     rateLimitConfigs?: RateLimitConfigMap;
     defaultRateLimitConfig?: RateLimitConfig;
     rateLimitHeaders: RateLimitHeaderConfig;
+    observability?: HttpClientOptions['observability'];
   };
 
   constructor(options: HttpClientOptions) {
@@ -276,6 +302,7 @@ export class HttpClient implements HttpClientContract {
       rateLimitHeaders: this.normalizeRateLimitHeaders(
         options.rateLimit?.headers,
       ),
+      observability: options.observability,
     };
 
     if (
@@ -296,6 +323,83 @@ export class HttpClient implements HttpClientContract {
         options.rateLimit.defaultConfig,
       );
     }
+  }
+
+  private nextRequestId(): string {
+    this.requestSequence += 1;
+    return `${this.name}-${this.requestSequence}`;
+  }
+
+  private eventBase(context: RequestEventContext): EventBaseFields {
+    return {
+      clientName: this.name,
+      requestId: context.requestId,
+      url: context.url,
+      method: context.method,
+      resourceKey: context.resourceKey,
+      timestamp: Date.now(),
+    };
+  }
+
+  private emitEvent(event: HttpClientEvent): void {
+    const onEvent = this.options.observability?.onEvent;
+    if (!onEvent) {
+      return;
+    }
+
+    try {
+      const result = onEvent(event);
+      if (result && typeof result.then === 'function') {
+        void result.catch(() => {});
+      }
+    } catch {
+      // Observability callbacks must never affect request behavior.
+    }
+  }
+
+  private toError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(String(error));
+  }
+
+  private statusFromError(error: unknown): number | undefined {
+    if (this.isHttpErrorContext(error)) {
+      return error.response.status;
+    }
+    if (error instanceof HttpClientError) {
+      return error.statusCode;
+    }
+    return undefined;
+  }
+
+  private emitRequestSuccess(
+    context: RequestEventContext,
+    status?: number,
+  ): void {
+    this.emitEvent({
+      ...this.eventBase(context),
+      type: 'request:success',
+      durationMs: Date.now() - context.startedAt,
+      cacheKey: context.cacheKey,
+      status,
+    });
+  }
+
+  private emitRequestError(
+    context: RequestEventContext,
+    error: Error,
+    status?: number,
+  ): void {
+    this.emitEvent({
+      ...this.eventBase(context),
+      type: 'request:error',
+      durationMs: Date.now() - context.startedAt,
+      cacheKey: context.cacheKey,
+      status,
+      error,
+    });
   }
 
   private normalizeRateLimitHeaders(
@@ -557,6 +661,8 @@ export class HttpClient implements HttpClientContract {
     url: string,
     headers: Headers | Record<string, unknown> | undefined,
     statusCode?: number,
+    eventContext?: RequestEventContext,
+    attempt?: number,
   ): void {
     if (!headers) {
       return;
@@ -601,6 +707,17 @@ export class HttpClient implements HttpClientContract {
     } else {
       this.serverCooldowns.set(scope, cooldownUntilMs);
     }
+
+    if (eventContext) {
+      this.emitEvent({
+        ...this.eventBase(eventContext),
+        type: 'serverCooldown:set',
+        resourceKey: scope,
+        waitMs,
+        status: statusCode,
+        attempt,
+      });
+    }
   }
 
   private async readCooldown(scope: string): Promise<number | undefined> {
@@ -622,6 +739,7 @@ export class HttpClient implements HttpClientContract {
     url: string,
     signal?: AbortSignal,
     forceWait = false,
+    eventContext?: RequestEventContext,
   ): Promise<void> {
     const scope = this.resolveRateLimitKey(url);
     const startedAt = Date.now();
@@ -642,21 +760,53 @@ export class HttpClient implements HttpClientContract {
       }
 
       if (this.options.throwOnRateLimit && !forceWait) {
-        throw new Error(
+        const error = new Error(
           `Rate limit exceeded for resource '${scope}'. Wait ${waitMs}ms before retrying.`,
         );
+        if (eventContext) {
+          this.emitEvent({
+            ...this.eventBase(eventContext),
+            type: 'rateLimit:throw',
+            resourceKey: scope,
+            source: 'serverCooldown',
+            waitMs,
+            error,
+          });
+        }
+        throw error;
       }
 
       const elapsedMs = Date.now() - startedAt;
       const remainingWaitBudgetMs = this.options.maxWaitTime - elapsedMs;
 
       if (remainingWaitBudgetMs <= 0) {
-        throw new Error(
+        const error = new Error(
           `Rate limit wait exceeded maxWaitTime (${this.options.maxWaitTime}ms) for resource '${scope}'.`,
         );
+        if (eventContext) {
+          this.emitEvent({
+            ...this.eventBase(eventContext),
+            type: 'rateLimit:throw',
+            resourceKey: scope,
+            source: 'serverCooldown',
+            waitMs,
+            error,
+          });
+        }
+        throw error;
       }
 
-      await wait(Math.min(waitMs, remainingWaitBudgetMs), signal);
+      const waitDurationMs = Math.min(waitMs, remainingWaitBudgetMs);
+      if (eventContext) {
+        this.emitEvent({
+          ...this.eventBase(eventContext),
+          type: 'rateLimit:wait',
+          resourceKey: scope,
+          source: 'serverCooldown',
+          waitMs: waitDurationMs,
+        });
+      }
+      await wait(waitDurationMs, signal);
     }
   }
 
@@ -664,6 +814,7 @@ export class HttpClient implements HttpClientContract {
     resource: string,
     priority: RequestPriority,
     signal?: AbortSignal,
+    eventContext?: RequestEventContext,
   ): Promise<boolean> {
     const rateLimit = this.stores.rateLimit as AdaptiveRateLimitStore;
     const startedAt = Date.now();
@@ -680,9 +831,20 @@ export class HttpClient implements HttpClientContract {
       const canProceed = await canProceedNow();
       if (!canProceed) {
         const waitTime = await rateLimit.getWaitTime(resource, priority);
-        throw new Error(
+        const error = new Error(
           `Rate limit exceeded for resource '${resource}'. Wait ${waitTime}ms before retrying.`,
         );
+        if (eventContext) {
+          this.emitEvent({
+            ...this.eventBase(eventContext),
+            type: 'rateLimit:throw',
+            resourceKey: resource,
+            source: 'store',
+            waitMs: waitTime,
+            error,
+          });
+        }
+        throw error;
       }
       return hasAtomicAcquire;
     }
@@ -696,9 +858,20 @@ export class HttpClient implements HttpClientContract {
       const remainingWaitBudgetMs = this.options.maxWaitTime - elapsedMs;
 
       if (remainingWaitBudgetMs <= 0) {
-        throw new Error(
+        const error = new Error(
           `Rate limit wait exceeded maxWaitTime (${this.options.maxWaitTime}ms) for resource '${resource}'.`,
         );
+        if (eventContext) {
+          this.emitEvent({
+            ...this.eventBase(eventContext),
+            type: 'rateLimit:throw',
+            resourceKey: resource,
+            source: 'store',
+            waitMs: suggestedWaitMs,
+            error,
+          });
+        }
+        throw error;
       }
 
       // If a store reports "blocked" but no wait time, use a tiny backoff to
@@ -708,6 +881,15 @@ export class HttpClient implements HttpClientContract {
           ? Math.min(suggestedWaitMs, remainingWaitBudgetMs)
           : Math.min(25, remainingWaitBudgetMs);
 
+      if (eventContext) {
+        this.emitEvent({
+          ...this.eventBase(eventContext),
+          type: 'rateLimit:wait',
+          resourceKey: resource,
+          source: 'store',
+          waitMs: waitTime,
+        });
+      }
       await wait(waitTime, signal);
     }
 
@@ -727,6 +909,7 @@ export class HttpClient implements HttpClientContract {
     url: string,
     hash: string,
     entry: CacheEntry<unknown>,
+    eventContext: RequestEventContext,
     requestHeaders?: Record<string, string>,
     cacheConfig?: {
       cacheTTL: number;
@@ -742,6 +925,8 @@ export class HttpClient implements HttpClientContract {
       fetchHeaders.set('If-Modified-Since', entry.metadata.lastModified);
     }
 
+    const revalidationStartedAt = Date.now();
+
     try {
       let revalInit: RequestInit = { headers: fetchHeaders };
       if (this.options.requestInterceptor) {
@@ -755,7 +940,13 @@ export class HttpClient implements HttpClientContract {
         response = await this.options.responseInterceptor(response, url);
       }
 
-      this.applyServerRateLimitHints(url, response.headers, response.status);
+      this.applyServerRateLimitHints(
+        url,
+        response.headers,
+        response.status,
+        eventContext,
+        1,
+      );
 
       /* v8 ignore next -- cacheConfig is always provided by resolveCacheConfig() */
       const resolvedTTL = cacheConfig?.cacheTTL ?? this.options.cacheTTL;
@@ -769,6 +960,14 @@ export class HttpClient implements HttpClientContract {
           resolvedOverrides,
         );
         await this.cacheSet(hash, refreshed, ttl, tags);
+        this.emitEvent({
+          ...this.eventBase(eventContext),
+          type: 'cache:revalidate',
+          cacheKey: hash,
+          phase: 'notModified',
+          status: response.status,
+          durationMs: Date.now() - revalidationStartedAt,
+        });
         return;
       }
 
@@ -798,8 +997,37 @@ export class HttpClient implements HttpClientContract {
           resolvedOverrides,
         );
         await this.cacheSet(hash, newEntry, ttl, tags);
+        this.emitEvent({
+          ...this.eventBase(eventContext),
+          type: 'cache:revalidate',
+          cacheKey: hash,
+          phase: 'success',
+          status: response.status,
+          durationMs: Date.now() - revalidationStartedAt,
+        });
+        return;
       }
-    } catch {
+
+      this.emitEvent({
+        ...this.eventBase(eventContext),
+        type: 'cache:revalidate',
+        cacheKey: hash,
+        phase: 'error',
+        status: response.status,
+        error: new Error(
+          `Background revalidation failed with status ${response.status}`,
+        ),
+        durationMs: Date.now() - revalidationStartedAt,
+      });
+    } catch (error) {
+      this.emitEvent({
+        ...this.eventBase(eventContext),
+        type: 'cache:revalidate',
+        cacheKey: hash,
+        phase: 'error',
+        error: this.toError(error),
+        durationMs: Date.now() - revalidationStartedAt,
+      });
       // Background revalidation failures are silently ignored.
       // The stale entry remains in the cache and will be served until
       // it falls out of the stale-while-revalidate window.
@@ -940,12 +1168,10 @@ export class HttpClient implements HttpClientContract {
     return jitteredDelay;
   }
 
-  private isRetryableRequest(
+  private createRetryContext(
     error: Error | HttpErrorContext,
-    retryConfig: NonNullable<ReturnType<HttpClient['resolveRetryConfig']>>,
-    attempt: number,
     url: string,
-  ): { shouldRetry: boolean; context: RetryContext } {
+  ): RetryContext {
     let statusCode: number | undefined;
     let retryAfterMs: number | undefined;
 
@@ -958,7 +1184,53 @@ export class HttpClient implements HttpClientContract {
       retryAfterMs = this.parseRetryAfterMs(retryAfterRaw);
     }
 
-    const context: RetryContext = { error, retryAfterMs, statusCode, url };
+    return { error, retryAfterMs, statusCode, url };
+  }
+
+  private isDefaultRetryableRequest(
+    error: Error | HttpErrorContext,
+    statusCode?: number,
+  ): boolean {
+    if (statusCode !== undefined) {
+      return HttpClient.RETRYABLE_STATUS_CODES.has(statusCode);
+    }
+
+    return error instanceof TypeError;
+  }
+
+  private emitRetryExhausted(
+    error: Error | HttpErrorContext,
+    retryConfig: NonNullable<ReturnType<HttpClient['resolveRetryConfig']>>,
+    attempt: number,
+    url: string,
+    eventContext: RequestEventContext,
+    hasScheduledRetry: boolean,
+  ): void {
+    const context = this.createRetryContext(error, url);
+    const shouldEmit = retryConfig.retryCondition
+      ? hasScheduledRetry
+      : this.isDefaultRetryableRequest(error, context.statusCode);
+
+    if (!shouldEmit) {
+      return;
+    }
+
+    this.emitEvent({
+      ...this.eventBase(eventContext),
+      type: 'retry:exhausted',
+      attempt,
+      status: context.statusCode,
+      error: context.error,
+    });
+  }
+
+  private isRetryableRequest(
+    error: Error | HttpErrorContext,
+    retryConfig: NonNullable<ReturnType<HttpClient['resolveRetryConfig']>>,
+    attempt: number,
+    url: string,
+  ): { shouldRetry: boolean; context: RetryContext } {
+    const context = this.createRetryContext(error, url);
 
     // Custom condition overrides default logic
     if (retryConfig.retryCondition) {
@@ -968,20 +1240,10 @@ export class HttpClient implements HttpClientContract {
       };
     }
 
-    // Default: retry on retryable status codes
-    if (statusCode !== undefined) {
-      return {
-        shouldRetry: HttpClient.RETRYABLE_STATUS_CODES.has(statusCode),
-        context,
-      };
-    }
-
-    // Network errors (TypeError) are retryable
-    if (error instanceof TypeError) {
-      return { shouldRetry: true, context };
-    }
-
-    return { shouldRetry: false, context };
+    return {
+      shouldRetry: this.isDefaultRetryableRequest(error, context.statusCode),
+      context,
+    };
   }
 
   private async parseResponseBody(
@@ -1028,18 +1290,20 @@ export class HttpClient implements HttpClientContract {
       ReturnType<HttpClient['resolveRetryConfig']>
     > | null,
     staleEntry: CacheEntry<unknown> | undefined,
+    eventContext: RequestEventContext,
   ): Promise<
     | { notModified: true; refreshedEntry: CacheEntry<unknown> }
     | { notModified: false; response: Response; parsedBody: ParsedResponseBody }
   > {
     const maxAttempts = retryConfig ? retryConfig.maxRetries + 1 : 1;
+    let hasScheduledRetry = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Re-check server cooldown between retries — the previous attempt may
       // have set a cooldown via applyServerRateLimitHints. Always wait (never
       // throw) since the retry mechanism is handling recovery.
       if (attempt > 1) {
-        await this.enforceServerCooldown(url, signal, true);
+        await this.enforceServerCooldown(url, signal, true, eventContext);
       }
 
       try {
@@ -1059,7 +1323,13 @@ export class HttpClient implements HttpClientContract {
         if (this.options.responseInterceptor) {
           response = await this.options.responseInterceptor(response, url);
         }
-        this.applyServerRateLimitHints(url, response.headers, response.status);
+        this.applyServerRateLimitHints(
+          url,
+          response.headers,
+          response.status,
+          eventContext,
+          attempt,
+        );
 
         // Handle 304 Not Modified — must be checked BEFORE !response.ok
         if (response.status === 304 && staleEntry) {
@@ -1098,10 +1368,30 @@ export class HttpClient implements HttpClientContract {
                 retryConfig.jitter,
                 context.retryAfterMs,
               );
+              hasScheduledRetry = true;
+              this.emitEvent({
+                ...this.eventBase(eventContext),
+                type: 'retry:scheduled',
+                attempt,
+                waitMs: delay,
+                status: context.statusCode,
+                error: context.error,
+              });
               retryConfig.onRetry?.(context, attempt, delay);
               await wait(delay, signal);
               continue;
             }
+          }
+
+          if (retryConfig && attempt >= maxAttempts) {
+            this.emitRetryExhausted(
+              httpError,
+              retryConfig,
+              attempt,
+              url,
+              eventContext,
+              hasScheduledRetry,
+            );
           }
 
           throw httpError;
@@ -1134,10 +1424,34 @@ export class HttpClient implements HttpClientContract {
               retryConfig.jitter,
               context.retryAfterMs,
             );
+            hasScheduledRetry = true;
+            this.emitEvent({
+              ...this.eventBase(eventContext),
+              type: 'retry:scheduled',
+              attempt,
+              waitMs: delay,
+              status: context.statusCode,
+              error: context.error,
+            });
             retryConfig.onRetry?.(context, attempt, delay);
             await wait(delay, signal);
             continue;
           }
+        }
+
+        if (
+          fetchError instanceof TypeError &&
+          retryConfig &&
+          attempt >= maxAttempts
+        ) {
+          this.emitRetryExhausted(
+            fetchError,
+            retryConfig,
+            attempt,
+            url,
+            eventContext,
+            hasScheduledRetry,
+          );
         }
 
         // HttpErrorContext thrown from the !response.ok branch above
@@ -1206,19 +1520,83 @@ export class HttpClient implements HttpClientContract {
       options.cache?.ttl,
       options.cache?.overrides,
     );
+    const requestContext: RequestEventContext = {
+      requestId: this.nextRequestId(),
+      url,
+      method: 'GET',
+      resourceKey: resource,
+      cacheKey: cacheHash,
+      startedAt: Date.now(),
+    };
+    let cacheRevalidationStartedAt: number | undefined;
+
+    const emitCacheRevalidationScheduled = (
+      entry: CacheEntry<unknown>,
+    ): void => {
+      cacheRevalidationStartedAt = Date.now();
+      this.emitEvent({
+        ...this.eventBase(requestContext),
+        type: 'cache:revalidate',
+        cacheKey: cacheHash,
+        phase: 'scheduled',
+        status: entry.metadata.statusCode,
+      });
+    };
+
+    const emitCacheRevalidationOutcome = (
+      phase: 'success' | 'error' | 'notModified',
+      details: {
+        status?: number;
+        error?: Error;
+      } = {},
+    ): void => {
+      if (cacheRevalidationStartedAt === undefined) {
+        return;
+      }
+
+      this.emitEvent({
+        ...this.eventBase(requestContext),
+        type: 'cache:revalidate',
+        cacheKey: cacheHash,
+        phase,
+        status: details.status,
+        error: details.error,
+        durationMs: Date.now() - cacheRevalidationStartedAt,
+      });
+      cacheRevalidationStartedAt = undefined;
+    };
 
     // Track stale entry for conditional requests and stale-if-error fallback
     let staleEntry: CacheEntry<unknown> | undefined;
     let staleCandidate: CacheEntry<unknown> | undefined;
 
+    this.emitEvent({
+      ...this.eventBase(requestContext),
+      type: 'request:start',
+    });
+
     try {
-      await this.enforceServerCooldown(url, signal);
+      await this.enforceServerCooldown(url, signal, false, requestContext);
 
       // 1. Cache — check for cached response
       if (this.stores.cache) {
         const cachedResult = await this.stores.cache.get(cacheHash);
 
-        if (cachedResult !== undefined && isCacheEntry(cachedResult)) {
+        if (cachedResult === undefined) {
+          this.emitEvent({
+            ...this.eventBase(requestContext),
+            type: 'cache:miss',
+            cacheKey: cacheHash,
+            cacheStatus: 'miss',
+          });
+        } else if (!isCacheEntry(cachedResult)) {
+          this.emitEvent({
+            ...this.eventBase(requestContext),
+            type: 'cache:miss',
+            cacheKey: cacheHash,
+            cacheStatus: 'unusable',
+          });
+        } else {
           const entry = cachedResult as CacheEntry<unknown>;
 
           // Vary mismatch → treat as cache miss
@@ -1229,31 +1607,90 @@ export class HttpClient implements HttpClientContract {
               headers ?? {},
             )
           ) {
+            this.emitEvent({
+              ...this.eventBase(requestContext),
+              type: 'cache:miss',
+              cacheKey: cacheHash,
+              cacheStatus: 'vary-mismatch',
+            });
             // fall through to fetch
           } else {
             const status = getFreshnessStatus(entry.metadata);
 
             switch (status) {
               case 'fresh':
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:hit',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'fresh',
+                  status: entry.metadata.statusCode,
+                });
+                this.emitRequestSuccess(
+                  requestContext,
+                  entry.metadata.statusCode,
+                );
                 return entry.value as Result;
 
               case 'no-cache':
                 if (cacheConfig.cacheOverrides?.ignoreNoCache) {
+                  this.emitEvent({
+                    ...this.eventBase(requestContext),
+                    type: 'cache:hit',
+                    cacheKey: cacheHash,
+                    cacheStatus: 'no-cache',
+                    status: entry.metadata.statusCode,
+                  });
+                  this.emitRequestSuccess(
+                    requestContext,
+                    entry.metadata.statusCode,
+                  );
                   return entry.value as Result;
                 }
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:stale',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'no-cache',
+                  status: entry.metadata.statusCode,
+                });
                 staleEntry = entry;
+                emitCacheRevalidationScheduled(entry);
                 break;
 
               case 'must-revalidate':
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:stale',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'must-revalidate',
+                  status: entry.metadata.statusCode,
+                });
                 staleEntry = entry;
+                emitCacheRevalidationScheduled(entry);
                 break;
 
               case 'stale-while-revalidate': {
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:stale',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'stale-while-revalidate',
+                  status: entry.metadata.statusCode,
+                });
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:revalidate',
+                  cacheKey: cacheHash,
+                  phase: 'scheduled',
+                  status: entry.metadata.statusCode,
+                });
                 // Serve stale immediately, revalidate in background
                 const revalidation = this.backgroundRevalidate(
                   url,
                   cacheHash,
                   entry,
+                  requestContext,
                   headers,
                   cacheConfig,
                   options.cache?.tags,
@@ -1265,17 +1702,44 @@ export class HttpClient implements HttpClientContract {
                     (p) => p !== revalidation,
                   );
                 });
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:hit',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'stale-while-revalidate',
+                  status: entry.metadata.statusCode,
+                });
+                this.emitRequestSuccess(
+                  requestContext,
+                  entry.metadata.statusCode,
+                );
                 return entry.value as Result;
               }
 
               case 'stale-if-error':
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:stale',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'stale-if-error',
+                  status: entry.metadata.statusCode,
+                });
                 // Attempt fresh fetch, fall back to stale on error
                 staleCandidate = entry;
                 staleEntry = entry; // Also use for conditional request
+                emitCacheRevalidationScheduled(entry);
                 break;
 
               case 'stale':
+                this.emitEvent({
+                  ...this.eventBase(requestContext),
+                  type: 'cache:stale',
+                  cacheKey: cacheHash,
+                  cacheStatus: 'stale',
+                  status: entry.metadata.statusCode,
+                });
                 staleEntry = entry;
+                emitCacheRevalidationScheduled(entry);
                 break;
             }
           }
@@ -1284,8 +1748,16 @@ export class HttpClient implements HttpClientContract {
 
       // 2. Deduplication — check for in-progress request
       if (this.stores.dedupe) {
+        const dedupeStartedAt = Date.now();
         const existingResult = await this.stores.dedupe.waitFor(rawHash);
         if (existingResult !== undefined) {
+          this.emitEvent({
+            ...this.eventBase(requestContext),
+            type: 'dedupe:join',
+            dedupeKey: rawHash,
+            durationMs: Date.now() - dedupeStartedAt,
+          });
+          this.emitRequestSuccess(requestContext);
           return existingResult as Result;
         }
 
@@ -1293,13 +1765,30 @@ export class HttpClient implements HttpClientContract {
           const registration = await this.stores.dedupe.registerOrJoin(rawHash);
 
           if (!registration.isOwner) {
+            this.emitEvent({
+              ...this.eventBase(requestContext),
+              type: 'dedupe:join',
+              dedupeKey: rawHash,
+            });
             const joinedResult = await this.stores.dedupe.waitFor(rawHash);
             if (joinedResult !== undefined) {
+              this.emitRequestSuccess(requestContext);
               return joinedResult as Result;
             }
+          } else {
+            this.emitEvent({
+              ...this.eventBase(requestContext),
+              type: 'dedupe:owner',
+              dedupeKey: rawHash,
+            });
           }
         } else {
           await this.stores.dedupe.register(rawHash);
+          this.emitEvent({
+            ...this.eventBase(requestContext),
+            type: 'dedupe:owner',
+            dedupeKey: rawHash,
+          });
         }
       }
 
@@ -1310,6 +1799,7 @@ export class HttpClient implements HttpClientContract {
           resource,
           priority,
           signal,
+          requestContext,
         );
       }
 
@@ -1335,6 +1825,7 @@ export class HttpClient implements HttpClientContract {
         signal,
         retryConfig,
         staleEntry,
+        requestContext,
       );
 
       // Handle 304 Not Modified
@@ -1351,6 +1842,7 @@ export class HttpClient implements HttpClientContract {
           ttl,
           options.cache?.tags,
         );
+        emitCacheRevalidationOutcome('notModified', { status: 304 });
 
         const result = refreshedEntry.value as Result;
 
@@ -1358,6 +1850,10 @@ export class HttpClient implements HttpClientContract {
           await this.stores.dedupe.complete(rawHash, result);
         }
 
+        this.emitRequestSuccess(
+          requestContext,
+          refreshedEntry.metadata.statusCode,
+        );
         return result;
       }
 
@@ -1406,23 +1902,48 @@ export class HttpClient implements HttpClientContract {
         }
       }
 
+      if (staleEntry) {
+        emitCacheRevalidationOutcome('success', { status: response.status });
+      }
+
       // 9. Mark deduplication as complete
       if (this.stores.dedupe) {
         await this.stores.dedupe.complete(rawHash, result);
       }
 
+      this.emitRequestSuccess(requestContext, response.status);
       return result;
     } catch (error) {
       // stale-if-error fallback: serve stale entry when origin fails
       if (staleCandidate && this.isServerErrorOrNetworkFailure(error)) {
         const result = staleCandidate.value as Result;
+        emitCacheRevalidationOutcome('error', {
+          status: this.statusFromError(error),
+          error: this.toError(error),
+        });
+        this.emitEvent({
+          ...this.eventBase(requestContext),
+          type: 'cache:hit',
+          cacheKey: cacheHash,
+          cacheStatus: 'stale-if-error',
+          status: staleCandidate.metadata.statusCode,
+        });
 
         if (this.stores.dedupe) {
           await this.stores.dedupe.complete(rawHash, result);
         }
 
+        this.emitRequestSuccess(
+          requestContext,
+          staleCandidate.metadata.statusCode,
+        );
         return result;
       }
+
+      emitCacheRevalidationOutcome('error', {
+        status: this.statusFromError(error),
+        error: this.toError(error),
+      });
 
       // Mark deduplication as failed
       if (this.stores.dedupe) {
@@ -1431,15 +1952,34 @@ export class HttpClient implements HttpClientContract {
 
       // Allow callers to detect aborts distinctly – do not wrap AbortError.
       if (error instanceof Error && error.name === 'AbortError') {
+        this.emitRequestError(requestContext, error);
         throw error;
       }
 
       // Already a processed error from the !response.ok branch above
       if (error instanceof HttpClientError) {
+        this.emitRequestError(requestContext, error, error.statusCode);
         throw error;
       }
 
-      throw this.generateClientError(error);
+      let clientError: Error;
+      try {
+        clientError = this.generateClientError(error);
+      } catch (generatedError) {
+        const emittedError = this.toError(generatedError);
+        this.emitRequestError(
+          requestContext,
+          emittedError,
+          this.statusFromError(error) ?? this.statusFromError(emittedError),
+        );
+        throw generatedError;
+      }
+      this.emitRequestError(
+        requestContext,
+        clientError,
+        this.statusFromError(error) ?? this.statusFromError(clientError),
+      );
+      throw clientError;
     }
   }
 }

@@ -3,7 +3,6 @@ title: HttpClient
 description: API reference for the HttpClient class
 ---
 
-
 The main client class that orchestrates caching, deduplication, and rate limiting.
 
 ## Import
@@ -15,48 +14,49 @@ import { HttpClient } from '@http-client-toolkit/core';
 ## Constructor
 
 ```typescript
-new HttpClient(options)
+new HttpClient(options);
 ```
 
 ### Options
 
 `name` is required. All other fields are optional — pass only what you need.
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `name` | `string` | required | Name for the client instance |
-| `cache` | `HttpClientCacheOptions` | — | Cache configuration (see below) |
-| `dedupe` | `DedupeStore<T>` | — | Request deduplication |
-| `rateLimit` | `HttpClientRateLimitOptions` | — | Rate limit configuration (see below) |
-| `resourceKeyResolver` | `(url: string) => string` | URL origin | Resolve the logical rate-limit resource key for a URL |
-| `fetchFn` | `(url: string, init?: RequestInit) => Promise<Response>` | `globalThis.fetch` | Custom fetch implementation |
-| `requestInterceptor` | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | — | Pre-request hook to modify the outgoing request |
-| `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response` | — | Post-response hook to inspect/modify the raw Response |
-| `responseTransformer` | `(data: unknown) => unknown` | — | Transform parsed response data before caching (e.g. snake_case to camelCase) |
-| `responseHandler` | `(data: unknown) => unknown` | — | Post-transformation hook for validation or domain-level error detection. Throw to reject 2xx responses with application-level errors |
-| `errorHandler` | `(context: HttpErrorContext) => Error` | — | Convert HTTP errors to domain-specific types. Context includes `url`, response `status`, parsed `data`, and `headers`. Not called for network failures |
-| `retry` | `RetryOptions \| false` | — | Automatic retry configuration. See [Retries guide](/http-client-toolkit/guides/retries/) |
+| Property              | Type                                                                      | Default            | Description                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                | `string`                                                                  | required           | Name for the client instance                                                                                                                           |
+| `cache`               | `HttpClientCacheOptions`                                                  | —                  | Cache configuration (see below)                                                                                                                        |
+| `dedupe`              | `DedupeStore<T>`                                                          | —                  | Request deduplication                                                                                                                                  |
+| `rateLimit`           | `HttpClientRateLimitOptions`                                              | —                  | Rate limit configuration (see below)                                                                                                                   |
+| `resourceKeyResolver` | `(url: string) => string`                                                 | URL origin         | Resolve the logical rate-limit resource key for a URL                                                                                                  |
+| `fetchFn`             | `(url: string, init?: RequestInit) => Promise<Response>`                  | `globalThis.fetch` | Custom fetch implementation                                                                                                                            |
+| `requestInterceptor`  | `(url: string, init: RequestInit) => Promise<RequestInit> \| RequestInit` | —                  | Pre-request hook to modify the outgoing request                                                                                                        |
+| `responseInterceptor` | `(response: Response, url: string) => Promise<Response> \| Response`      | —                  | Post-response hook to inspect/modify the raw Response                                                                                                  |
+| `responseTransformer` | `(data: unknown) => unknown`                                              | —                  | Transform parsed response data before caching (e.g. snake_case to camelCase)                                                                           |
+| `responseHandler`     | `(data: unknown) => unknown`                                              | —                  | Post-transformation hook for validation or domain-level error detection. Throw to reject 2xx responses with application-level errors                   |
+| `errorHandler`        | `(context: HttpErrorContext) => Error`                                    | —                  | Convert HTTP errors to domain-specific types. Context includes `url`, response `status`, parsed `data`, and `headers`. Not called for network failures |
+| `retry`               | `RetryOptions \| false`                                                   | —                  | Automatic retry configuration. See [Retries guide](/http-client-toolkit/guides/retries/)                                                               |
+| `observability`       | `{ onEvent?: (event: HttpClientEvent) => void \| Promise<void> }`         | —                  | Subscribe to read-only structured lifecycle events                                                                                                     |
 
 #### `cache` Options (`HttpClientCacheOptions`)
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `store` | `CacheStore<T>` | required | Cache store instance |
-| `globalScope` | `boolean` | `false` | When `true`, cache keys are not prefixed with the client name. By default, keys are prefixed with `name:` to isolate each client's cache entries |
-| `ttl` | `number` | `3600` | Cache TTL in seconds. Used when response has no cache headers |
-| `overrides` | `CacheOverrideOptions` | — | Override specific cache header behaviors (see below) |
+| Property      | Type                   | Default  | Description                                                                                                                                      |
+| ------------- | ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `store`       | `CacheStore<T>`        | required | Cache store instance                                                                                                                             |
+| `globalScope` | `boolean`              | `false`  | When `true`, cache keys are not prefixed with the client name. By default, keys are prefixed with `name:` to isolate each client's cache entries |
+| `ttl`         | `number`               | `3600`   | Cache TTL in seconds. Used when response has no cache headers                                                                                    |
+| `overrides`   | `CacheOverrideOptions` | —        | Override specific cache header behaviors (see below)                                                                                             |
 
 #### `rateLimit` Options (`HttpClientRateLimitOptions`)
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `store` | `RateLimitStore \| AdaptiveRateLimitStore` | — | Rate limit store instance (optional — server cooldown logic works without a store) |
-| `throw` | `boolean` | `true` | Throw when rate limited vs. wait |
-| `maxWaitTime` | `number` | `60000` | Max wait time in ms before throwing |
-| `headers` | `RateLimitHeaderConfig` | defaults | Configure standard/custom header names |
-| `resourceExtractor` | `(url: string) => string` | URL origin | Deprecated. Use `resourceKeyResolver` instead |
-| `configs` | `RateLimitConfigMap` | — | Per-resource rate limit configurations |
-| `defaultConfig` | `RateLimitConfig` | — | Fallback rate limit config when no per-resource config matches |
+| Property            | Type                                       | Default    | Description                                                                        |
+| ------------------- | ------------------------------------------ | ---------- | ---------------------------------------------------------------------------------- |
+| `store`             | `RateLimitStore \| AdaptiveRateLimitStore` | —          | Rate limit store instance (optional — server cooldown logic works without a store) |
+| `throw`             | `boolean`                                  | `true`     | Throw when rate limited vs. wait                                                   |
+| `maxWaitTime`       | `number`                                   | `60000`    | Max wait time in ms before throwing                                                |
+| `headers`           | `RateLimitHeaderConfig`                    | defaults   | Configure standard/custom header names                                             |
+| `resourceExtractor` | `(url: string) => string`                  | URL origin | Deprecated. Use `resourceKeyResolver` instead                                      |
+| `configs`           | `RateLimitConfigMap`                       | —          | Per-resource rate limit configurations                                             |
+| `defaultConfig`     | `RateLimitConfig`                          | —          | Fallback rate limit config when no per-resource config matches                     |
 
 `resourceKeyResolver` applies everywhere the client performs rate-limit accounting, including store checks and server cooldowns. `rateLimit.resourceExtractor` is deprecated, retained for compatibility, and only used when `resourceKeyResolver` is not provided.
 
@@ -76,13 +76,13 @@ The `url` must be an absolute URL (e.g. `https://api.example.com/items`).
 
 **Request Options**
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `signal` | `AbortSignal` | — | Cancels wait + request when aborted |
-| `priority` | `'user' \| 'background'` | `'background'` | Used by adaptive rate-limit stores |
-| `headers` | `Record<string, string>` | — | Custom headers sent with the request; also used for Vary-based cache matching |
-| `retry` | `RetryOptions \| false` | — | Per-request retry override. Pass `false` to disable retries for this request |
-| `cache` | `{ ttl?: number; overrides?: CacheOverrideOptions; tags?: string[] }` | — | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level; `tags` associates the cached entry with tags for later invalidation |
+| Property   | Type                                                                  | Default        | Description                                                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signal`   | `AbortSignal`                                                         | —              | Cancels wait + request when aborted                                                                                                                                                    |
+| `priority` | `'user' \| 'background'`                                              | `'background'` | Used by adaptive rate-limit stores                                                                                                                                                     |
+| `headers`  | `Record<string, string>`                                              | —              | Custom headers sent with the request; also used for Vary-based cache matching                                                                                                          |
+| `retry`    | `RetryOptions \| false`                                               | —              | Per-request retry override. Pass `false` to disable retries for this request                                                                                                           |
+| `cache`    | `{ ttl?: number; overrides?: CacheOverrideOptions; tags?: string[] }` | —              | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level; `tags` associates the cached entry with tags for later invalidation |
 
 ## Request Flow
 
@@ -100,15 +100,78 @@ When `client.get(url)` is called, the request passes through each configured lay
 
 See the [Interceptors guide](/http-client-toolkit/guides/interceptors/) for detailed usage.
 
+## Observability
+
+Use `observability.onEvent` to collect request lifecycle events for logs, metrics, or tracing without wrapping internal stores or fetch calls.
+
+```typescript
+import { HttpClient, type HttpClientEvent } from '@http-client-toolkit/core';
+
+const client = new HttpClient({
+  name: 'catalog-api',
+  observability: {
+    onEvent(event: HttpClientEvent) {
+      logger.info({ event }, event.type);
+
+      if (event.type === 'request:success') {
+        metrics.histogram('http_client_duration_ms', event.durationMs, {
+          clientName: event.clientName,
+          status: String(event.status ?? 'unknown'),
+        });
+      }
+    },
+  },
+});
+```
+
+`onEvent` is a read-only observer. It is not an interceptor or middleware hook:
+return values are ignored, synchronous errors are swallowed, and rejected
+promises are caught without awaiting them in the hot request path. Keep
+synchronous observer work lightweight because it runs inline before any returned
+promise is detached. Observers cannot change the request result or thrown error.
+
+### Event Types
+
+| Event                | When it emits                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `request:start`      | A request begins, before cache, dedupe, rate-limit, or cooldown checks                             |
+| `request:success`    | A request resolves, including cache-served and deduped responses                                   |
+| `request:error`      | A final request error is about to be thrown                                                        |
+| `cache:hit`          | A fresh, `no-cache` override, stale-while-revalidate, or stale-if-error value is served from cache |
+| `cache:miss`         | No usable cache entry is available, including Vary mismatches                                      |
+| `cache:stale`        | A cached entry exists but needs revalidation or fallback handling                                  |
+| `cache:revalidate`   | Foreground or background cache revalidation is scheduled, succeeds, returns 304, or errors         |
+| `dedupe:owner`       | This caller owns the upstream request for a dedupe key                                             |
+| `dedupe:join`        | This caller joins or receives an existing deduped request result                                   |
+| `rateLimit:wait`     | The client waits for store-based limits or server cooldowns                                        |
+| `rateLimit:throw`    | The client throws because a store limit or server cooldown blocks the request                      |
+| `serverCooldown:set` | Response headers set server cooldown state                                                         |
+| `retry:scheduled`    | A retryable error schedules another attempt                                                        |
+| `retry:exhausted`    | A retry sequence reaches its final failed attempt                                                  |
+
+All events include stable public fields such as `type`, `clientName`,
+`requestId`, `url`, `method`, `resourceKey`, and `timestamp`. Events add
+context-specific fields like `attempt`, `durationMs`, `status`, `error`,
+`cacheKey`, and `waitMs` where applicable. These payloads are public API.
+
+Attempt numbers are emitted on retry events (`retry:scheduled` and
+`retry:exhausted`). Final `request:success` and `request:error` events describe
+the logical request outcome and do not include a fetch attempt count.
+
+Bridge `onEvent` to your logger, metrics client, or OpenTelemetry instrumentation
+by translating events into log records, counters, histograms, span events, or
+attributes. OpenTelemetry is intentionally not a dependency of
+`@http-client-toolkit/core`.
+
 ## Cache TTL Semantics
 
 Consistent across all built-in stores:
 
-| Value | Behavior |
-|-------|----------|
-| `ttlSeconds > 0` | Expires after N seconds |
+| Value              | Behavior                  |
+| ------------------ | ------------------------- |
+| `ttlSeconds > 0`   | Expires after N seconds   |
 | `ttlSeconds === 0` | Never expires (permanent) |
-| `ttlSeconds < 0` | Immediately expired |
+| `ttlSeconds < 0`   | Immediately expired       |
 
 ## Header-Based Rate Limiting
 
@@ -121,6 +184,7 @@ The client respects these headers out of the box:
 - Combined structured `RateLimit` (e.g. `"default";r=0;t=30`)
 
 Cooldowns are enforced when:
+
 - The response is a throttling status (`429` or `503`), **or**
 - Remaining quota is explicitly exhausted (`remaining <= 0`)
 
@@ -145,12 +209,12 @@ The client respects `Cache-Control`, `ETag`, `Last-Modified`, and `Expires` head
 
 ### `cacheOverrides`
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `ignoreNoStore` | `boolean` | Cache responses even when `no-store` is set |
+| Property        | Type      | Description                                   |
+| --------------- | --------- | --------------------------------------------- |
+| `ignoreNoStore` | `boolean` | Cache responses even when `no-store` is set   |
 | `ignoreNoCache` | `boolean` | Skip revalidation even when `no-cache` is set |
-| `minimumTTL` | `number` | Floor on header-derived freshness (seconds) |
-| `maximumTTL` | `number` | Cap on header-derived freshness (seconds) |
+| `minimumTTL`    | `number`  | Floor on header-derived freshness (seconds)   |
+| `maximumTTL`    | `number`  | Cap on header-derived freshness (seconds)     |
 
 ### `invalidateByTag(tag)`
 
@@ -181,7 +245,10 @@ await client.flushRevalidations();
 ### Cache-Only Client
 
 ```typescript
-const client = new HttpClient({ name: 'my-api', cache: { store: new InMemoryCacheStore() } });
+const client = new HttpClient({
+  name: 'my-api',
+  cache: { store: new InMemoryCacheStore() },
+});
 ```
 
 ### Full Stack with Adaptive Rate Limiting
