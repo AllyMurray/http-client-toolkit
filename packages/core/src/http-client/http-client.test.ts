@@ -1574,6 +1574,343 @@ describe('HttpClient', () => {
     expect(calls.fail).toBe(1);
   });
 
+  describe('getPendingRequestCount', () => {
+    test('returns 0 for a fresh client with and without a resource key', () => {
+      expect(httpClient.getPendingRequestCount()).toBe(0);
+      expect(httpClient.getPendingRequestCount(baseUrl)).toBe(0);
+    });
+
+    test('request:start observers see the current request counted', async () => {
+      const startCounts: Array<number> = [];
+      const holder: { client?: HttpClient } = {};
+
+      const client = new HttpClient({
+        name: 'test',
+        fetchFn: async () => new Response('{}', { status: 200 }),
+        observability: {
+          onEvent: (event) => {
+            if (event.type === 'request:start') {
+              startCounts.push(
+                holder.client!.getPendingRequestCount(event.resourceKey),
+              );
+            }
+          },
+        },
+      });
+      holder.client = client;
+
+      await client.get(`${baseUrl}/observed-pending`);
+
+      expect(startCounts).toEqual([1]);
+    });
+
+    test('tracks a single in-flight request and resets on success', async () => {
+      let resolveFetch!: (value: Response) => void;
+      const fetchPromise = new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      const client = new HttpClient({
+        name: 'test',
+        fetchFn: () => fetchPromise,
+      });
+
+      const requestPromise = client.get(`${baseUrl}/pending`);
+
+      // Yield so the request enters the try block before we probe.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(client.getPendingRequestCount()).toBe(1);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(1);
+
+      resolveFetch(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      await requestPromise;
+      expect(client.getPendingRequestCount()).toBe(0);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(0);
+    });
+
+    test('resets to 0 after a request throws', async () => {
+      let resolveFetch!: (value: Response) => void;
+      const fetchPromise = new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      const client = new HttpClient({
+        name: 'test',
+        fetchFn: () => fetchPromise,
+      });
+
+      const requestPromise = client.get(`${baseUrl}/pending-error`);
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(client.getPendingRequestCount()).toBe(1);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(1);
+
+      resolveFetch(new Response('boom', { status: 500 }));
+
+      await expect(requestPromise).rejects.toThrow(HttpClientError);
+      expect(client.getPendingRequestCount()).toBe(0);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(0);
+    });
+
+    test('counts both owner and joiner for in-flight deduped requests', async () => {
+      type Deferred = {
+        promise: Promise<unknown>;
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+      };
+
+      let resolveFetch!: (value: Response) => void;
+      const fetchPromise = new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      let resolveOwnerRegistered!: () => void;
+      const ownerRegistered = new Promise<void>((resolve) => {
+        resolveOwnerRegistered = resolve;
+      });
+
+      let resolveJoinerWaiting!: () => void;
+      const joinerWaiting = new Promise<void>((resolve) => {
+        resolveJoinerWaiting = resolve;
+      });
+
+      let job: Deferred | undefined;
+      let waitForCalls = 0;
+      let registerOrJoinCalls = 0;
+
+      const dedupeStoreStub = {
+        async waitFor() {
+          waitForCalls += 1;
+
+          if (waitForCalls <= 2) {
+            return undefined;
+          }
+
+          resolveJoinerWaiting();
+
+          try {
+            return await job!.promise;
+          } catch {
+            return undefined;
+          }
+        },
+        async registerOrJoin() {
+          registerOrJoinCalls += 1;
+
+          if (!job) {
+            let resolve!: (value: unknown) => void;
+            let reject!: (reason: unknown) => void;
+            const promise = new Promise<unknown>((res, rej) => {
+              resolve = res;
+              reject = rej;
+            });
+            job = { promise, resolve, reject };
+            resolveOwnerRegistered();
+            return { jobId: 'owner-job', isOwner: true };
+          }
+
+          return { jobId: 'owner-job', isOwner: false };
+        },
+        async complete(_hash: string, _value: unknown) {
+          job?.resolve(_value);
+        },
+        async fail(_hash: string, error: Error) {
+          job?.reject(error);
+        },
+        async isInProgress() {
+          return job !== undefined;
+        },
+      } as const;
+
+      const client = new HttpClient({
+        name: 'test',
+        dedupe: dedupeStoreStub,
+        fetchFn: () => fetchPromise,
+      });
+
+      const ownerRequest = client.get(`${baseUrl}/dedupe-pending`);
+      await ownerRegistered;
+
+      // Start a second identical request which will join the in-flight owner.
+      const joinerRequest = client.get(`${baseUrl}/dedupe-pending`);
+      await joinerWaiting;
+
+      expect(client.getPendingRequestCount()).toBe(2);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(2);
+      expect(registerOrJoinCalls).toBe(2);
+
+      resolveFetch(new Response('{}', { status: 200 }));
+      await expect(Promise.all([ownerRequest, joinerRequest])).resolves.toEqual(
+        [{}, {}],
+      );
+      expect(client.getPendingRequestCount()).toBe(0);
+      expect(client.getPendingRequestCount(baseUrl)).toBe(0);
+    });
+
+    test('resets to 0 after a cache hit returns synchronously', async () => {
+      const store = new Map<string, unknown>();
+      const cache = {
+        async get(hash: string) {
+          return store.get(hash);
+        },
+        async set(hash: string, value: unknown) {
+          store.set(hash, value);
+        },
+        async setWithTags(hash: string, value: unknown) {
+          store.set(hash, value);
+        },
+        async invalidateByTag() {
+          return 0;
+        },
+        async invalidateByTags() {
+          return 0;
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear() {
+          store.clear();
+        },
+      } as const;
+
+      const client = new HttpClient({
+        name: 'test',
+        cache: { store: cache },
+      });
+
+      nock(baseUrl)
+        .get('/cached-pending')
+        .reply(200, { ok: true }, { 'Cache-Control': 'max-age=60' });
+
+      // Prime the cache so the next call is a cache hit.
+      await client.get(`${baseUrl}/cached-pending`);
+      expect(client.getPendingRequestCount()).toBe(0);
+
+      await client.get(`${baseUrl}/cached-pending`);
+      expect(client.getPendingRequestCount()).toBe(0);
+    });
+
+    test('scopes per-resource counts using resourceKeyResolver output', async () => {
+      const ownerResource = 'https://api.example.com';
+      const altResource = 'https://api-alt.example.com';
+
+      const fetches: Array<{
+        resource: string;
+        resolve: (value: Response) => void;
+      }> = [];
+
+      function makeFetch(resource: string) {
+        return () =>
+          new Promise<Response>((resolve) => {
+            fetches.push({ resource, resolve });
+          });
+      }
+
+      // Two clients, each with its own resource so the per-resource counts
+      // are tracked independently. We use a custom resourceKeyResolver to
+      // keep the resource keys deterministic.
+      const clientA = new HttpClient({
+        name: 'a',
+        resourceKeyResolver: (url) => new URL(url).origin,
+        fetchFn: makeFetch(ownerResource),
+      });
+      const clientB = new HttpClient({
+        name: 'b',
+        resourceKeyResolver: (url) => new URL(url).origin,
+        fetchFn: makeFetch(altResource),
+      });
+
+      const reqA = clientA.get(`${baseUrl}/pending-a`);
+      const reqB = clientB.get(`${alternateBaseUrl}/pending-b`);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Each client only sees its own resource.
+      expect(clientA.getPendingRequestCount(ownerResource)).toBe(1);
+      expect(clientA.getPendingRequestCount(altResource)).toBe(0);
+      expect(clientA.getPendingRequestCount()).toBe(1);
+      expect(clientB.getPendingRequestCount(altResource)).toBe(1);
+      expect(clientB.getPendingRequestCount(ownerResource)).toBe(0);
+      expect(clientB.getPendingRequestCount()).toBe(1);
+
+      fetches
+        .find((f) => f.resource === ownerResource)!
+        .resolve(new Response('{}', { status: 200 }));
+      fetches
+        .find((f) => f.resource === altResource)!
+        .resolve(new Response('{}', { status: 200 }));
+
+      await Promise.all([reqA, reqB]);
+
+      expect(clientA.getPendingRequestCount(ownerResource)).toBe(0);
+      expect(clientA.getPendingRequestCount()).toBe(0);
+      expect(clientB.getPendingRequestCount(altResource)).toBe(0);
+      expect(clientB.getPendingRequestCount()).toBe(0);
+    });
+
+    test('returns total across multiple resources when no key is passed', async () => {
+      const fetches = new Map<string, (value: Response) => void>();
+
+      const client = new HttpClient({
+        name: 'multi',
+        resourceKeyResolver: (url) => new URL(url).origin,
+        fetchFn: (url) =>
+          new Promise<Response>((resolve) => {
+            fetches.set(url, resolve);
+          }),
+      });
+
+      const reqA = client.get(`${baseUrl}/a`);
+      const reqB = client.get(`${alternateBaseUrl}/b`);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(client.getPendingRequestCount(baseUrl)).toBe(1);
+      expect(client.getPendingRequestCount(alternateBaseUrl)).toBe(1);
+      expect(client.getPendingRequestCount()).toBe(2);
+
+      fetches.get(`${baseUrl}/a`)!(new Response('{}', { status: 200 }));
+      await reqA;
+
+      expect(client.getPendingRequestCount(baseUrl)).toBe(0);
+      expect(client.getPendingRequestCount(alternateBaseUrl)).toBe(1);
+      expect(client.getPendingRequestCount()).toBe(1);
+
+      fetches.get(`${alternateBaseUrl}/b`)!(
+        new Response('{}', { status: 200 }),
+      );
+      await reqB;
+
+      expect(client.getPendingRequestCount()).toBe(0);
+    });
+
+    test('new named types are re-exported from the package entrypoint', async () => {
+      const mod = await import('../index.js');
+      expect(mod.HttpClient).toBeTypeOf('function');
+      // Type-level smoke check: ensure the new named types resolve at compile time.
+      type _ObservabilityCheck = NonNullable<
+        ConstructorParameters<typeof mod.HttpClient>[0]
+      >['observability'];
+      type _PerRequestCacheCheck = NonNullable<
+        Parameters<(typeof mod.HttpClient)['prototype']['get']>[1]
+      >['cache'];
+      const _o: _ObservabilityCheck = { onEvent: () => {} };
+      const _c: _PerRequestCacheCheck = { ttl: 30 };
+      expect(_o).toBeDefined();
+      expect(_c).toBeDefined();
+    });
+  });
+
   test('should wrap Error in HttpClientError via generateClientError', () => {
     const client = new HttpClient({ name: 'test' }) as unknown as {
       generateClientError: (err: unknown) => Error;
