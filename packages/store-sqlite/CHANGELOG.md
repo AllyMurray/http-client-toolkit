@@ -1,5 +1,12 @@
 # @http-client-toolkit/store-sqlite
 
+## 4.1.0
+
+### Patch Changes
+
+- Updated dependencies [306c293]
+  - @http-client-toolkit/core@4.1.0
+
 ## 4.0.0
 
 ### Patch Changes

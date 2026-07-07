@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 4.1.0
+
+### Minor Changes
+
+- 306c293: Add structured observability lifecycle events for requests, cache, dedupe, rate limiting, server cooldowns, and retries via `HttpClientOptions.observability.onEvent`.
+
 ## 4.0.0
 
 ### Minor Changes
