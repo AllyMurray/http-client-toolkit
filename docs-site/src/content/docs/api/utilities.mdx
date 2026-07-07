@@ -56,15 +56,17 @@ try {
 
 The `@http-client-toolkit/core` package exports:
 
-| Export                       | Type      | Description                                                         |
-| ---------------------------- | --------- | ------------------------------------------------------------------- |
-| `HttpClient`                 | Class     | Main client class                                                   |
-| `HttpClientError`            | Class     | Error class with `statusCode`                                       |
-| `HttpClientEvent`            | Type      | Stable structured lifecycle event union for `observability.onEvent` |
-| `hashRequest`                | Function  | Deterministic SHA-256 request hashing                               |
-| `HttpClientCacheOptions`     | Interface | Cache configuration for `HttpClientOptions.cache`                   |
-| `HttpClientRateLimitOptions` | Interface | Rate limit configuration for `HttpClientOptions.rateLimit`          |
-| `CacheStore`                 | Interface | Cache store contract                                                |
-| `DedupeStore`                | Interface | Deduplication store contract                                        |
-| `RateLimitStore`             | Interface | Rate limit store contract                                           |
-| `AdaptiveRateLimitStore`     | Interface | Adaptive rate limit store contract                                  |
+| Export                        | Type      | Description                                                                        |
+| ----------------------------- | --------- | ---------------------------------------------------------------------------------- |
+| `HttpClient`                  | Class     | Main client class                                                                  |
+| `HttpClientError`             | Class     | Error class with `statusCode`                                                       |
+| `HttpClientEvent`             | Type      | Stable structured lifecycle event union for `observability.onEvent`                |
+| `HttpClientObservabilityOptions` | Type   | Named type for `HttpClientOptions.observability`                                   |
+| `PerRequestCacheOptions`      | Type      | Named type for the per-request `cache` option on `get()`                           |
+| `hashRequest`                 | Function  | Deterministic SHA-256 request hashing                                              |
+| `HttpClientCacheOptions`      | Interface | Cache configuration for `HttpClientOptions.cache`                                  |
+| `HttpClientRateLimitOptions`  | Interface | Rate limit configuration for `HttpClientOptions.rateLimit`                         |
+| `CacheStore`                  | Interface | Cache store contract                                                               |
+| `DedupeStore`                 | Interface | Deduplication store contract                                                       |
+| `RateLimitStore`              | Interface | Rate limit store contract                                                          |
+| `AdaptiveRateLimitStore`      | Interface | Adaptive rate limit store contract                                                  |

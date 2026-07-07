@@ -24,8 +24,10 @@ import {
 import {
   HttpClientContract,
   type CacheOverrideOptions,
-  type HttpErrorContext,
   type HttpClientEvent,
+  type HttpClientObservabilityOptions,
+  type HttpErrorContext,
+  type PerRequestCacheOptions,
   type RetryContext,
   type RetryOptions,
 } from '../types/index.js';
@@ -204,9 +206,7 @@ export interface HttpClientOptions {
    */
   retry?: RetryOptions | false;
   /** Structured lifecycle events for metrics, logs, and tracing. */
-  observability?: {
-    onEvent?: (event: HttpClientEvent) => void | Promise<void>;
-  };
+  observability?: HttpClientObservabilityOptions;
 }
 
 interface RateLimitHeaderConfig {
@@ -241,8 +241,10 @@ interface EventBaseFields {
 
 export {
   type CacheOverrideOptions,
-  type HttpErrorContext,
   type HttpClientEvent,
+  type HttpClientObservabilityOptions,
+  type HttpErrorContext,
+  type PerRequestCacheOptions,
   type RetryContext,
   type RetryOptions,
 };
@@ -253,6 +255,7 @@ export class HttpClient implements HttpClientContract {
   private serverCooldowns = new Map<string, number>();
   private pendingRevalidations: Array<Promise<void>> = [];
   private requestSequence = 0;
+  private pendingRequestCounts = new Map<string, number>();
   private options: {
     cacheTTL: number;
     throwOnRateLimit: boolean;
@@ -905,6 +908,33 @@ export class HttpClient implements HttpClientContract {
     this.pendingRevalidations = [];
   }
 
+  /**
+   * Synchronous count of `get()` calls currently in-flight on this client.
+   *
+   * Includes requests being executed by this client as well as requests
+   * waiting on an in-flight deduplicated request. This is the basis for a
+   * synchronous queue-depth probe, complementing the asynchronous
+   * `dedupe:owner` / `dedupe:join` observability events.
+   *
+   * Pass a `resourceKey` to scope the count to a single rate-limit bucket
+   * (as produced by `resourceKeyResolver`, or the URL origin by default).
+   * Omit it for the total across all resources.
+   *
+   * @param resourceKey Optional rate-limit resource key to scope the count.
+   * @returns The number of in-flight requests (for the given resource, or total).
+   */
+  getPendingRequestCount(resourceKey?: string): number {
+    if (resourceKey !== undefined) {
+      return this.pendingRequestCounts.get(resourceKey) ?? 0;
+    }
+
+    let total = 0;
+    for (const count of this.pendingRequestCounts.values()) {
+      total += count;
+    }
+    return total;
+  }
+
   private async backgroundRevalidate(
     url: string,
     hash: string,
@@ -1504,11 +1534,7 @@ export class HttpClient implements HttpClientContract {
       priority?: RequestPriority;
       headers?: Record<string, string>;
       retry?: RetryOptions | false;
-      cache?: {
-        ttl?: number;
-        overrides?: CacheOverrideOptions;
-        tags?: Array<string>;
-      };
+      cache?: PerRequestCacheOptions;
     } = {},
   ): Promise<Result> {
     const { signal, priority = 'background', headers } = options;
@@ -1570,11 +1596,15 @@ export class HttpClient implements HttpClientContract {
     let staleEntry: CacheEntry<unknown> | undefined;
     let staleCandidate: CacheEntry<unknown> | undefined;
 
+    this.pendingRequestCounts.set(
+      resource,
+      (this.pendingRequestCounts.get(resource) ?? 0) + 1,
+    );
+
     this.emitEvent({
       ...this.eventBase(requestContext),
       type: 'request:start',
     });
-
     try {
       await this.enforceServerCooldown(url, signal, false, requestContext);
 
@@ -1980,6 +2010,13 @@ export class HttpClient implements HttpClientContract {
         this.statusFromError(error) ?? this.statusFromError(clientError),
       );
       throw clientError;
+    } finally {
+      const next = (this.pendingRequestCounts.get(resource) ?? 1) - 1;
+      if (next > 0) {
+        this.pendingRequestCounts.set(resource, next);
+      } else {
+        this.pendingRequestCounts.delete(resource);
+      }
     }
   }
 }

@@ -82,23 +82,23 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 
 **Constructor options:**
 
-| Property              | Type                                                              | Default    | Description                                        |
-| --------------------- | ----------------------------------------------------------------- | ---------- | -------------------------------------------------- |
-| `name`                | `string`                                                          | required   | Name for the client instance                       |
-| `cache`               | `CacheStore`                                                      | -          | Response caching                                   |
-| `dedupe`              | `DedupeStore`                                                     | -          | Request deduplication                              |
-| `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore`                        | -          | Rate limiting                                      |
-| `cacheTTL`            | `number`                                                          | `3600`     | Cache TTL when response has no headers             |
-| `throwOnRateLimit`    | `boolean`                                                         | `true`     | Throw when rate limited vs. wait                   |
-| `maxWaitTime`         | `number`                                                          | `60000`    | Max wait time (ms) before throwing                 |
-| `responseTransformer` | `(data: unknown) => unknown`                                      | -          | Transform raw response data                        |
-| `responseHandler`     | `(data: unknown) => unknown`                                      | -          | Validate/process transformed data                  |
-| `errorHandler`        | `(error: unknown) => Error`                                       | -          | Convert errors to domain-specific types            |
-| `cacheOverrides`      | `CacheOverrideOptions`                                            | -          | Override cache header behaviors                    |
-| `retry`               | `RetryOptions \| false`                                           | -          | Retry config; `false` disables globally            |
-| `rateLimitHeaders`    | `RateLimitHeaderConfig`                                           | defaults   | Configure standard/custom header names             |
-| `resourceKeyResolver` | `(url: string) => string`                                         | URL origin | Customize how rate-limit resource keys are derived |
-| `observability`       | `{ onEvent?: (event: HttpClientEvent) => void \| Promise<void> }` | -          | Subscribe to structured lifecycle events           |
+| Property              | Type                                       | Default    | Description                                        |
+| --------------------- | ------------------------------------------ | ---------- | -------------------------------------------------- |
+| `name`                | `string`                                   | required   | Name for the client instance                       |
+| `cache`               | `CacheStore`                               | -          | Response caching                                   |
+| `dedupe`              | `DedupeStore`                              | -          | Request deduplication                              |
+| `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore` | -          | Rate limiting                                      |
+| `cacheTTL`            | `number`                                   | `3600`     | Cache TTL when response has no headers             |
+| `throwOnRateLimit`    | `boolean`                                  | `true`     | Throw when rate limited vs. wait                   |
+| `maxWaitTime`         | `number`                                   | `60000`    | Max wait time (ms) before throwing                 |
+| `responseTransformer` | `(data: unknown) => unknown`               | -          | Transform raw response data                        |
+| `responseHandler`     | `(data: unknown) => unknown`               | -          | Validate/process transformed data                  |
+| `errorHandler`        | `(error: unknown) => Error`                | -          | Convert errors to domain-specific types            |
+| `cacheOverrides`      | `CacheOverrideOptions`                     | -          | Override cache header behaviors                    |
+| `retry`               | `RetryOptions \| false`                    | -          | Retry config; `false` disables globally            |
+| `rateLimitHeaders`    | `RateLimitHeaderConfig`                    | defaults   | Configure standard/custom header names             |
+| `resourceKeyResolver` | `(url: string) => string`                  | URL origin | Customize how rate-limit resource keys are derived |
+| `observability`       | `HttpClientObservabilityOptions`           | -          | Subscribe to structured lifecycle events           |
 
 ### Request Flow
 
@@ -202,8 +202,8 @@ const client = new HttpClient({
 
 ### Custom Rate-Limit Buckets
 
-Use `resourceKeyResolver` when list and retrieve routes should share the same
-rate-limit bucket:
+Use `resourceKeyResolver` when REST routes should map to endpoint-level
+rate-limit buckets instead of the default origin-level bucket:
 
 ```typescript
 const client = new HttpClient({
@@ -212,6 +212,9 @@ const client = new HttpClient({
     const path = new URL(url).pathname;
     if (path === '/api/issues' || path.startsWith('/api/issue/')) {
       return 'issues';
+    }
+    if (path.startsWith('/api/users')) {
+      return 'users';
     }
     return new URL(url).origin;
   },
@@ -229,8 +232,31 @@ compatibility.
 - `HttpClient` - Main client class
 - `HttpClientError` - Error class with `statusCode`
 - `HttpClientEvent` - Stable structured lifecycle event union
+- `HttpClientObservabilityOptions` - Named type for `HttpClientOptions.observability`
+- `PerRequestCacheOptions` - Named type for `get()` `cache` option shape
 - `hashRequest` - Deterministic SHA-256 request hashing
 - Store interfaces: `CacheStore`, `DedupeStore`, `RateLimitStore`, `AdaptiveRateLimitStore`
+
+`HttpClient` exposes a synchronous `getPendingRequestCount(resourceKey?)`
+accessor that returns the number of `get()` calls currently in-flight on the
+client. This includes both requests being executed and requests joined onto an
+in-flight deduplicated request.
+
+Pass a `resourceKey` as produced by `resourceKeyResolver` to scope the count to
+a single rate-limit bucket. `HttpClient` is not bound to a base URL, so with the
+default resolver that key is derived from each request URL's origin and all
+paths on the same origin share one bucket; omit the key for the total across
+all resources on the client. For per-endpoint REST backpressure, configure
+`resourceKeyResolver` to return finer-grained keys for those routes. Use this
+accessor as a synchronous queue-depth probe complementing the asynchronous
+`dedupe:owner` / `dedupe:join` observability events.
+
+```typescript
+// With the resolver above, these are separate endpoint-level buckets.
+const pendingIssues = client.getPendingRequestCount('issues');
+const pendingUsers = client.getPendingRequestCount('users');
+const pendingTotal = client.getPendingRequestCount();
+```
 
 ## License
 

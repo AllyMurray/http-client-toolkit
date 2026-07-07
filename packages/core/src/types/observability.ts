@@ -172,3 +172,15 @@ export type HttpClientEvent =
   | HttpClientServerCooldownSetEvent
   | HttpClientRetryScheduledEvent
   | HttpClientRetryExhaustedEvent;
+
+/**
+ * Observability configuration for an `HttpClient` instance.
+ *
+ * Observers receive structured lifecycle events covering requests, cache,
+ * dedupe, rate limiting, server cooldowns, and retries. Observer return values
+ * are ignored and observer errors are swallowed so observability can never
+ * affect request behaviour.
+ */
+export interface HttpClientObservabilityOptions {
+  onEvent?: (event: HttpClientEvent) => void | Promise<void>;
+}

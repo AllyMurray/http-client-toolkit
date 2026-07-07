@@ -35,7 +35,7 @@ new HttpClient(options);
 | `responseHandler`     | `(data: unknown) => unknown`                                              | —                  | Post-transformation hook for validation or domain-level error detection. Throw to reject 2xx responses with application-level errors                   |
 | `errorHandler`        | `(context: HttpErrorContext) => Error`                                    | —                  | Convert HTTP errors to domain-specific types. Context includes `url`, response `status`, parsed `data`, and `headers`. Not called for network failures |
 | `retry`               | `RetryOptions \| false`                                                   | —                  | Automatic retry configuration. See [Retries guide](/http-client-toolkit/guides/retries/)                                                               |
-| `observability`       | `{ onEvent?: (event: HttpClientEvent) => void \| Promise<void> }`         | —                  | Subscribe to read-only structured lifecycle events                                                                                                     |
+| `observability`       | `HttpClientObservabilityOptions`                                          | —                  | Subscribe to read-only structured lifecycle events                                                                                                     |
 
 #### `cache` Options (`HttpClientCacheOptions`)
 
@@ -82,7 +82,7 @@ The `url` must be an absolute URL (e.g. `https://api.example.com/items`).
 | `priority` | `'user' \| 'background'`                                              | `'background'` | Used by adaptive rate-limit stores                                                                                                                                                     |
 | `headers`  | `Record<string, string>`                                              | —              | Custom headers sent with the request; also used for Vary-based cache matching                                                                                                          |
 | `retry`    | `RetryOptions \| false`                                               | —              | Per-request retry override. Pass `false` to disable retries for this request                                                                                                           |
-| `cache`    | `{ ttl?: number; overrides?: CacheOverrideOptions; tags?: string[] }` | —              | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level; `tags` associates the cached entry with tags for later invalidation |
+| `cache`    | `PerRequestCacheOptions`                                              | —              | Per-request cache options. `ttl` overrides constructor TTL; `overrides` are shallow-merged with constructor-level; `tags` associates the cached entry with tags for later invalidation |
 
 ## Request Flow
 
@@ -102,7 +102,7 @@ See the [Interceptors guide](/http-client-toolkit/guides/interceptors/) for deta
 
 ## Observability
 
-Use `observability.onEvent` to collect request lifecycle events for logs, metrics, or tracing without wrapping internal stores or fetch calls.
+Use `observability.onEvent` (typed as `HttpClientObservabilityOptions`) to collect request lifecycle events for logs, metrics, or tracing without wrapping internal stores or fetch calls.
 
 ```typescript
 import { HttpClient, type HttpClientEvent } from '@http-client-toolkit/core';
@@ -239,6 +239,58 @@ Waits for all pending `stale-while-revalidate` background fetches to complete. U
 ```typescript
 await client.flushRevalidations();
 ```
+
+### `getPendingRequestCount(resourceKey?)`
+
+Returns the number of `get()` calls currently in-flight on this client. Includes both requests being executed by this client and requests joined onto an in-flight deduplicated request.
+
+```typescript
+// Total across all resources
+const total = client.getPendingRequestCount();
+```
+
+Pass a `resourceKey` — the same value `resourceKeyResolver` returns — to scope the count to a single rate-limit bucket. `HttpClient` is not bound to a base URL, so with the default resolver the resource key is derived from each request URL's origin and all paths on the same origin share one bucket:
+
+```typescript
+// Counts only in-flight requests to this origin. This differs from
+// getPendingRequestCount() only when the same client instance also has
+// requests in-flight for other origins or custom resource buckets.
+const github = client.getPendingRequestCount('https://api.github.com');
+```
+
+For REST APIs, individual resources/endpoints only get separate counts when you configure a custom `resourceKeyResolver` that returns finer-grained keys than the URL origin — the same pattern used for rate-limit bucketing:
+
+```typescript
+import { HttpClient } from '@http-client-toolkit/core';
+
+const client = new HttpClient({
+  name: 'issues-api',
+  resourceKeyResolver: (url) => {
+    const path = new URL(url).pathname;
+    if (path === '/api/issues' || path.startsWith('/api/issue/')) {
+      return 'issues';
+    }
+    if (path.startsWith('/api/users')) {
+      return 'users';
+    }
+    return new URL(url).origin;
+  },
+});
+
+// Per-bucket backpressure: throttle the issues endpoint independently
+// of user lookups, even though they share a client.
+if (client.getPendingRequestCount('issues') >= 50) {
+  throw new Error('Issues endpoint queue saturated');
+}
+
+// User lookups are tracked separately because the resolver returns 'users'.
+const pendingUsers = client.getPendingRequestCount('users');
+
+// Total load across the whole client
+const total = client.getPendingRequestCount();
+```
+
+This is a synchronous queue-depth probe complementing the asynchronous `dedupe:owner` / `dedupe:join` observability events — useful for backpressure, concurrency limiting, or scheduling decisions where waiting for an event would be too late.
 
 ## Examples
 

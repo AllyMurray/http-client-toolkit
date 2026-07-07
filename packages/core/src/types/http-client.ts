@@ -53,6 +53,23 @@ export interface CacheOverrideOptions {
   maximumTTL?: number;
 }
 
+/**
+ * Per-request cache configuration passed to `HttpClient.get()`.
+ *
+ * - `ttl` overrides the constructor-level TTL for this request only.
+ * - `overrides` is shallow-merged with constructor-level cache overrides.
+ * - `tags` associates the resulting cache entry with tags for selective
+ *   invalidation via `invalidateByTag()` / `invalidateByTags()`.
+ */
+export interface PerRequestCacheOptions {
+  /** TTL in seconds — overrides the constructor-level TTL for this request. */
+  ttl?: number;
+  /** Cache overrides shallow-merged with constructor-level overrides. */
+  overrides?: CacheOverrideOptions;
+  /** Tags associated with the cache entry for selective invalidation. */
+  tags?: Array<string>;
+}
+
 export interface HttpClientContract {
   /** Name identifying this client instance. */
   readonly name: string;
@@ -68,6 +85,22 @@ export interface HttpClientContract {
    * @returns The number of cache entries that were deleted, or 0 if no cache store is configured.
    */
   invalidateByTags(tags: Array<string>): Promise<number>;
+  /**
+   * Synchronous count of `get()` calls currently in-flight on this client.
+   *
+   * Includes requests being executed by this client as well as requests
+   * joined onto an in-flight deduplicated request. Useful as a queue-depth
+   * probe for backpressure decisions, complementing the asynchronous
+   * `dedupe:owner` / `dedupe:join` observability events.
+   *
+   * Pass a `resourceKey` (as produced by `resourceKeyResolver`, or the URL
+   * origin by default) to scope the count to a single rate-limit bucket.
+   * Omit it for the total across all resources.
+   *
+   * @param resourceKey Optional rate-limit resource key to scope the count.
+   * @returns The number of in-flight requests (for the given resource, or total).
+   */
+  getPendingRequestCount(resourceKey?: string): number;
   /**
    * Perform a GET request.
    *
@@ -103,11 +136,7 @@ export interface HttpClientContract {
        * Per-request cache options. `ttl` overrides constructor-level TTL;
        * `overrides` are shallow-merged with constructor-level cache overrides.
        */
-      cache?: {
-        ttl?: number;
-        overrides?: CacheOverrideOptions;
-        tags?: Array<string>;
-      };
+      cache?: PerRequestCacheOptions;
     },
   ): Promise<Result>;
 }
