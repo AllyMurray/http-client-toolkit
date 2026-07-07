@@ -3,7 +3,6 @@ title: Utilities
 description: API reference for hashRequest, HttpClientError, and other utilities
 ---
 
-
 ## hashRequest
 
 Generates deterministic SHA-256 hashes for cache and deduplication keys.
@@ -35,9 +34,9 @@ import { HttpClientError } from '@http-client-toolkit/core';
 
 ### Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `message` | `string` | Error description |
+| Property     | Type                  | Description                          |
+| ------------ | --------------------- | ------------------------------------ |
+| `message`    | `string`              | Error description                    |
 | `statusCode` | `number \| undefined` | HTTP status code (e.g. `404`, `500`) |
 
 ### Usage
@@ -47,7 +46,7 @@ try {
   await client.get(url);
 } catch (error) {
   if (error instanceof HttpClientError) {
-    console.log(error.message);    // "Not Found"
+    console.log(error.message); // "Not Found"
     console.log(error.statusCode); // 404
   }
 }
@@ -57,14 +56,15 @@ try {
 
 The `@http-client-toolkit/core` package exports:
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `HttpClient` | Class | Main client class |
-| `HttpClientError` | Class | Error class with `statusCode` |
-| `hashRequest` | Function | Deterministic SHA-256 request hashing |
-| `HttpClientCacheOptions` | Interface | Cache configuration for `HttpClientOptions.cache` |
-| `HttpClientRateLimitOptions` | Interface | Rate limit configuration for `HttpClientOptions.rateLimit` |
-| `CacheStore` | Interface | Cache store contract |
-| `DedupeStore` | Interface | Deduplication store contract |
-| `RateLimitStore` | Interface | Rate limit store contract |
-| `AdaptiveRateLimitStore` | Interface | Adaptive rate limit store contract |
+| Export                       | Type      | Description                                                         |
+| ---------------------------- | --------- | ------------------------------------------------------------------- |
+| `HttpClient`                 | Class     | Main client class                                                   |
+| `HttpClientError`            | Class     | Error class with `statusCode`                                       |
+| `HttpClientEvent`            | Type      | Stable structured lifecycle event union for `observability.onEvent` |
+| `hashRequest`                | Function  | Deterministic SHA-256 request hashing                               |
+| `HttpClientCacheOptions`     | Interface | Cache configuration for `HttpClientOptions.cache`                   |
+| `HttpClientRateLimitOptions` | Interface | Rate limit configuration for `HttpClientOptions.rateLimit`          |
+| `CacheStore`                 | Interface | Cache store contract                                                |
+| `DedupeStore`                | Interface | Deduplication store contract                                        |
+| `RateLimitStore`             | Interface | Rate limit store contract                                           |
+| `AdaptiveRateLimitStore`     | Interface | Adaptive rate limit store contract                                  |

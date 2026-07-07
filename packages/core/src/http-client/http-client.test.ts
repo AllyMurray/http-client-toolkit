@@ -3,6 +3,7 @@ import { HttpClient } from './http-client.js';
 import { isCacheEntry, type CacheEntry } from '../cache/index.js';
 import { HttpClientError } from '../errors/http-client-error.js';
 import { hashRequest } from '../stores/index.js';
+import type { HttpClientEvent } from '../types/index.js';
 
 const baseUrl = 'https://api.example.com';
 const alternateBaseUrl = 'https://api-alt.example.com';
@@ -688,6 +689,741 @@ describe('HttpClient', () => {
     const result = await client.get<{ ok: boolean }>(`${baseUrl}/cache-hit`);
 
     expect(result.ok).toBe(true);
+  });
+
+  describe('observability', () => {
+    function collectEvents() {
+      const events: Array<HttpClientEvent> = [];
+      return {
+        events,
+        observability: {
+          onEvent: (event: HttpClientEvent) => {
+            events.push(event);
+          },
+        },
+      };
+    }
+
+    function makeCacheStore() {
+      const store = new Map<string, unknown>();
+      return {
+        async get(hash: string) {
+          return store.get(hash);
+        },
+        async set(hash: string, value: unknown) {
+          store.set(hash, value);
+        },
+        async setWithTags(hash: string, value: unknown) {
+          store.set(hash, value);
+        },
+        async invalidateByTag() {
+          return 0;
+        },
+        async invalidateByTags() {
+          return 0;
+        },
+        async delete(hash: string) {
+          store.delete(hash);
+        },
+        async clear() {
+          store.clear();
+        },
+        _store: store,
+      };
+    }
+
+    test('emits request lifecycle events in order for a normal request', async () => {
+      const observed = collectEvents();
+      nock(baseUrl).get('/observed-normal').reply(200, { ok: true });
+
+      const client = new HttpClient({
+        name: 'observed',
+        observability: observed.observability,
+      });
+
+      const result = await client.get<{ ok: boolean }>(
+        `${baseUrl}/observed-normal`,
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(observed.events.map((event) => event.type)).toEqual([
+        'request:start',
+        'request:success',
+      ]);
+      const [start, success] = observed.events;
+      expect(start).toMatchObject({
+        type: 'request:start',
+        clientName: 'observed',
+        url: `${baseUrl}/observed-normal`,
+        method: 'GET',
+        resourceKey: baseUrl,
+      });
+      expect(success).toMatchObject({
+        type: 'request:success',
+        requestId: start!.requestId,
+        status: 200,
+      });
+      expect(success!.timestamp).toBeGreaterThanOrEqual(start!.timestamp);
+    });
+
+    test('emits cache miss and hit events', async () => {
+      const observed = collectEvents();
+      const cache = makeCacheStore();
+
+      nock(baseUrl)
+        .get('/observed-cache')
+        .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=60' });
+
+      const client = new HttpClient({
+        name: 'observed',
+        cache: { store: cache },
+        observability: observed.observability,
+      });
+
+      await client.get(`${baseUrl}/observed-cache`);
+      await client.get(`${baseUrl}/observed-cache`);
+
+      expect(observed.events.map((event) => event.type)).toEqual([
+        'request:start',
+        'cache:miss',
+        'request:success',
+        'request:start',
+        'cache:hit',
+        'request:success',
+      ]);
+      expect(observed.events[1]).toMatchObject({
+        type: 'cache:miss',
+        cacheStatus: 'miss',
+      });
+      expect(observed.events[4]).toMatchObject({
+        type: 'cache:hit',
+        cacheStatus: 'fresh',
+        status: 200,
+      });
+    });
+
+    test('emits cache stale and notModified revalidation events', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const observed = collectEvents();
+      const cache = makeCacheStore();
+
+      nock(baseUrl)
+        .get('/observed-cache-304')
+        .reply(
+          200,
+          { id: 1 },
+          { 'Cache-Control': 'max-age=1', ETag: '"cache-304"' },
+        );
+
+      const client = new HttpClient({
+        name: 'observed',
+        cache: { store: cache },
+        observability: observed.observability,
+      });
+
+      await client.get(`${baseUrl}/observed-cache-304`);
+      observed.events.length = 0;
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/observed-cache-304')
+        .matchHeader('If-None-Match', '"cache-304"')
+        .reply(304, '', { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/observed-cache-304`);
+
+      expect(result).toEqual({ id: 1 });
+      expect(observed.events.map((event) => event.type)).toEqual([
+        'request:start',
+        'cache:stale',
+        'cache:revalidate',
+        'cache:revalidate',
+        'request:success',
+      ]);
+      expect(observed.events[1]).toMatchObject({
+        type: 'cache:stale',
+        cacheStatus: 'stale',
+        status: 200,
+      });
+      expect(observed.events[2]).toMatchObject({
+        type: 'cache:revalidate',
+        phase: 'scheduled',
+        status: 200,
+      });
+      expect(observed.events[3]).toMatchObject({
+        type: 'cache:revalidate',
+        phase: 'notModified',
+        status: 304,
+      });
+      expect(observed.events[4]).toMatchObject({
+        type: 'request:success',
+        status: 200,
+      });
+    });
+
+    test('emits stale-while-revalidate cache hit and background success events', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const observed = collectEvents();
+      const cache = makeCacheStore();
+
+      nock(baseUrl).get('/observed-cache-swr').reply(
+        200,
+        { version: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"swr-1"',
+        },
+      );
+
+      const client = new HttpClient({
+        name: 'observed',
+        cache: { store: cache },
+        observability: observed.observability,
+      });
+
+      await client.get(`${baseUrl}/observed-cache-swr`);
+      observed.events.length = 0;
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/observed-cache-swr')
+        .matchHeader('If-None-Match', '"swr-1"')
+        .reply(200, { version: 2 }, { 'Cache-Control': 'max-age=60' });
+
+      const result = await client.get(`${baseUrl}/observed-cache-swr`);
+      await client.flushRevalidations();
+
+      expect(result).toEqual({ version: 1 });
+      expect(observed.events.map((event) => event.type)).toEqual([
+        'request:start',
+        'cache:stale',
+        'cache:revalidate',
+        'cache:hit',
+        'request:success',
+        'cache:revalidate',
+      ]);
+      expect(observed.events[1]).toMatchObject({
+        type: 'cache:stale',
+        cacheStatus: 'stale-while-revalidate',
+      });
+      expect(observed.events[2]).toMatchObject({
+        type: 'cache:revalidate',
+        phase: 'scheduled',
+      });
+      expect(observed.events[3]).toMatchObject({
+        type: 'cache:hit',
+        cacheStatus: 'stale-while-revalidate',
+        status: 200,
+      });
+      expect(observed.events[5]).toMatchObject({
+        type: 'cache:revalidate',
+        phase: 'success',
+        status: 200,
+      });
+    });
+
+    test('emits stale-if-error fallback and revalidation error events', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const observed = collectEvents();
+      const cache = makeCacheStore();
+
+      nock(baseUrl)
+        .get('/observed-cache-sie')
+        .reply(
+          200,
+          { version: 1 },
+          { 'Cache-Control': 'max-age=1, stale-if-error=300' },
+        );
+
+      const client = new HttpClient({
+        name: 'observed',
+        cache: { store: cache },
+        observability: observed.observability,
+      });
+
+      await client.get(`${baseUrl}/observed-cache-sie`);
+      observed.events.length = 0;
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/observed-cache-sie')
+        .reply(500, { message: 'Server error' });
+
+      const result = await client.get(`${baseUrl}/observed-cache-sie`);
+
+      expect(result).toEqual({ version: 1 });
+      expect(observed.events.map((event) => event.type)).toEqual([
+        'request:start',
+        'cache:stale',
+        'cache:revalidate',
+        'cache:revalidate',
+        'cache:hit',
+        'request:success',
+      ]);
+      expect(observed.events[1]).toMatchObject({
+        type: 'cache:stale',
+        cacheStatus: 'stale-if-error',
+      });
+      expect(observed.events[3]).toMatchObject({
+        type: 'cache:revalidate',
+        phase: 'error',
+        status: 500,
+      });
+      expect(observed.events[4]).toMatchObject({
+        type: 'cache:hit',
+        cacheStatus: 'stale-if-error',
+        status: 200,
+      });
+      expect(observed.events[5]).toMatchObject({
+        type: 'request:success',
+        status: 200,
+      });
+    });
+
+    test('emits background revalidation error events', async () => {
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const observed = collectEvents();
+      const cache = makeCacheStore();
+
+      nock(baseUrl).get('/observed-cache-swr-error').reply(
+        200,
+        { version: 1 },
+        {
+          'Cache-Control': 'max-age=1, stale-while-revalidate=120',
+          ETag: '"swr-error-1"',
+        },
+      );
+
+      const client = new HttpClient({
+        name: 'observed',
+        cache: { store: cache },
+        observability: observed.observability,
+      });
+
+      await client.get(`${baseUrl}/observed-cache-swr-error`);
+      observed.events.length = 0;
+      vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+
+      nock(baseUrl)
+        .get('/observed-cache-swr-error')
+        .matchHeader('If-None-Match', '"swr-error-1"')
+        .reply(503, { message: 'Try later' });
+
+      const result = await client.get(`${baseUrl}/observed-cache-swr-error`);
+      await client.flushRevalidations();
+
+      expect(result).toEqual({ version: 1 });
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'cache:revalidate',
+          phase: 'error',
+          status: 503,
+        }),
+      );
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'request:success',
+          status: 200,
+        }),
+      );
+    });
+
+    test('emits retry scheduled and exhausted events', async () => {
+      const scheduled = collectEvents();
+      nock(baseUrl)
+        .get('/observed-retry-success')
+        .reply(500, { message: 'fail' })
+        .get('/observed-retry-success')
+        .reply(200, { ok: true });
+
+      const retryingClient = new HttpClient({
+        name: 'observed',
+        retry: { maxRetries: 1, jitter: 'none', baseDelay: 1 },
+        observability: scheduled.observability,
+      });
+
+      await retryingClient.get(`${baseUrl}/observed-retry-success`);
+
+      expect(scheduled.events).toContainEqual(
+        expect.objectContaining({
+          type: 'retry:scheduled',
+          attempt: 1,
+          waitMs: 1,
+          status: 500,
+        }),
+      );
+
+      const exhausted = collectEvents();
+      nock(baseUrl)
+        .get('/observed-retry-exhausted')
+        .times(2)
+        .reply(500, { message: 'fail' });
+
+      const exhaustedClient = new HttpClient({
+        name: 'observed',
+        retry: { maxRetries: 1, jitter: 'none', baseDelay: 1 },
+        observability: exhausted.observability,
+      });
+
+      await expect(
+        exhaustedClient.get(`${baseUrl}/observed-retry-exhausted`),
+      ).rejects.toThrow(HttpClientError);
+
+      expect(exhausted.events).toContainEqual(
+        expect.objectContaining({
+          type: 'retry:exhausted',
+          attempt: 2,
+          status: 500,
+        }),
+      );
+      expect(exhausted.events.at(-1)).toMatchObject({
+        type: 'request:error',
+        status: 500,
+      });
+    });
+
+    test('does not call retryCondition again when emitting retry exhausted', async () => {
+      const observed = collectEvents();
+      const retryCondition = vi.fn(() => true);
+      nock(baseUrl)
+        .get('/observed-retry-condition-count')
+        .times(2)
+        .reply(500, { message: 'fail' });
+
+      const client = new HttpClient({
+        name: 'observed',
+        retry: {
+          maxRetries: 1,
+          jitter: 'none',
+          baseDelay: 1,
+          retryCondition,
+        },
+        observability: observed.observability,
+      });
+
+      await expect(
+        client.get(`${baseUrl}/observed-retry-condition-count`),
+      ).rejects.toThrow(HttpClientError);
+
+      expect(retryCondition).toHaveBeenCalledTimes(1);
+      expect(retryCondition.mock.calls[0]?.[1]).toBe(1);
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'retry:scheduled',
+          attempt: 1,
+        }),
+      );
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'retry:exhausted',
+          attempt: 2,
+        }),
+      );
+    });
+
+    test('does not call retryCondition when no retry attempt is available', async () => {
+      const observed = collectEvents();
+      const retryCondition = vi.fn(() => true);
+      nock(baseUrl)
+        .get('/observed-retry-condition-no-attempts')
+        .reply(500, { message: 'fail' });
+
+      const client = new HttpClient({
+        name: 'observed',
+        retry: {
+          maxRetries: 0,
+          jitter: 'none',
+          baseDelay: 1,
+          retryCondition,
+        },
+        observability: observed.observability,
+      });
+
+      await expect(
+        client.get(`${baseUrl}/observed-retry-condition-no-attempts`),
+      ).rejects.toThrow(HttpClientError);
+
+      expect(retryCondition).not.toHaveBeenCalled();
+      expect(
+        observed.events.some((event) => event.type.startsWith('retry:')),
+      ).toBe(false);
+    });
+
+    test('emits rate-limit wait and throw events for store and server cooldowns', async () => {
+      const waitObserved = collectEvents();
+      let canProceedChecks = 0;
+      const waitStore = {
+        async canProceed() {
+          canProceedChecks += 1;
+          return canProceedChecks > 1;
+        },
+        async record() {},
+        async getStatus() {
+          return { remaining: 0, resetTime: new Date(), limit: 1 };
+        },
+        async reset() {},
+        async getWaitTime() {
+          return 1;
+        },
+      } as const;
+
+      nock(baseUrl).get('/observed-rate-wait').reply(200, { ok: true });
+
+      const waitClient = new HttpClient({
+        name: 'observed',
+        rateLimit: { store: waitStore, throw: false, maxWaitTime: 20 },
+        observability: waitObserved.observability,
+      });
+
+      await waitClient.get(`${baseUrl}/observed-rate-wait`);
+
+      expect(waitObserved.events).toContainEqual(
+        expect.objectContaining({
+          type: 'rateLimit:wait',
+          source: 'store',
+          waitMs: 1,
+          resourceKey: baseUrl,
+        }),
+      );
+
+      const throwObserved = collectEvents();
+      const throwStore = {
+        async canProceed() {
+          return false;
+        },
+        async record() {},
+        async getStatus() {
+          return { remaining: 0, resetTime: new Date(), limit: 1 };
+        },
+        async reset() {},
+        async getWaitTime() {
+          return 123;
+        },
+      } as const;
+
+      const throwClient = new HttpClient({
+        name: 'observed',
+        rateLimit: { store: throwStore, throw: true },
+        observability: throwObserved.observability,
+      });
+
+      await expect(
+        throwClient.get(`${baseUrl}/observed-rate-throw`),
+      ).rejects.toThrow(/Rate limit exceeded/);
+
+      expect(throwObserved.events).toContainEqual(
+        expect.objectContaining({
+          type: 'rateLimit:throw',
+          source: 'store',
+          waitMs: 123,
+        }),
+      );
+
+      const cooldownObserved = collectEvents();
+      nock(baseUrl)
+        .get('/observed-cooldown-source')
+        .reply(429, { message: 'slow down' }, { 'Retry-After': '1' });
+
+      const cooldownClient = new HttpClient({
+        name: 'observed',
+        observability: cooldownObserved.observability,
+      });
+
+      await expect(
+        cooldownClient.get(`${baseUrl}/observed-cooldown-source`),
+      ).rejects.toThrow(HttpClientError);
+
+      await expect(
+        cooldownClient.get(`${baseUrl}/observed-cooldown-blocked`),
+      ).rejects.toThrow(/Rate limit exceeded/);
+
+      expect(cooldownObserved.events).toContainEqual(
+        expect.objectContaining({
+          type: 'serverCooldown:set',
+          status: 429,
+          waitMs: 1000,
+        }),
+      );
+      expect(cooldownObserved.events).toContainEqual(
+        expect.objectContaining({
+          type: 'rateLimit:throw',
+          source: 'serverCooldown',
+          resourceKey: baseUrl,
+        }),
+      );
+
+      const cooldownWaitObserved = collectEvents();
+      nock(baseUrl).get('/observed-cooldown-wait').reply(200, { ok: true });
+
+      const cooldownWaitClient = new HttpClient({
+        name: 'observed',
+        rateLimit: { throw: false, maxWaitTime: 50 },
+        observability: cooldownWaitObserved.observability,
+      });
+      const privateCooldownWaitClient = cooldownWaitClient as unknown as {
+        serverCooldowns: Map<string, number>;
+      };
+      privateCooldownWaitClient.serverCooldowns.set(baseUrl, Date.now() + 10);
+
+      await cooldownWaitClient.get(`${baseUrl}/observed-cooldown-wait`);
+
+      expect(cooldownWaitObserved.events).toContainEqual(
+        expect.objectContaining({
+          type: 'rateLimit:wait',
+          source: 'serverCooldown',
+          resourceKey: baseUrl,
+        }),
+      );
+    });
+
+    test('emits dedupe owner and join events', async () => {
+      const observed = collectEvents();
+      type Deferred = {
+        promise: Promise<unknown>;
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+      };
+
+      const jobs = new Map<string, Deferred>();
+      const dedupeStoreStub = {
+        async waitFor(hash: string) {
+          const job = jobs.get(hash);
+          if (!job) {
+            return undefined;
+          }
+          try {
+            return await job.promise;
+          } catch {
+            return undefined;
+          }
+        },
+        async register(hash: string) {
+          const existing = jobs.get(hash);
+          if (existing) {
+            return 'shared-job';
+          }
+          let resolve!: (value: unknown) => void;
+          let reject!: (reason: unknown) => void;
+          const promise = new Promise<unknown>((res, rej) => {
+            resolve = res;
+            reject = rej;
+          });
+          jobs.set(hash, { promise, resolve, reject });
+          return 'owner-job';
+        },
+        async registerOrJoin(hash: string) {
+          const existing = jobs.get(hash);
+          if (existing) {
+            return { jobId: 'shared-job', isOwner: false };
+          }
+          let resolve!: (value: unknown) => void;
+          let reject!: (reason: unknown) => void;
+          const promise = new Promise<unknown>((res, rej) => {
+            resolve = res;
+            reject = rej;
+          });
+          jobs.set(hash, { promise, resolve, reject });
+          return { jobId: 'owner-job', isOwner: true };
+        },
+        async complete(hash: string, value: unknown) {
+          jobs.get(hash)?.resolve(value);
+        },
+        async fail(hash: string, error: Error) {
+          jobs.get(hash)?.reject(error);
+        },
+        async isInProgress(hash: string) {
+          return jobs.has(hash);
+        },
+      } as const;
+
+      nock(baseUrl).get('/observed-dedupe').delay(20).reply(200, { ok: true });
+
+      const client = new HttpClient({
+        name: 'observed',
+        dedupe: dedupeStoreStub,
+        observability: observed.observability,
+      });
+
+      await Promise.all([
+        client.get(`${baseUrl}/observed-dedupe`),
+        client.get(`${baseUrl}/observed-dedupe`),
+      ]);
+
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'dedupe:owner',
+        }),
+      );
+      expect(observed.events).toContainEqual(
+        expect.objectContaining({
+          type: 'dedupe:join',
+        }),
+      );
+    });
+
+    test('swallows observer errors without affecting request results', async () => {
+      nock(baseUrl).get('/observed-swallow-sync').reply(200, { ok: true });
+      const throwingClient = new HttpClient({
+        name: 'observed',
+        observability: {
+          onEvent: () => {
+            throw new Error('observer failed');
+          },
+        },
+      });
+
+      await expect(
+        throwingClient.get(`${baseUrl}/observed-swallow-sync`),
+      ).resolves.toEqual({ ok: true });
+
+      nock(baseUrl).get('/observed-swallow-async').reply(200, { ok: true });
+      const rejectingClient = new HttpClient({
+        name: 'observed',
+        observability: {
+          onEvent: async () => {
+            throw new Error('observer rejected');
+          },
+        },
+      });
+
+      await expect(
+        rejectingClient.get(`${baseUrl}/observed-swallow-async`),
+      ).resolves.toEqual({ ok: true });
+    });
+
+    test('does not await async observers in the request path', async () => {
+      const observedEvents: Array<HttpClientEvent> = [];
+      const timeout = Symbol('timeout');
+
+      nock(baseUrl).get('/observed-unawaited').reply(200, { ok: true });
+
+      const client = new HttpClient({
+        name: 'observed',
+        observability: {
+          onEvent: (event) => {
+            observedEvents.push(event);
+            return new Promise<void>(() => {});
+          },
+        },
+      });
+
+      const result = await Promise.race([
+        client.get(`${baseUrl}/observed-unawaited`),
+        new Promise<typeof timeout>((resolve) => {
+          setTimeout(() => resolve(timeout), 50);
+        }),
+      ]);
+
+      expect(result).toEqual({ ok: true });
+      expect(observedEvents.map((event) => event.type)).toEqual([
+        'request:start',
+        'request:success',
+      ]);
+    });
   });
 
   test('should execute only one upstream request when dedupe supports registerOrJoin', async () => {

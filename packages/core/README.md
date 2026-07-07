@@ -82,22 +82,23 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 
 **Constructor options:**
 
-| Property              | Type                                       | Default    | Description                                        |
-| --------------------- | ------------------------------------------ | ---------- | -------------------------------------------------- |
-| `name`                | `string`                                   | required   | Name for the client instance                       |
-| `cache`               | `CacheStore`                               | -          | Response caching                                   |
-| `dedupe`              | `DedupeStore`                              | -          | Request deduplication                              |
-| `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore` | -          | Rate limiting                                      |
-| `cacheTTL`            | `number`                                   | `3600`     | Cache TTL when response has no headers             |
-| `throwOnRateLimit`    | `boolean`                                  | `true`     | Throw when rate limited vs. wait                   |
-| `maxWaitTime`         | `number`                                   | `60000`    | Max wait time (ms) before throwing                 |
-| `responseTransformer` | `(data: unknown) => unknown`               | -          | Transform raw response data                        |
-| `responseHandler`     | `(data: unknown) => unknown`               | -          | Validate/process transformed data                  |
-| `errorHandler`        | `(error: unknown) => Error`                | -          | Convert errors to domain-specific types            |
-| `cacheOverrides`      | `CacheOverrideOptions`                     | -          | Override cache header behaviors                    |
-| `retry`               | `RetryOptions \| false`                    | -          | Retry config; `false` disables globally            |
-| `rateLimitHeaders`    | `RateLimitHeaderConfig`                    | defaults   | Configure standard/custom header names             |
-| `resourceKeyResolver` | `(url: string) => string`                  | URL origin | Customize how rate-limit resource keys are derived |
+| Property              | Type                                                              | Default    | Description                                        |
+| --------------------- | ----------------------------------------------------------------- | ---------- | -------------------------------------------------- |
+| `name`                | `string`                                                          | required   | Name for the client instance                       |
+| `cache`               | `CacheStore`                                                      | -          | Response caching                                   |
+| `dedupe`              | `DedupeStore`                                                     | -          | Request deduplication                              |
+| `rateLimit`           | `RateLimitStore \| AdaptiveRateLimitStore`                        | -          | Rate limiting                                      |
+| `cacheTTL`            | `number`                                                          | `3600`     | Cache TTL when response has no headers             |
+| `throwOnRateLimit`    | `boolean`                                                         | `true`     | Throw when rate limited vs. wait                   |
+| `maxWaitTime`         | `number`                                                          | `60000`    | Max wait time (ms) before throwing                 |
+| `responseTransformer` | `(data: unknown) => unknown`                                      | -          | Transform raw response data                        |
+| `responseHandler`     | `(data: unknown) => unknown`                                      | -          | Validate/process transformed data                  |
+| `errorHandler`        | `(error: unknown) => Error`                                       | -          | Convert errors to domain-specific types            |
+| `cacheOverrides`      | `CacheOverrideOptions`                                            | -          | Override cache header behaviors                    |
+| `retry`               | `RetryOptions \| false`                                           | -          | Retry config; `false` disables globally            |
+| `rateLimitHeaders`    | `RateLimitHeaderConfig`                                           | defaults   | Configure standard/custom header names             |
+| `resourceKeyResolver` | `(url: string) => string`                                         | URL origin | Customize how rate-limit resource keys are derived |
+| `observability`       | `{ onEvent?: (event: HttpClientEvent) => void \| Promise<void> }` | -          | Subscribe to structured lifecycle events           |
 
 ### Request Flow
 
@@ -107,6 +108,49 @@ Create a thin wrapper module per third-party API so callers don't configure anyt
 4. **Fetch** - Execute the HTTP request
 5. **Transform & Validate** - Apply `responseTransformer` then `responseHandler`
 6. **Store** - Cache the result, record the rate limit hit, and resolve any deduplicated waiters
+
+### Observability
+
+Use `observability.onEvent` to collect structured lifecycle events without wrapping internal stores or fetch calls:
+
+```typescript
+import { HttpClient, type HttpClientEvent } from '@http-client-toolkit/core';
+
+const client = new HttpClient({
+  name: 'catalog-api',
+  observability: {
+    onEvent(event: HttpClientEvent) {
+      logger.info({ event }, event.type);
+
+      if (event.type === 'request:success') {
+        metrics.histogram('http_client_duration_ms', event.durationMs, {
+          clientName: event.clientName,
+          status: String(event.status ?? 'unknown'),
+        });
+      }
+    },
+  },
+});
+```
+
+Events cover request start/success/error, cache hits/misses/stale/revalidation,
+dedupe ownership and joins, rate-limit waits/throws, server cooldown updates,
+and retry scheduling/exhaustion. Payloads include stable public fields such as
+`clientName`, `requestId`, `url`, `method`, `resourceKey`, `timestamp`,
+`attempt`, `durationMs`, `status`, `error`, `cacheKey`, and `waitMs` where they
+apply.
+
+Attempt numbers are emitted on retry events (`retry:scheduled` and
+`retry:exhausted`). Final `request:success` and `request:error` events describe
+the logical request outcome and do not include a fetch attempt count.
+
+Bridge `onEvent` to your logger, metrics client, or OpenTelemetry instrumentation
+by translating these events into log records, counters, histograms, span events,
+or attributes. OpenTelemetry is intentionally not a dependency of core.
+
+Observer return values are ignored, observer errors are swallowed, and returned
+promises are not awaited; observers cannot change the request result or thrown
+error. Keep synchronous observer work lightweight because it runs inline.
 
 ### Error Handling
 
@@ -184,6 +228,7 @@ compatibility.
 
 - `HttpClient` - Main client class
 - `HttpClientError` - Error class with `statusCode`
+- `HttpClientEvent` - Stable structured lifecycle event union
 - `hashRequest` - Deterministic SHA-256 request hashing
 - Store interfaces: `CacheStore`, `DedupeStore`, `RateLimitStore`, `AdaptiveRateLimitStore`
 
