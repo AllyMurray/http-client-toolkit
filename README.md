@@ -54,6 +54,34 @@ pnpm test
 pnpm lint
 ```
 
+### Dependency updates
+
+[Renovate](https://docs.renovatebot.com/) manages workspace dependencies, the
+separate documentation project, pnpm versions, and GitHub Actions through
+[`renovate.json`](./renovate.json). The policy follows `comic-vine` and
+`iracing-data-client`, adapted to this monorepo:
+
+- Ordinary updates run between midnight and 06:00 Europe/London, with at most
+  five open PRs and two new PRs per hour. The Dependency Dashboard tracks updates.
+- npm releases wait one day; selected stable development-tool patches wait three
+  days and can automerge after CI passes. Runtime, documentation, shared-config,
+  peer, compiler, and major updates require review. Vitest and its coverage
+  provider are updated together and require review.
+- Lockfile maintenance runs in the same overnight window, gets priority, and
+  requires review. Security alert PRs bypass the schedule and release-age delay
+  but still require review.
+- Node engines and the CI runtime remain deliberate decisions; Node types stay
+  on version 20. Peer dependency ranges are widened to preserve consumer support.
+
+CI builds the library and documentation on dependency PRs. Renovate configuration
+changes also run the [strict config validator](https://docs.renovatebot.com/config-validation/).
+Consumer-facing dependency updates need an appropriate changeset before merging
+so the release workflow publishes the affected packages.
+
+The Renovate GitHub App must have access to this repository. Keep the `validate`
+and `docs` checks required in branch protection; the path-filtered
+`validate-renovate` check only runs when its configuration changes.
+
 ## License
 
 ISC

@@ -1,0 +1,202 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["npm", "github-actions"],
+  "dependencyDashboard": true,
+  "timezone": "Europe/London",
+  "schedule": ["* 0-5 * * *"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "separateMajorMinor": true,
+  "separateMinorPatch": false,
+  "automerge": false,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "rebaseWhen": "behind-base-branch",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-5 * * *"],
+    "automerge": false
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "addLabels": ["security"],
+    "schedule": [],
+    "prConcurrentLimit": 0,
+    "prCreation": "immediate",
+    "dependencyDashboardApproval": false,
+    "minimumReleaseAge": null,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Wait 24 hours before proposing ordinary npm updates and reject releases with missing timestamps.",
+      "matchDatasources": ["npm"],
+      "minimumReleaseAge": "1 day",
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "internalChecksFilter": "strict"
+    },
+    {
+      "description": "Prioritize transitive refreshes over ordinary version bumps; review lockfile maintenance manually.",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "prPriority": 10
+    },
+    {
+      "description": "Keep lint and formatting tools together, including dependencies of the private shared config.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackageNames": [
+        "@eslint/**",
+        "eslint",
+        "eslint-*",
+        "prettier",
+        "globals",
+        "typescript-eslint",
+        "@typescript-eslint/**"
+      ],
+      "groupName": "lint and formatting tools"
+    },
+    {
+      "description": "Coordinate compiler and build updates across workspaces and the root TypeScript override.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackageNames": ["typescript", "tsup", "tsx", "esbuild", "turbo"],
+      "groupName": "typescript and build tooling"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackageNames": ["@types/**"],
+      "groupName": "type definitions"
+    },
+    {
+      "description": "Separate stable development-tool patches from minor updates so only patches qualify for automerge.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchCurrentVersion": ">=1.0.0",
+      "matchPackageNames": [
+        "@eslint/**",
+        "eslint",
+        "eslint-*",
+        "prettier",
+        "globals",
+        "typescript-eslint",
+        "@typescript-eslint/**",
+        "vitest",
+        "@vitest/**",
+        "vite",
+        "nock",
+        "rimraf"
+      ],
+      "separateMinorPatch": true
+    },
+    {
+      "description": "Automerge selected stable development-tool patches after three days and passing CI.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": ">=1.0.0",
+      "matchPackageNames": [
+        "@eslint/**",
+        "eslint",
+        "eslint-*",
+        "prettier",
+        "globals",
+        "typescript-eslint",
+        "@typescript-eslint/**",
+        "vitest",
+        "@vitest/**",
+        "vite",
+        "nock",
+        "rimraf"
+      ],
+      "groupName": "development tooling patches",
+      "minimumReleaseAge": "3 days",
+      "constraintsFiltering": "strict",
+      "automerge": true
+    },
+    {
+      "description": "Runtime, documentation, and shared-config dependencies require review and must respect declared Node engines.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies", "optionalDependencies"],
+      "constraintsFiltering": "strict",
+      "automerge": false
+    },
+    {
+      "description": "Preserve existing consumer support when proposing peer range extensions.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["peerDependencies"],
+      "rangeStrategy": "widen",
+      "groupName": null,
+      "groupSlug": null,
+      "automerge": false
+    },
+    {
+      "description": "Keep Node types on the declared Node 20 consumer API; changing support requires a deliberate review.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@types/node"],
+      "allowedVersions": ">=20.0.0 <21.0.0",
+      "automerge": false
+    },
+    {
+      "description": "Node support is a deliberate library compatibility decision.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["engines"],
+      "enabled": false
+    },
+    {
+      "description": "Keep the Node 24 CI runtime deliberate while updating action versions separately.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["node"],
+      "enabled": false
+    },
+    {
+      "description": "Pre-1.0 upgrades may break compatibility even in patches; keep unrelated packages separate and manually reviewed.",
+      "matchManagers": ["npm"],
+      "matchCurrentVersion": "<1.0.0",
+      "groupName": null,
+      "groupSlug": null,
+      "automerge": false
+    },
+    {
+      "description": "Unrelated major upgrades stay separate and require review.",
+      "matchUpdateTypes": ["major"],
+      "groupName": null,
+      "groupSlug": null,
+      "automerge": false
+    },
+    {
+      "description": "Vitest and its coverage provider must move together across all workspaces, including coordinated majors; shared test infrastructure requires review.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies", "devDependencies"],
+      "matchPackageNames": ["vitest", "@vitest/**"],
+      "groupName": "vitest",
+      "groupSlug": "vitest",
+      "separateMajorMinor": true,
+      "separateMinorPatch": true,
+      "automerge": false
+    },
+    {
+      "description": "Keep every packageManager declaration on the same reviewed pnpm release.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["packageManager"],
+      "matchPackageNames": ["pnpm"],
+      "groupName": "pnpm",
+      "groupSlug": "pnpm",
+      "automerge": false
+    },
+    {
+      "description": "Review GitHub Actions updates together, including majors, matching the reference repositories' committed policy.",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions",
+      "separateMajorMinor": false,
+      "separateMinorPatch": false,
+      "automerge": false
+    }
+  ]
+}
