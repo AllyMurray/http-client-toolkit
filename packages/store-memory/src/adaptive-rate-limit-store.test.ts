@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+  setSystemTime,
+} from 'bun:test';
 import { AdaptiveRateLimitStore } from './adaptive-rate-limit-store.js';
 
 const DEFAULT_LIMIT = 60;
@@ -10,7 +18,7 @@ describe('AdaptiveRateLimitStore', () => {
   beforeEach(() => {
     store = new AdaptiveRateLimitStore();
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2023-01-01T12:00:00Z'));
+    setSystemTime(new Date('2023-01-01T12:00:00Z'));
   });
 
   afterEach(() => {
@@ -109,16 +117,16 @@ describe('AdaptiveRateLimitStore', () => {
 
       // Simulate pattern that creates increasing trend
       for (let i = 0; i < 8; i++) {
-        vi.setSystemTime(new Date(now - (7 - i) * 60 * 1000)); // Recent requests
+        setSystemTime(new Date(now - (7 - i) * 60 * 1000)); // Recent requests
         await store.record(resource, 'user');
       }
 
       // Add fewer older requests to establish increasing trend
-      vi.setSystemTime(new Date(now - 10 * 60 * 1000));
+      setSystemTime(new Date(now - 10 * 60 * 1000));
       await store.record(resource, 'user');
       await store.record(resource, 'user');
 
-      vi.setSystemTime(new Date(now));
+      setSystemTime(new Date(now));
 
       // Force recalculation
       vi.advanceTimersByTime(35 * 1000);
@@ -144,10 +152,10 @@ describe('AdaptiveRateLimitStore', () => {
     it('should give full capacity to background after sustained inactivity', async () => {
       // Simulate sustained inactivity (no recent requests)
       // But record old request to avoid completely empty state
-      vi.setSystemTime(new Date('2023-01-01T10:00:00Z')); // 2 hours ago
+      setSystemTime(new Date('2023-01-01T10:00:00Z')); // 2 hours ago
       await store.record(resource, 'user');
 
-      vi.setSystemTime(new Date('2023-01-01T12:00:00Z')); // Back to present
+      setSystemTime(new Date('2023-01-01T12:00:00Z')); // Back to present
 
       // Force recalculation after sustained inactivity period
       vi.advanceTimersByTime(35 * 60 * 1000); // 35 minutes

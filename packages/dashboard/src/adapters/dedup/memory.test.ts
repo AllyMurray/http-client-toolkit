@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { InMemoryDedupeStore } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDedupeAdapter } from './memory.js';
 
 describe('createMemoryDedupeAdapter', () => {
@@ -38,6 +38,7 @@ describe('createMemoryDedupeAdapter', () => {
   it('should list jobs', async () => {
     await store.register('hash1');
     await store.register('hash2');
+    void store.waitFor('hash2');
     await store.complete('hash1', 'value1');
 
     const adapter = createMemoryDedupeAdapter(store);
@@ -47,6 +48,7 @@ describe('createMemoryDedupeAdapter', () => {
 
   it('should get a specific job', async () => {
     await store.register('hash1');
+    void store.waitFor('hash1');
     const adapter = createMemoryDedupeAdapter(store);
     const job = await adapter.getJob('hash1');
     expect(job).toBeDefined();

@@ -1,10 +1,17 @@
+import { describe, it, expect } from 'bun:test';
 import type { CacheStore } from '@http-client-toolkit/core';
-import { describe, it, expect } from 'vitest';
 import { createGenericCacheAdapter } from './generic.js';
 
 function createMockStore(): CacheStore {
   const data = new Map<string, unknown>();
   return {
+    async setWithTags() {},
+    async invalidateByTag() {
+      return 0;
+    },
+    async invalidateByTags() {
+      return 0;
+    },
     get: async (hash: string) => data.get(hash),
     set: async (hash: string, value: unknown) => {
       data.set(hash, value);

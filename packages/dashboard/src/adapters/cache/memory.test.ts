@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { InMemoryCacheStore } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryCacheAdapter } from './memory.js';
 
 describe('createMemoryCacheAdapter', () => {

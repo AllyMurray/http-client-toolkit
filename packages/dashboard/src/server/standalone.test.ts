@@ -1,6 +1,6 @@
+import { describe, it, expect, afterEach } from 'bun:test';
 import { HttpClient } from '@http-client-toolkit/core';
 import { InMemoryCacheStore } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, afterEach } from 'vitest';
 import {
   startDashboard,
   type StandaloneDashboardServer,

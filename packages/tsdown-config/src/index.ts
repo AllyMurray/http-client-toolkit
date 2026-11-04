@@ -1,8 +1,11 @@
-export const sharedTsupConfig = {
+export const sharedTsdownConfig = {
   entry: ['src/index.ts'],
   format: ['cjs', 'esm'] as const,
   dts: true,
-  splitting: false,
+  outExtensions: ({ format }: { format: string }) =>
+    format === 'cjs'
+      ? { js: '.cjs', dts: '.d.cts' }
+      : { js: '.js', dts: '.d.ts' },
   sourcemap: true,
   clean: true,
   outDir: 'lib',
@@ -10,6 +13,5 @@ export const sharedTsupConfig = {
   minify: false,
   target: 'es2015' as const,
   tsconfig: './tsconfig.json',
-  cjsInterop: true,
-  skipNodeModulesBundle: true,
+  deps: { neverBundle: true },
 };

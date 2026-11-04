@@ -1,7 +1,7 @@
+import { describe, it, expect, afterEach } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { describe, it, expect, afterEach } from 'vitest';
 import { createSQLiteStores } from './create-stores.js';
 import { SqliteAdaptiveRateLimitStore } from './sqlite-adaptive-rate-limit-store.js';
 import { SQLiteCacheStore } from './sqlite-cache-store.js';

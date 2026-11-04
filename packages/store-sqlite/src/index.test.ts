@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'bun:test';
 import * as sqlite from './index.js';
 
 describe('store-sqlite index exports', () => {

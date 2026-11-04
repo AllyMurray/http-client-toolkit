@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { SQLiteCacheStore } from '@http-client-toolkit/store-sqlite';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createSqliteCacheAdapter } from './sqlite.js';
 
 describe('createSqliteCacheAdapter', () => {

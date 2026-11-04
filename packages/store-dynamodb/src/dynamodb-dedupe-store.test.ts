@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import {
   DynamoDBClient,
   ResourceNotFoundException,
@@ -12,7 +13,6 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DynamoDBDedupeStore } from './dynamodb-dedupe-store.js';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);

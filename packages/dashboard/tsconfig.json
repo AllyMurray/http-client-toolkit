@@ -1,6 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "jsx": "react-jsx"
-  }
+    "jsx": "react-jsx",
+    "rootDir": "src",
+    "outDir": "lib",
+    "types": ["bun", "node", "vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

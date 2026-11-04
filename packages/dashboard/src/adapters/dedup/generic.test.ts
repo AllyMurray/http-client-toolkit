@@ -1,5 +1,5 @@
+import { describe, it, expect } from 'bun:test';
 import type { DedupeStore } from '@http-client-toolkit/core';
-import { describe, it, expect } from 'vitest';
 import { createGenericDedupeAdapter } from './generic.js';
 
 const mockStore: DedupeStore = {

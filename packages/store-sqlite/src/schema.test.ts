@@ -1,9 +1,9 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate as _migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   cacheTable as _cacheTable,
   dedupeTable as _dedupeTable,
@@ -118,7 +118,7 @@ describe('Database Schema', () => {
 
       insertStmt.run('test-hash', 'test-value', Date.now() + 60000);
 
-      const result = selectStmt.get('test-hash');
+      const result = selectStmt.get('test-hash') as Record<string, unknown>;
       expect(result).toBeDefined();
       expect(result.hash).toBe('test-hash');
       expect(result.value).toBe('test-value');
@@ -143,7 +143,9 @@ describe('Database Schema', () => {
       const result = cleanupStmt.run(Date.now());
       expect(result.changes).toBe(1);
 
-      const remaining = db.prepare('SELECT COUNT(*) as count FROM cache').get();
+      const remaining = db
+        .prepare('SELECT COUNT(*) as count FROM cache')
+        .get() as Record<string, unknown>;
       expect(remaining.count).toBe(1);
     });
   });
@@ -171,7 +173,7 @@ describe('Database Schema', () => {
         SELECT status FROM dedupe_jobs WHERE hash = ?
       `);
 
-      const result = selectStmt.get('test-hash');
+      const result = selectStmt.get('test-hash') as Record<string, unknown>;
       expect(result.status).toBe('pending');
     });
 
@@ -191,7 +193,7 @@ describe('Database Schema', () => {
         SELECT created_at, updated_at FROM dedupe_jobs WHERE hash = ?
       `);
 
-      const result = selectStmt.get('test-hash');
+      const result = selectStmt.get('test-hash') as Record<string, unknown>;
       expect(result.created_at).toBeGreaterThanOrEqual(beforeInsert);
       expect(result.created_at).toBeLessThanOrEqual(afterInsert);
       expect(result.updated_at).toBeGreaterThanOrEqual(beforeInsert);
@@ -223,7 +225,7 @@ describe('Database Schema', () => {
         SELECT status, value FROM dedupe_jobs WHERE hash = ?
       `);
 
-      const job = selectStmt.get('test-hash');
+      const job = selectStmt.get('test-hash') as Record<string, unknown>;
       expect(job.status).toBe('completed');
       expect(job.value).toBe(JSON.stringify({ result: 'success' }));
     });
@@ -242,10 +244,13 @@ describe('Database Schema', () => {
         SELECT COUNT(*) as count FROM dedupe_jobs WHERE status = ?
       `);
 
-      const pendingCount = selectStmt.get('pending');
+      const pendingCount = selectStmt.get('pending') as Record<string, unknown>;
       expect(pendingCount.count).toBe(2);
 
-      const completedCount = selectStmt.get('completed');
+      const completedCount = selectStmt.get('completed') as Record<
+        string,
+        unknown
+      >;
       expect(completedCount.count).toBe(1);
     });
   });
@@ -296,10 +301,16 @@ describe('Database Schema', () => {
         SELECT COUNT(*) as count FROM rate_limits WHERE resource = ?
       `);
 
-      const resource1Count = selectStmt.get('resource1');
+      const resource1Count = selectStmt.get('resource1') as Record<
+        string,
+        unknown
+      >;
       expect(resource1Count.count).toBe(2);
 
-      const resource2Count = selectStmt.get('resource2');
+      const resource2Count = selectStmt.get('resource2') as Record<
+        string,
+        unknown
+      >;
       expect(resource2Count.count).toBe(1);
     });
 
@@ -324,7 +335,7 @@ describe('Database Schema', () => {
 
       const remaining = db
         .prepare('SELECT COUNT(*) as count FROM rate_limits')
-        .get();
+        .get() as Record<string, unknown>;
       expect(remaining.count).toBe(1);
     });
   });
@@ -366,7 +377,10 @@ describe('Database Schema', () => {
         SELECT * FROM server_cooldowns WHERE origin = ?
       `);
 
-      const result = selectStmt.get('api.example.com');
+      const result = selectStmt.get('api.example.com') as Record<
+        string,
+        unknown
+      >;
       expect(result).toBeDefined();
       expect(result.origin).toBe('api.example.com');
       expect(result.cooldown_until).toBe(cooldownUntil);
@@ -391,7 +405,7 @@ describe('Database Schema', () => {
 
       const remaining = db
         .prepare('SELECT COUNT(*) as count FROM server_cooldowns')
-        .get();
+        .get() as Record<string, unknown>;
       expect(remaining.count).toBe(1);
     });
   });
@@ -435,14 +449,14 @@ describe('Database Schema', () => {
       // Verify data integrity
       const cacheResult = db
         .prepare('SELECT * FROM cache WHERE hash = ?')
-        .get('text-hash');
+        .get('text-hash') as Record<string, unknown>;
       expect(typeof cacheResult.hash).toBe('string');
       expect(typeof cacheResult.value).toBe('string');
       expect(typeof cacheResult.expires_at).toBe('number');
 
       const rateLimitResult = db
         .prepare('SELECT * FROM rate_limits WHERE resource = ?')
-        .get('resource');
+        .get('resource') as Record<string, unknown>;
       expect(typeof rateLimitResult.resource).toBe('string');
       expect(typeof rateLimitResult.timestamp).toBe('number');
     });

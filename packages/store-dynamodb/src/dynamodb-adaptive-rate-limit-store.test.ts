@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   DynamoDBClient,
   ResourceNotFoundException,
@@ -13,7 +14,6 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DynamoDBAdaptiveRateLimitStore } from './dynamodb-adaptive-rate-limit-store.js';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
@@ -372,7 +372,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
         .resolvesOnce({});
 
       await store.reset('test');
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('should successfully delete items found during reset', async () => {
@@ -386,7 +386,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       await store.reset('test');
-      expect(ddbMock).toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBeGreaterThan(0);
     });
 
     it('should clear database and in-memory state', async () => {
@@ -436,7 +436,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
     it('should handle scan returning undefined Items', async () => {
       ddbMock.on(ScanCommand).resolvesOnce({});
       await store.clear();
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
   });
 
@@ -655,7 +655,7 @@ describe('DynamoDBAdaptiveRateLimitStore', () => {
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       await store.clear();
-      expect(ddbMock).toHaveReceivedCommandTimes(BatchWriteCommand, 1);
+      expect(ddbMock.commandCalls(BatchWriteCommand)).toHaveLength(1);
     });
   });
 

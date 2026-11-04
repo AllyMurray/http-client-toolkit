@@ -1,7 +1,7 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SQLiteDedupeStore } from './sqlite-dedupe-store.js';
 
 describe('SQLiteDedupeStore', () => {
@@ -1069,5 +1069,21 @@ describe('SQLiteDedupeStore', () => {
         memoryStore.destroy();
       }
     });
+  });
+  it('contains background cleanup failures without leaking rejections', async () => {
+    const cleanupStore = new SQLiteDedupeStore({ cleanupIntervalMs: 5 });
+    const cleanupSpy = vi
+      .spyOn(
+        cleanupStore as unknown as { cleanupExpiredJobs(): Promise<void> },
+        'cleanupExpiredJobs',
+      )
+      .mockRejectedValue(new Error('background cleanup failed'));
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(cleanupSpy).toHaveBeenCalled();
+    } finally {
+      await cleanupStore.close();
+      cleanupSpy.mockRestore();
+    }
   });
 });

@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "enabledManagers": ["npm", "github-actions"],
+  "enabledManagers": ["npm", "github-actions", "custom.regex"],
   "dependencyDashboard": true,
   "timezone": "Europe/London",
   "schedule": ["* 0-5 * * *"],
@@ -47,22 +47,14 @@
       "description": "Keep lint and formatting tools together, including dependencies of the private shared config.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
-      "matchPackageNames": [
-        "@eslint/**",
-        "eslint",
-        "eslint-*",
-        "prettier",
-        "globals",
-        "typescript-eslint",
-        "@typescript-eslint/**"
-      ],
+      "matchPackageNames": ["eslint-*"],
       "groupName": "lint and formatting tools"
     },
     {
       "description": "Coordinate compiler and build updates across workspaces and the root TypeScript override.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
-      "matchPackageNames": ["typescript", "tsup", "tsx", "esbuild", "turbo"],
+      "matchPackageNames": ["typescript", "tsdown", "tsx", "esbuild", "turbo"],
       "groupName": "typescript and build tooling"
     },
     {
@@ -77,20 +69,7 @@
       "matchManagers": ["npm"],
       "matchDepTypes": ["devDependencies"],
       "matchCurrentVersion": ">=1.0.0",
-      "matchPackageNames": [
-        "@eslint/**",
-        "eslint",
-        "eslint-*",
-        "prettier",
-        "globals",
-        "typescript-eslint",
-        "@typescript-eslint/**",
-        "vitest",
-        "@vitest/**",
-        "vite",
-        "nock",
-        "rimraf"
-      ],
+      "matchPackageNames": ["eslint-*", "vite", "rimraf"],
       "separateMinorPatch": true
     },
     {
@@ -99,20 +78,7 @@
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["patch"],
       "matchCurrentVersion": ">=1.0.0",
-      "matchPackageNames": [
-        "@eslint/**",
-        "eslint",
-        "eslint-*",
-        "prettier",
-        "globals",
-        "typescript-eslint",
-        "@typescript-eslint/**",
-        "vitest",
-        "@vitest/**",
-        "vite",
-        "nock",
-        "rimraf"
-      ],
+      "matchPackageNames": ["eslint-*", "vite", "rimraf"],
       "groupName": "development tooling patches",
       "minimumReleaseAge": "3 days",
       "constraintsFiltering": "strict",
@@ -169,23 +135,12 @@
       "automerge": false
     },
     {
-      "description": "Vitest and its coverage provider must move together across all workspaces, including coordinated majors; shared test infrastructure requires review.",
-      "matchManagers": ["npm"],
-      "matchDepTypes": ["dependencies", "devDependencies"],
-      "matchPackageNames": ["vitest", "@vitest/**"],
-      "groupName": "vitest",
-      "groupSlug": "vitest",
-      "separateMajorMinor": true,
-      "separateMinorPatch": true,
-      "automerge": false
-    },
-    {
-      "description": "Keep every packageManager declaration on the same reviewed pnpm release.",
+      "description": "Keep every packageManager declaration on the same reviewed Bun release.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["packageManager"],
-      "matchPackageNames": ["pnpm"],
-      "groupName": "pnpm",
-      "groupSlug": "pnpm",
+      "matchPackageNames": ["bun"],
+      "groupName": "bun",
+      "groupSlug": "bun",
       "automerge": false
     },
     {
@@ -197,6 +152,17 @@
       "separateMajorMinor": false,
       "separateMinorPatch": false,
       "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.bun-version$/"],
+      "matchStrings": ["(?<currentValue>\\d+\\.\\d+\\.\\d+(?:-[^\\s]+)?)"],
+      "depNameTemplate": "bun",
+      "depTypeTemplate": "packageManager",
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
     }
   ]
 }

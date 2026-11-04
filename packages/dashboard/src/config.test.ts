@@ -1,9 +1,9 @@
+import { describe, it, expect, afterEach } from 'bun:test';
 import { HttpClient } from '@http-client-toolkit/core';
 import {
   InMemoryCacheStore,
   InMemoryDedupeStore,
 } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, afterEach } from 'vitest';
 import {
   validateDashboardOptions,
   validateStandaloneOptions,

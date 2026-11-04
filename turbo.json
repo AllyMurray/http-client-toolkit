@@ -1,34 +1,19 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "@repo/tsup-config#build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**"]
-    },
-    "@repo/vitest-config#build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**"]
-    },
     "build": {
-      "dependsOn": ["^build", "@repo/tsup-config#build"],
+      "dependsOn": ["^build", "@repo/tsdown-config#build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["lib/**", "dist/**"]
     },
     "test": {
-      "dependsOn": ["^build", "@repo/vitest-config#build"],
+      "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["coverage/**"]
-    },
-    "@http-client-toolkit/store-dynamodb#test": {
-      "dependsOn": ["^build", "@repo/vitest-config#build"],
       "outputs": []
     },
-    "test:run": {
-      "dependsOn": ["^build", "@repo/vitest-config#build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["coverage/**"]
+    "@http-client-toolkit/store-dynamodb#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
     },
     "test:build": {
       "dependsOn": ["build"],
@@ -47,6 +32,20 @@
     "clean": {
       "cache": false,
       "outputs": []
+    },
+    "@repo/tsdown-config#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
     }
-  }
+  },
+  "globalDependencies": [
+    "bunfig.toml",
+    ".oxlintrc.json",
+    "scripts/check-coverage.mjs"
+  ]
 }

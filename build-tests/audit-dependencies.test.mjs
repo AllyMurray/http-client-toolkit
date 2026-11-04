@@ -30,3 +30,65 @@ test('fails closed for registry errors instead of reporting success', () => {
     /Invalid audit/,
   );
 });
+
+test('normalizes Bun advisories without broadening the legacy exception', async () => {
+  const { normalizeBunAudit } =
+    await import('../scripts/audit-dependencies.mjs');
+  const bulk = {
+    minimatch: [
+      {
+        url: 'https://github.com/advisories/GHSA-g3hv-75wg-m249',
+        severity: 'moderate',
+        vulnerable_versions: '*',
+      },
+    ],
+  };
+  const normalized = normalizeBunAudit(
+    bulk,
+    [
+      { name: 'minimatch', version: '3.1.5' },
+      { name: 'minimatch', version: '10.2.6' },
+    ],
+    () => true,
+  );
+  assert.deepEqual(
+    blockingFindings(normalized).map((finding) => finding.version),
+    ['10.2.6'],
+  );
+  assert.deepEqual(
+    blockingFindings(normalizeBunAudit({}, [], () => false)),
+    [],
+  );
+});
+test('rejects malformed Bun advisory reports and unmatched versions', async () => {
+  const { normalizeBunAudit } =
+    await import('../scripts/audit-dependencies.mjs');
+  for (const report of [
+    null,
+    [],
+    { error: 'unavailable' },
+    { minimatch: [] },
+    { minimatch: [{}] },
+  ])
+    assert.throws(
+      () => normalizeBunAudit(report, [], () => false),
+      /Invalid audit/,
+    );
+  assert.throws(
+    () =>
+      normalizeBunAudit(
+        {
+          minimatch: [
+            {
+              url: 'https://github.com/advisories/GHSA-g3hv-75wg-m249',
+              severity: 'moderate',
+              vulnerable_versions: '*',
+            },
+          ],
+        },
+        [],
+        () => false,
+      ),
+    /no locked affected version/,
+  );
+});

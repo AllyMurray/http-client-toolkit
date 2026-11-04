@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   DynamoDBClient,
   ResourceNotFoundException,
@@ -13,7 +14,6 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DynamoDBRateLimitStore } from './dynamodb-rate-limit-store.js';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
@@ -613,7 +613,7 @@ describe('DynamoDBRateLimitStore', () => {
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
 
       await store.clear();
-      expect(ddbMock).toHaveReceivedCommandTimes(BatchWriteCommand, 1);
+      expect(ddbMock.commandCalls(BatchWriteCommand)).toHaveLength(1);
     });
   });
 

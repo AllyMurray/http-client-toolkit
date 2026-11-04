@@ -1,9 +1,9 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { RateLimitConfig } from '@http-client-toolkit/core';
 import Database from 'better-sqlite3';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SqliteAdaptiveRateLimitStore } from './sqlite-adaptive-rate-limit-store.js';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,7 +66,7 @@ describe('SqliteAdaptiveRateLimitStore', () => {
     it('should provide adaptive status information', async () => {
       const resource = 'test-resource';
 
-      const status = await store.getStatus(resource, 'user');
+      const status = await store.getStatus(resource);
       expect(status).toHaveProperty('remaining');
       expect(status).toHaveProperty('resetTime');
       expect(status).toHaveProperty('limit');

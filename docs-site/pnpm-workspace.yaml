@@ -1,9 +1,0 @@
-allowBuilds:
-  esbuild: true
-  sharp: true
-
-# Enforce the same one-day delay for direct, transitive, and locked packages.
-minimumReleaseAge: 1440
-minimumReleaseAgeStrict: true
-minimumReleaseAgeIgnoreMissingTime: false
-trustLockfile: false
