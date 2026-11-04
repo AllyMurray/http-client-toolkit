@@ -101,8 +101,13 @@ try {
       }
     }
   }
+  // Installing the unpublished version is essential: testing only the current
+  // published version can accidentally use registry copies of internal packages.
   console.log(
-    `Major release rehearsal passed: ${published.length} packages at ${expectedVersion}, frozen lockfile and packed internal ranges verified`,
+    run(process.execPath, [join(root, 'build-tests/installed-package.mjs')]),
+  );
+  console.log(
+    `Major release rehearsal passed: ${published.length} packages at ${expectedVersion}, frozen lockfile, packed internal ranges, installed runtime and declarations verified`,
   );
 } finally {
   rmSync(candidate, { recursive: true, force: true });
