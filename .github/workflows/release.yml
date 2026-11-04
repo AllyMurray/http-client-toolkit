@@ -139,7 +139,7 @@ jobs:
 
       - name: Publish packages
         if: steps.release_mode.outputs.should_publish == 'true'
-        run: pnpm exec changeset publish --access public
+        run: pnpm exec changeset publish
         env:
           NODE_AUTH_TOKEN: ''
           NPM_CONFIG_PROVENANCE: true

@@ -67,6 +67,25 @@ try {
     '--frozen-lockfile',
     '--ignore-scripts',
   ]);
+  // Use the publishing CLI's read-only plan to verify registry integration,
+  // public access, and dist-tags without uploading packages or creating tags.
+  run(resolve('node_modules/.bin/changeset'), [
+    'publish-plan',
+    '--output',
+    'publish-plan.json',
+  ]);
+  const plan = JSON.parse(readFileSync(join(candidate, 'publish-plan.json')));
+  const releases = plan.plan.flat();
+  assert.deepEqual(
+    releases.map(({ name }) => name).sort(),
+    published.map(({ name }) => name).sort(),
+  );
+  for (const release of releases) {
+    assert.equal(release.kind, 'publish');
+    assert.equal(release.version, expectedVersion);
+    assert.equal(release.access, 'public');
+    assert.equal(release.tag, 'latest');
+  }
   run('pnpm', [
     '--filter',
     '@http-client-toolkit/*',
