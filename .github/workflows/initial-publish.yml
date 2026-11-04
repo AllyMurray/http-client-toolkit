@@ -5,21 +5,23 @@ on:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     env:
-      CI: "true"
+      CI: 'true'
+      HUSKY: '0'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: pnpm
@@ -30,6 +32,12 @@ jobs:
 
       - name: Build packages
         run: pnpm run build
+
+      - name: Audit dependencies and check types
+        run: |
+          pnpm audit:dependencies
+          pnpm run typecheck
+          pnpm run lint:check
 
       - name: Align new package versions
         run: |
@@ -74,8 +82,13 @@ jobs:
           if (!updated) console.log('All package versions are already aligned');
           EOF
 
+      - name: Verify installed packages
+        run: |
+          pnpm run test:package:prepare
+          pnpm run test:package
+
       - name: Publish packages
-        run: npx changeset publish --access public
+        run: pnpm exec changeset publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true

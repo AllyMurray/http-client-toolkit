@@ -3,7 +3,7 @@ import { sharedTsupConfig } from '@repo/tsup-config';
 
 export default defineConfig({
   ...sharedTsupConfig,
-  target: 'node20',
+  target: 'node22',
   external: [
     '@http-client-toolkit/store-memory',
     '@http-client-toolkit/store-sqlite',

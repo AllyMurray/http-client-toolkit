@@ -530,8 +530,7 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
       }
 
       lastEvaluatedKey = scanResult.LastEvaluatedKey as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     } while (lastEvaluatedKey);
 
     this.activityMetrics.clear();
@@ -788,8 +787,7 @@ export class DynamoDBAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
         }
 
         lastEvaluatedKey = queryResult.LastEvaluatedKey as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
       } while (lastEvaluatedKey);
     }
   }

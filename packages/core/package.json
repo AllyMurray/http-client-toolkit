@@ -23,15 +23,15 @@
     "@repo/eslint-config": "workspace:*",
     "@repo/tsup-config": "workspace:*",
     "@repo/vitest-config": "workspace:*",
-    "@types/node": "20",
-    "eslint": "^9.39.0",
-    "nock": "14.0.5",
-    "tsup": "8.5.0",
-    "typescript": "5.8.3",
-    "vitest": "^3.2.4"
+    "@types/node": "24.19.2",
+    "eslint": "^9.39.5",
+    "nock": "15.0.5",
+    "tsup": "9.0.0",
+    "typescript": "6.0.3",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "zod": "3.25.71"
+    "zod": "4.6.7"
   },
   "keywords": [
     "http-client",
@@ -41,7 +41,7 @@
     "http-toolkit"
   ],
   "engines": {
-    "node": ">= 20.0.0"
+    "node": ">=22.0.0"
   },
   "main": "./lib/index.cjs",
   "license": "ISC",
@@ -72,5 +72,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+  "packageManager": "pnpm@12.16.1"
 }

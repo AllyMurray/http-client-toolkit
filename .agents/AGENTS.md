@@ -24,7 +24,13 @@ HTTP Client Toolkit — a TypeScript monorepo providing pluggable HTTP caching, 
 pnpm build            # Build all packages (turbo)
 pnpm test             # Run all tests (turbo)
 pnpm test:coverage    # Tests with V8 coverage
-pnpm lint             # Lint all packages
+pnpm lint             # Lint and auto-fix all packages
+pnpm lint:check       # Check lint without edits (CI)
+pnpm typecheck        # Typecheck library sources and tests
+pnpm test:package     # Check prepared tarballs as installed consumers
+pnpm test:release     # Rehearse versioning and packing without publishing
+pnpm test:dependency-policy # Verify release-age enforcement
+pnpm audit:dependencies # Audit with the documented minimatch exception
 pnpm lint:fix         # Lint + auto-fix
 pnpm format           # Prettier format (ts, tsx, md)
 pnpm changeset        # Create a changeset for versioning
@@ -60,7 +66,7 @@ Each store backend implements the same interfaces. New backends follow this patt
 
 ## Code Conventions
 
-- **TypeScript strict mode**, `@types/node` v20, Node >= 20
+- **TypeScript strict mode**, `@types/node` v24, Node >= 22 for consumers; Node >= 24.11 for development
 - **ESM + CJS dual exports** via tsup (`lib/index.js` + `lib/index.cjs`)
 - **Vitest** — tests colocated in `src/`, 100% coverage thresholds (lines/functions/branches/statements)
 - **ESLint 9** flat config with `typescript-eslint`, `eslint-plugin-import`, Prettier

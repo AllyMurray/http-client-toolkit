@@ -245,8 +245,7 @@ export class SqliteAdaptiveRateLimitStore implements IAdaptiveRateLimitStore {
     `,
       )
       .get(resource, priority, windowStart) as
-      | { timestamp: number }
-      | undefined;
+      { timestamp: number } | undefined;
 
     if (!oldestResult) {
       return 0;
