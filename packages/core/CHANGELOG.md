@@ -1,5 +1,11 @@
 # @http-client-toolkit/core
 
+## 5.0.1
+
+### Patch Changes
+
+- 0fe89d0: Build ESM and CommonJS libraries and bundled declarations with standalone tsdown, preserving existing exports and Node.js compatibility. Migrate contributor tooling and unit tests to the pinned Bun build.
+
 ## 5.0.0
 
 ### Major Changes
