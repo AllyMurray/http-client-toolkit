@@ -5,7 +5,6 @@ export const sharedVitestConfig = {
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      all: true,
       include: ['src/**/*.ts'],
       exclude: [
         'src/**/*.test.ts',

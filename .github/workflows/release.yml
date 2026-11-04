@@ -18,15 +18,17 @@ on:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     env:
-      CI: "true"
+      CI: 'true'
+      HUSKY: '0'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -37,10 +39,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: pnpm
@@ -48,6 +50,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit workspace and documentation dependencies
+        run: |
+          pnpm audit:dependencies
+          pnpm --dir docs-site audit
 
       - name: Build packages
         run: pnpm run build
@@ -60,7 +67,7 @@ jobs:
         run: |
           for file in .changeset/*.md; do
             [ "$(basename "$file")" = "README.md" ] && continue
-            if grep -qE '^\s*".+":\s*major\s*$' "$file"; then
+            if grep -qE "^[[:space:]]*['\"].+['\"]:[[:space:]]*major[[:space:]]*$" "$file"; then
               echo "::error::Major changeset found in $file. Major version bumps are blocked. Set the ALLOW_MAJOR_VERSION repo variable to 'true' to allow."
               exit 1
             fi
@@ -69,7 +76,7 @@ jobs:
       - name: Check for changesets
         id: changesets
         run: |
-          CHANGESET_COUNT=$(ls .changeset/*.md 2>/dev/null | grep -v README.md | wc -l | tr -d ' ')
+          CHANGESET_COUNT=$(node --input-type=module -e "import { readdirSync } from 'node:fs'; console.log(readdirSync('.changeset').filter(name => name.endsWith('.md') && name !== 'README.md').length)")
           echo "count=$CHANGESET_COUNT"
           if [ "$CHANGESET_COUNT" -gt 0 ]; then
             echo "has_changesets=true" >> "$GITHUB_OUTPUT"
@@ -111,26 +118,37 @@ jobs:
       - name: Version packages
         if: steps.release_mode.outputs.should_version == 'true'
         run: |
-          npx changeset version
+          pnpm exec changeset version
+          pnpm install --lockfile-only --ignore-scripts
+
+      - name: Validate versioned packages before publishing
+        if: steps.release_mode.outputs.should_publish == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm run typecheck
+          pnpm run lint:check
+          pnpm run test:package:prepare
+          pnpm run test:package
+
+      - name: Commit release metadata
+        if: steps.release_mode.outputs.should_version == 'true'
+        run: |
           git add .
           git commit -m "chore: release packages"
 
       - name: Publish packages
         if: steps.release_mode.outputs.should_publish == 'true'
-        run: npx changeset publish --access public
+        run: pnpm exec changeset publish --access public
         env:
-          NODE_AUTH_TOKEN: ""
+          NODE_AUTH_TOKEN: ''
           NPM_CONFIG_PROVENANCE: true
 
-      - name: Push release commit
-        if: steps.release_mode.outputs.should_version == 'true'
-        run: git push origin HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push tags
+      - name: Push release commit and tags atomically
         if: steps.release_mode.outputs.should_publish == 'true'
-        run: git push origin --tags
+        run: |
+          mapfile -t RELEASE_TAGS < <(git tag --points-at HEAD)
+          git push --atomic origin HEAD:main "${RELEASE_TAGS[@]}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -138,8 +156,10 @@ jobs:
         if: steps.release_mode.outputs.should_publish == 'true'
         run: |
           for TAG in $(git tag --points-at HEAD); do
-            echo "Creating release for $TAG"
-            gh release create "$TAG" --title "$TAG" --generate-notes
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Creating release for $TAG"
+              gh release create "$TAG" --title "$TAG" --generate-notes
+            fi
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

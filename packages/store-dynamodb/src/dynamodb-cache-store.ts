@@ -237,8 +237,7 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       }
 
       lastEvaluatedKey = scanResult.LastEvaluatedKey as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     } while (lastEvaluatedKey);
   }
 
@@ -444,8 +443,7 @@ export class DynamoDBCacheStore<T = unknown> implements CacheStore<T> {
       }
 
       lastEvaluatedKey = scanResult.LastEvaluatedKey as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     } while (lastEvaluatedKey);
   }
 

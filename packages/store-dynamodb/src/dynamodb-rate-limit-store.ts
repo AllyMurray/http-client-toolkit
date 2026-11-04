@@ -405,8 +405,7 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
       }
 
       lastEvaluatedKey = scanResult.LastEvaluatedKey as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     } while (lastEvaluatedKey);
   }
 
@@ -509,8 +508,7 @@ export class DynamoDBRateLimitStore implements RateLimitStore {
         }
 
         lastEvaluatedKey = queryResult.LastEvaluatedKey as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
       } while (lastEvaluatedKey);
     }
   }

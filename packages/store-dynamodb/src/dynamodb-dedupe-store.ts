@@ -523,8 +523,7 @@ export class DynamoDBDedupeStore<T = unknown> implements DedupeStore<T> {
       }
 
       lastEvaluatedKey = scanResult.LastEvaluatedKey as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     } while (lastEvaluatedKey);
 
     if (!scope) {

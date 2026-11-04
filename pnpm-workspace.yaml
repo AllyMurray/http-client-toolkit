@@ -1,2 +1,22 @@
 packages:
   - 'packages/*'
+
+overrides:
+  typescript: 6.0.3
+  # typescript-estree only uses the compatible minimatch() API.
+  '@typescript-eslint/typescript-estree>minimatch': 11.0.4
+  # Match rimraf 6.1.4's security fix while that release ages for 24 hours.
+  'rimraf>glob': 14.0.3
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  unrs-resolver: true
+
+saveExact: true
+
+# Enforce the same one-day delay for direct, transitive, and locked packages.
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+trustLockfile: false

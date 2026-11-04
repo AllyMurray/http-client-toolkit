@@ -38,10 +38,7 @@ export type HttpClientCacheStatus =
   | 'unusable';
 
 export type HttpClientCacheRevalidationPhase =
-  | 'scheduled'
-  | 'success'
-  | 'error'
-  | 'notModified';
+  'scheduled' | 'success' | 'error' | 'notModified';
 
 export type HttpClientRateLimitSource = 'store' | 'serverCooldown';
 

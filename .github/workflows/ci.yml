@@ -6,20 +6,23 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      CI: "true"
+      CI: 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: pnpm
@@ -29,7 +32,7 @@ jobs:
         run: |
           for file in .changeset/*.md; do
             [ "$(basename "$file")" = "README.md" ] && continue
-            if grep -qE '^\s*".+":\s*major\s*$' "$file"; then
+            if grep -qE "^[[:space:]]*['\"].+['\"]:[[:space:]]*major[[:space:]]*$" "$file"; then
               echo "::error::Major changeset found in $file. Major version bumps are blocked. Set the ALLOW_MAJOR_VERSION repo variable to 'true' to allow."
               exit 1
             fi
@@ -38,14 +41,58 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies
+        run: pnpm audit:dependencies
+
+      - name: Test dependency policy
+        run: |
+          pnpm test:dependency-policy
+          node --test build-tests/audit-dependencies.test.mjs
+
       - name: Build packages
         run: pnpm run build
 
       - name: Lint
-        run: pnpm run lint
+        run: pnpm run lint:check
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Rehearse major release without publishing
+        run: pnpm run test:release
 
       - name: Tests
         run: pnpm test
+
+  consumers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.x, 24.x, 26.x]
+    env:
+      CI: 'true'
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - name: Setup build runtime
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run test:package:prepare
+      - name: Setup consumer runtime
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Test installed packages on consumer runtime
+        run: node build-tests/installed-package.mjs
+
+      - name: Unit tests on consumer runtime
+        run: pnpm --filter '@http-client-toolkit/*' exec vitest run --dir=src
 
   docs:
     runs-on: ubuntu-latest
@@ -56,20 +103,23 @@ jobs:
         working-directory: docs-site
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: pnpm
           cache-dependency-path: docs-site/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-workspace
+        run: pnpm install --frozen-lockfile
 
       - name: Build documentation
         run: pnpm run build
+
+      - name: Audit documentation dependencies
+        run: pnpm audit
