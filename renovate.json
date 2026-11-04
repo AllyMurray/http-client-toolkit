@@ -101,10 +101,10 @@
       "automerge": false
     },
     {
-      "description": "Keep Node types aligned with the Node 24 development and CI runtime.",
+      "description": "Keep Node types aligned with the Node 26 development and CI runtime.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@types/node"],
-      "allowedVersions": ">=24.0.0 <25.0.0",
+      "allowedVersions": ">=26.0.0 <27.0.0",
       "automerge": false
     },
     {
@@ -114,7 +114,7 @@
       "enabled": false
     },
     {
-      "description": "Keep the Node 24 CI runtime deliberate while updating action versions separately.",
+      "description": "Keep the Node 26 CI runtime deliberate while updating action versions separately.",
       "matchManagers": ["github-actions"],
       "matchDepNames": ["node"],
       "enabled": false

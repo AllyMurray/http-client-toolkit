@@ -68,7 +68,9 @@ Each store backend implements the same interfaces. New backends follow this patt
 
 ## Code Conventions
 
-- **TypeScript strict mode**, `@types/node` v24, Node >= 22 for consumers; Node >= 24.11 for development
+- **TypeScript strict mode**, `@types/node` v26, Node >= 22 for consumers; Node >= 26.13 for development
+- **TypeScript 7** builds and declaration emit; `@typescript/typescript6` supplies
+  the compiler API for coverage and installed-consumer checks
 - **ESM + CJS dual exports** via tsdown (`lib/index.js` + `lib/index.cjs`)
 - **Bun** — tests colocated in `src/`, 100% per-file line/function coverage via the LCOV checker (see README for Bun coverage limits)
 - **bun lint** with `.oxlintrc.json` and `eslint-plugin-import`; **bun fmt** with explicit style in `bunfig.toml`

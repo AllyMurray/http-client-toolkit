@@ -44,10 +44,10 @@
     "@aws-sdk/client-dynamodb": "^3.1161.0",
     "@aws-sdk/lib-dynamodb": "^3.1161.0",
     "aws-sdk-client-mock": "^4.1.0",
-    "@types/node": "24.19.2",
-    "typescript": "6.0.3",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
     "@repo/tsdown-config": "workspace:*",
-    "tsdown": "0.23.1"
+    "tsdown": "0.23.5"
   },
   "sideEffects": false,
   "files": [

@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 
 const require = createRequire(import.meta.url);
 const manifest = require('../package.json');
