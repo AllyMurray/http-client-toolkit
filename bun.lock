@@ -20,7 +20,7 @@
     },
     "packages/core": {
       "name": "@http-client-toolkit/core",
-      "version": "5.0.1",
+      "version": "5.0.2",
       "dependencies": {
         "zod": "4.6.7",
       },
@@ -33,7 +33,7 @@
     },
     "packages/dashboard": {
       "name": "@http-client-toolkit/dashboard",
-      "version": "5.0.1",
+      "version": "5.0.2",
       "dependencies": {
         "@http-client-toolkit/core": "workspace:*",
         "react": "^19.3.1",
@@ -66,7 +66,7 @@
     },
     "packages/store-dynamodb": {
       "name": "@http-client-toolkit/store-dynamodb",
-      "version": "5.0.1",
+      "version": "5.0.2",
       "dependencies": {
         "@http-client-toolkit/core": "workspace:*",
         "zod": "^4.6.7",
@@ -87,7 +87,7 @@
     },
     "packages/store-memory": {
       "name": "@http-client-toolkit/store-memory",
-      "version": "5.0.1",
+      "version": "5.0.2",
       "dependencies": {
         "@http-client-toolkit/core": "workspace:*",
         "fast-safe-stringify": "^2.1.1",
@@ -103,7 +103,7 @@
     },
     "packages/store-sqlite": {
       "name": "@http-client-toolkit/store-sqlite",
-      "version": "5.0.1",
+      "version": "5.0.2",
       "dependencies": {
         "@http-client-toolkit/core": "workspace:*",
         "@types/better-sqlite3": "^9.6.0",

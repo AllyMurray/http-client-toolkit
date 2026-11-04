@@ -1,5 +1,13 @@
 # @http-client-toolkit/core
 
+## 5.0.2
+
+### Patch Changes
+
+- f4c27e4: Build packages and declarations with tsdown 0.23.5 and TypeScript 7.0.2, and update
+  Node development tooling to Node 26. Published packages continue to support Node 22
+  and later.
+
 ## 5.0.1
 
 ### Patch Changes
