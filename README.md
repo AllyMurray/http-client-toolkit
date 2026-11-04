@@ -43,7 +43,7 @@ const data = await client.get<{ name: string }>(
 
 Every store is optional. Use only what you need.
 
-Requires Node.js >= 22. Developing this repository requires Node.js >= 24.11 and the Bun version pinned in `package.json`.
+Requires Node.js >= 22. Developing this repository requires Node.js >= 26.13 and the Bun version pinned in `package.json`.
 
 ## Development
 
@@ -96,10 +96,10 @@ separate documentation project, Bun versions, and GitHub Actions through
   requires review. Security alert PRs bypass Renovate's schedule and release-age
   delay but still require review; installs continue to enforce the Bun policy.
 - Node engines and the CI runtime remain deliberate decisions; Node types follow
-  the Node 24 development runtime. Peer dependency ranges are widened to preserve
+  the Node 26 development runtime. Peer dependency ranges are widened to preserve
   consumer support.
 
-CI builds the library and documentation on Node 24. Installed ESM and CommonJS
+CI builds the library and documentation on Node 26. Installed ESM and CommonJS
 packages are tested on every supported stable Node line: 22, 24, and 26.
 Unit tests run on the pinned Bun build. Installed package checks run on Node
 and validate ESM and CommonJS behavior and declaration resolution. Keep it current with the
@@ -114,8 +114,10 @@ should require `validate`, `docs`, and every `consumers` matrix check; the path-
 
 ### Compatibility exceptions
 
-- TypeScript 6 remains available for declaration generation and installed-consumer
-  checks. Source and test typechecks use native `bun check`. Node types follow Node 24.
+- TypeScript 7 generates declarations and builds the shared configuration. The
+  `@typescript/typescript6` compatibility package supplies the compiler API for
+  coverage analysis and installed-consumer checks. Source and test typechecks use
+  native `bun check`. Node types follow Node 26.
 - `rimraf` stays on 6.1.3 until 6.1.4 meets the release-age policy. Its `glob`
   dependency is overridden to the same patched version used by 6.1.4.
 - The audit wrapper excludes only minimatch **3.1.5** for
