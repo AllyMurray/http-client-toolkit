@@ -6,13 +6,14 @@
     "url": "git+https://github.com/AllyMurray/http-client-toolkit.git"
   },
   "scripts": {
-    "build": "tsup && npm run test",
-    "lint": "eslint --fix src && prettier --write .",
-    "test": "vitest run --dir=src",
-    "test:coverage": "vitest run --dir=src --coverage",
-    "test:watch": "vitest --dir=src",
-    "dev": "tsup --watch",
-    "clean": "rimraf lib dist node_modules .turbo"
+    "build": "tsdown && bun run test",
+    "lint": "bun lint --no-script src",
+    "test": "bun test ./src",
+    "test:coverage": "bun test --coverage ./src && node ../../scripts/check-coverage.mjs",
+    "test:watch": "bun test --watch ./src",
+    "dev": "tsdown --watch",
+    "clean": "rimraf lib dist node_modules .turbo",
+    "typecheck": "bun check --noEmit"
   },
   "author": {
     "name": "Ally Murray",
@@ -20,14 +21,10 @@
     "organization": false
   },
   "devDependencies": {
-    "@repo/eslint-config": "workspace:*",
-    "@repo/tsup-config": "workspace:*",
-    "@repo/vitest-config": "workspace:*",
     "@types/node": "24.19.2",
-    "eslint": "^9.39.5",
-    "tsup": "9.0.0",
     "typescript": "6.0.3",
-    "vitest": "5.1.0"
+    "@repo/tsdown-config": "workspace:*",
+    "tsdown": "0.23.1"
   },
   "dependencies": {
     "@http-client-toolkit/core": "workspace:*",
@@ -76,5 +73,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@12.16.1"
+  "packageManager": "bun@1.4.4-canary.20261104.1"
 }

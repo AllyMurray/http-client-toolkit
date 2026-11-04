@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi as _vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi as _vi,
+} from 'bun:test';
 import { InMemoryRateLimitStore } from './in-memory-rate-limit-store.js';
 
 describe('InMemoryRateLimitStore', () => {

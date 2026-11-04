@@ -8,11 +8,12 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
+  symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// Exercise Changesets and pnpm on an isolated major-release candidate. Nothing
+// Exercise Changesets and Bun on an isolated major-release candidate. Nothing
 // is committed, pushed, tagged, or published by this check.
 const root = resolve('.');
 const candidate = mkdtempSync(join(tmpdir(), 'toolkit-release-'));
@@ -23,10 +24,18 @@ const run = (command, args) =>
     env: { ...process.env, HUSKY: '0', CI: 'true' },
   });
 try {
+  symlinkSync(
+    join(root, 'node_modules'),
+    join(candidate, 'node_modules'),
+    'dir',
+  );
   for (const file of [
     'package.json',
-    'pnpm-workspace.yaml',
-    'pnpm-lock.yaml',
+    'bunfig.toml',
+    'bun.lock',
+    'scripts/release-age-scanner.mjs',
+    'scripts/pack-packages.mjs',
+    'scripts/prepare-publish-plan.mjs',
     '.changeset/config.json',
   ]) {
     mkdirSync(join(candidate, file, '..'), { recursive: true });
@@ -60,8 +69,8 @@ try {
     '---\n"@http-client-toolkit/core": major\n---\n\nTest major release.\n',
   );
   run(resolve('node_modules/.bin/changeset'), ['version']);
-  run('pnpm', ['install', '--lockfile-only', '--ignore-scripts']);
-  run('pnpm', [
+  run('bun', ['install', '--lockfile-only', '--ignore-scripts']);
+  run('bun', [
     'install',
     '--lockfile-only',
     '--frozen-lockfile',
@@ -86,13 +95,23 @@ try {
     assert.equal(release.access, 'public');
     assert.equal(release.tag, 'latest');
   }
-  run('pnpm', [
-    '--filter',
-    '@http-client-toolkit/*',
-    'pack',
-    '--pack-destination',
-    '.package-tests',
-  ]);
+  run('bun', ['scripts/pack-packages.mjs']);
+  // Use the same artifact plan as CI publishing, without uploading anything.
+  run(process.execPath, [join(root, 'scripts/prepare-publish-plan.mjs')]);
+  const artifactPlan = JSON.parse(
+    readFileSync(join(candidate, '.package-tests/publish-plan.json')),
+  );
+  for (const release of artifactPlan.plan.flat()) {
+    if (release.kind !== 'publish') continue;
+    assert.equal(release.version, expectedVersion);
+    assert.equal(release.access, 'public');
+    assert.equal(release.tag, 'latest');
+    assert.match(release.tarball.integrity, /^sha256-/);
+    assert.ok(
+      readFileSync(join(candidate, '.package-tests', release.tarball.path))
+        .length > 0,
+    );
+  }
   for (const pkg of published) {
     const filename = `${pkg.name.replace('@', '').replace('/', '-')}-${expectedVersion}.tgz`;
     const manifest = JSON.parse(

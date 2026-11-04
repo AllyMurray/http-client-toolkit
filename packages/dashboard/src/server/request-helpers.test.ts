@@ -1,6 +1,6 @@
+import { describe, it, expect } from 'bun:test';
 import type { IncomingMessage } from 'http';
 import { PassThrough } from 'stream';
-import { describe, it, expect } from 'vitest';
 import { parseUrl, extractParam, readJsonBody } from './request-helpers.js';
 
 function mockReq(url: string): IncomingMessage {

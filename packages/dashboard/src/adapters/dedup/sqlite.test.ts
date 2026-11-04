@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { SQLiteDedupeStore } from '@http-client-toolkit/store-sqlite';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createSqliteDedupeAdapter } from './sqlite.js';
 
 describe('createSqliteDedupeAdapter', () => {

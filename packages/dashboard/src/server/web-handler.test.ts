@@ -1,10 +1,10 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { HttpClient } from '@http-client-toolkit/core';
 import {
   InMemoryCacheStore,
   InMemoryDedupeStore,
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createDashboardHandler,
   type DashboardFetchHandler,

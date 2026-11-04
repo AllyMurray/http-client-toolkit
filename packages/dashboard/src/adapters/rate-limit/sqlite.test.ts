@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { SQLiteRateLimitStore } from '@http-client-toolkit/store-sqlite';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createSqliteRateLimitAdapter } from './sqlite.js';
 
 describe('createSqliteRateLimitAdapter', () => {

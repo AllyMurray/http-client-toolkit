@@ -1,3 +1,4 @@
+import { describe, it, expect, afterEach } from 'bun:test';
 import {
   InMemoryCacheStore,
   InMemoryDedupeStore,
@@ -8,7 +9,6 @@ import {
   SQLiteDedupeStore,
   SQLiteRateLimitStore,
 } from '@http-client-toolkit/store-sqlite';
-import { describe, it, expect, afterEach } from 'vitest';
 import {
   detectCacheAdapter,
   detectDedupeAdapter,
@@ -16,7 +16,7 @@ import {
 } from './detect.js';
 
 describe('detectCacheAdapter', () => {
-  let store: { destroy(): void } | undefined;
+  let store: InMemoryCacheStore | SQLiteCacheStore | undefined;
 
   afterEach(() => {
     if (store) {
@@ -43,6 +43,13 @@ describe('detectCacheAdapter', () => {
 
   it('should fallback to generic for unknown stores', () => {
     const unknownStore = {
+      async setWithTags() {},
+      async invalidateByTag() {
+        return 0;
+      },
+      async invalidateByTags() {
+        return 0;
+      },
       get: async () => undefined,
       set: async () => {},
       delete: async () => {},
@@ -55,7 +62,7 @@ describe('detectCacheAdapter', () => {
 });
 
 describe('detectDedupeAdapter', () => {
-  let store: { destroy(): void } | undefined;
+  let store: InMemoryDedupeStore | SQLiteDedupeStore | undefined;
 
   afterEach(() => {
     if (store) {
@@ -93,7 +100,7 @@ describe('detectDedupeAdapter', () => {
 });
 
 describe('detectRateLimitAdapter', () => {
-  let store: { destroy(): void } | undefined;
+  let store: InMemoryRateLimitStore | SQLiteRateLimitStore | undefined;
 
   afterEach(() => {
     if (store) {

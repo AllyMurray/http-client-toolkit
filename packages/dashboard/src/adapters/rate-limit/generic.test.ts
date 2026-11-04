@@ -1,5 +1,5 @@
+import { describe, it, expect } from 'bun:test';
 import type { RateLimitStore } from '@http-client-toolkit/core';
-import { describe, it, expect } from 'vitest';
 import { createGenericRateLimitAdapter } from './generic.js';
 
 const mockStore: RateLimitStore = {

@@ -1,5 +1,5 @@
 {
-  "name": "@repo/vitest-config",
+  "name": "@repo/tsdown-config",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "vitest": "5.1.0"
+    "tsdown": "0.23.1"
   },
   "devDependencies": {
     "typescript": "6.0.3",
@@ -19,5 +19,6 @@
   },
   "files": [
     "dist/**"
-  ]
+  ],
+  "packageManager": "bun@1.4.4-canary.20261104.1"
 }

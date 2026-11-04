@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { DEFAULT_TABLE_NAME, TABLE_SCHEMA } from './table.js';
 
 describe('table schema constants', () => {

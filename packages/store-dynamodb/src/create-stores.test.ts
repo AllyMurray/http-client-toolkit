@@ -1,7 +1,7 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDynamoDBStores } from './create-stores.js';
 import { DynamoDBAdaptiveRateLimitStore } from './dynamodb-adaptive-rate-limit-store.js';
 import { DynamoDBCacheStore } from './dynamodb-cache-store.js';

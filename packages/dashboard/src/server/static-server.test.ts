@@ -1,14 +1,18 @@
+import { describe, it, expect, vi, beforeEach, type Mock } from 'bun:test';
 import { existsSync, readFileSync } from 'fs';
 import type { ServerResponse } from 'http';
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
 }));
 
-const mockExistsSync = existsSync as Mock;
-const mockReadFileSync = readFileSync as Mock;
+const mockExistsSync = existsSync as Mock<
+  (path: string, encoding?: string) => unknown
+>;
+const mockReadFileSync = readFileSync as unknown as Mock<
+  (path: string, encoding?: string) => unknown
+>;
 
 function mockResponse(): ServerResponse & {
   _status: number;
@@ -36,9 +40,10 @@ function mockResponse(): ServerResponse & {
 
 // We need a fresh module for each test to reset the module-level caches
 // (cachedIndexHtml and clientDir).
+let importId = 0;
 async function importFresh() {
   // Clear module cache so we get fresh module-level variables
-  const modulePath = './static-server.js';
+  const modulePath = `./static-server.ts?test=${++importId}`;
   // Use dynamic import with cache busting
   const mod = await import(modulePath);
   return mod;
@@ -48,7 +53,6 @@ describe('serveStatic', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Reset the module-level state by re-importing
-    vi.resetModules();
   });
 
   it('should serve SPA fallback with built index.html when dist/client/index.html exists', async () => {

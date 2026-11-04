@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'bun:test';
 import * as memory from './index.js';
 
 describe('store-memory index exports', () => {

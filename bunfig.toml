@@ -1,0 +1,27 @@
+[install]
+exact = true
+minimumReleaseAge = 86400
+globalStore = true
+linker = "isolated"
+
+[install.security]
+scanner = "./scripts/release-age-scanner.mjs"
+
+[test]
+# The coverage script enforces 100% per file after applying existing V8 exclusions.
+coverageThreshold = 0.0
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]
+coveragePathIgnorePatterns = ["**/src/types/**", "**/src/stores/cache-store.ts", "**/src/stores/dedupe-store.ts", "**/src/client/**", "**/lib/**", "**/dist/**"]
+
+[fmt]
+singleQuote = true
+printWidth = 80
+semi = true
+tabWidth = 2
+useTabs = false
+trailingComma = "all"
+endOfLine = "lf"
+sortImports = false
+sortPackageJson = false
+ignorePatterns = ["**/lib/**", "**/dist/**", "**/node_modules/**", "**/CHANGELOG.md", "docs-site/.astro/**"]

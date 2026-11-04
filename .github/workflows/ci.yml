@@ -18,14 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
-          cache: pnpm
+
+      - name: Set up pinned Bun
+        run: npm install --global "bun@$(cat "$GITHUB_WORKSPACE/.bun-version")"
 
       - name: Reject major version changesets
         if: vars.ALLOW_MAJOR_VERSION != 'true'
@@ -39,30 +38,33 @@ jobs:
           done
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit:dependencies
+        run: bun run audit:dependencies
 
       - name: Test dependency policy
         run: |
-          pnpm test:dependency-policy
-          node --test build-tests/audit-dependencies.test.mjs
+          bun run test:dependency-policy
+          node --test build-tests/audit-dependencies.test.mjs build-tests/coverage.test.mjs
 
       - name: Build packages
-        run: pnpm run build
+        run: bun run build
 
       - name: Lint
-        run: pnpm run lint:check
+        run: bun run lint:check
+
+      - name: Check formatting
+        run: bun run format:check
 
       - name: Typecheck
-        run: pnpm run typecheck
+        run: bun run typecheck
 
       - name: Rehearse major release without publishing
-        run: pnpm run test:release
+        run: bun run test:release
 
-      - name: Tests
-        run: pnpm test
+      - name: Tests and coverage
+        run: bun run test:coverage
 
   consumers:
     runs-on: ubuntu-latest
@@ -75,24 +77,22 @@ jobs:
       HUSKY: '0'
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
       - name: Setup build runtime
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-      - run: pnpm run test:package:prepare
+
+      - name: Set up pinned Bun
+        run: npm install --global "bun@$(cat "$GITHUB_WORKSPACE/.bun-version")"
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test:package:prepare
       - name: Setup consumer runtime
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
       - name: Test installed packages on consumer runtime
         run: node build-tests/installed-package.mjs
-
-      - name: Unit tests on consumer runtime
-        run: pnpm --filter '@http-client-toolkit/*' exec vitest run --dir=src
 
   docs:
     runs-on: ubuntu-latest
@@ -105,21 +105,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
-          cache: pnpm
-          cache-dependency-path: docs-site/pnpm-lock.yaml
+
+      - name: Set up pinned Bun
+        run: npm install --global "bun@$(cat "$GITHUB_WORKSPACE/.bun-version")"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build documentation
-        run: pnpm run build
+        run: bun run build
 
       - name: Audit documentation dependencies
-        run: pnpm audit
+        run: bun audit

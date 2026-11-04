@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi as _vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi as _vi,
+} from 'bun:test';
 import { InMemoryCacheStore } from './in-memory-cache-store.js';
 
 describe('InMemoryCacheStore', () => {
@@ -336,8 +343,8 @@ describe('InMemoryCacheStore', () => {
 
         const lruItems = memoryStore.getLRUItems();
         expect(lruItems).toHaveLength(2);
-        expect(lruItems[0].hash).toBe('key2'); // Should be oldest now
-        expect(lruItems[1].hash).toBe('key1'); // Should be newest
+        expect(lruItems[0]!.hash).toBe('key2'); // Should be oldest now
+        expect(lruItems[1]!.hash).toBe('key1'); // Should be newest
 
         memoryStore.destroy();
       });
@@ -349,9 +356,9 @@ describe('InMemoryCacheStore', () => {
 
         const lruItems = memoryStore.getLRUItems(5);
         expect(lruItems).toHaveLength(1);
-        expect(lruItems[0].hash).toBe('key1');
-        expect(lruItems[0].lastAccessed).toBeInstanceOf(Date);
-        expect(lruItems[0].size).toBeGreaterThan(0);
+        expect(lruItems[0]!.hash).toBe('key1');
+        expect(lruItems[0]!.lastAccessed).toBeInstanceOf(Date);
+        expect(lruItems[0]!.size).toBeGreaterThan(0);
 
         memoryStore.destroy();
       });

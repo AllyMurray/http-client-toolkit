@@ -38,29 +38,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
-          cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      - name: Set up pinned Bun
+        run: npm install --global "bun@$(cat "$GITHUB_WORKSPACE/.bun-version")"
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Audit workspace and documentation dependencies
         run: |
-          pnpm audit:dependencies
-          pnpm --dir docs-site audit
+          bun run audit:dependencies
+          bun audit --cwd docs-site
 
       - name: Build packages
-        run: pnpm run build
+        run: bun run build
 
       - name: Tests
-        run: pnpm test
+        run: bun run test
 
       - name: Reject major version changesets
         if: vars.ALLOW_MAJOR_VERSION != 'true'
@@ -118,18 +117,18 @@ jobs:
       - name: Version packages
         if: steps.release_mode.outputs.should_version == 'true'
         run: |
-          pnpm exec changeset version
-          pnpm install --lockfile-only --ignore-scripts
+          bunx changeset version
+          bun install --lockfile-only --ignore-scripts
 
       - name: Validate versioned packages before publishing
         if: steps.release_mode.outputs.should_publish == 'true'
         run: |
-          pnpm install --frozen-lockfile
-          pnpm run build
-          pnpm run typecheck
-          pnpm run lint:check
-          pnpm run test:package:prepare
-          pnpm run test:package
+          bun install --frozen-lockfile
+          bun run build
+          bun run typecheck
+          bun run lint:check
+          bun run test:package:prepare
+          bun run test:package
 
       - name: Commit release metadata
         if: steps.release_mode.outputs.should_version == 'true'
@@ -139,7 +138,9 @@ jobs:
 
       - name: Publish packages
         if: steps.release_mode.outputs.should_publish == 'true'
-        run: pnpm exec changeset publish
+        run: |
+          bun run release:prepare
+          bunx changeset publish --from-pack-dir .package-tests
         env:
           NODE_AUTH_TOKEN: ''
           NPM_CONFIG_PROVENANCE: true

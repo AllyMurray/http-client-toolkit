@@ -1,0 +1,10 @@
+[install]
+exact = true
+minimumReleaseAge = 86400
+globalStore = true
+linker = "isolated"
+# Astro bundles the parser loader into prerendered output.
+publicHoistPattern = ["@bruits/satteri-*"]
+
+[install.security]
+scanner = "../scripts/release-age-scanner.mjs"

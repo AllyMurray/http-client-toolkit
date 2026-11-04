@@ -1,5 +1,5 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { InMemoryRateLimitStore } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryRateLimitAdapter } from './memory.js';
 
 describe('createMemoryRateLimitAdapter', () => {

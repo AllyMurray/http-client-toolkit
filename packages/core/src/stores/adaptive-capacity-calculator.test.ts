@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import { AdaptiveCapacityCalculator } from './adaptive-capacity-calculator.js';
 
 describe('AdaptiveCapacityCalculator', () => {

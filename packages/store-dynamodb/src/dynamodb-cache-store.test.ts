@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import {
   DynamoDBClient,
   ResourceNotFoundException,
@@ -12,7 +13,6 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DynamoDBCacheStore } from './dynamodb-cache-store.js';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
@@ -277,14 +277,14 @@ describe('DynamoDBCacheStore', () => {
       await smallStore.set('too-big', largeValue, 60);
 
       // PutCommand should NOT have been called
-      expect(ddbMock).not.toHaveReceivedCommand(PutCommand);
+      expect(ddbMock.commandCalls(PutCommand).length).toBe(0);
       smallStore.destroy();
     });
 
     it('should cache values within maxEntrySizeBytes', async () => {
       ddbMock.on(PutCommand).resolvesOnce({});
       await store.set('fits', 'small', 60);
-      expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
+      expect(ddbMock.commandCalls(PutCommand)).toHaveLength(1);
     });
   });
 
@@ -429,8 +429,8 @@ describe('DynamoDBCacheStore', () => {
 
       await store.clear();
 
-      expect(ddbMock).toHaveReceivedCommandTimes(ScanCommand, 1);
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(1);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('should handle scan returning undefined Items during clear', async () => {
@@ -438,8 +438,8 @@ describe('DynamoDBCacheStore', () => {
 
       await store.clear();
 
-      expect(ddbMock).toHaveReceivedCommandTimes(ScanCommand, 1);
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(1);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
   });
 
@@ -519,8 +519,8 @@ describe('DynamoDBCacheStore', () => {
       const nowEpoch = Math.floor(Date.now() / 1000);
       await store.setWithTags('hash1', 'value1', 60, ['tagA', 'tagB']);
 
-      expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
-      expect(ddbMock).toHaveReceivedCommandTimes(BatchWriteCommand, 1);
+      expect(ddbMock.commandCalls(PutCommand)).toHaveLength(1);
+      expect(ddbMock.commandCalls(BatchWriteCommand)).toHaveLength(1);
 
       const batchInput =
         ddbMock.commandCalls(BatchWriteCommand)[0]!.args[0].input;
@@ -546,9 +546,9 @@ describe('DynamoDBCacheStore', () => {
 
       await store.setWithTags('hash1', 'value1', 60, []);
 
-      expect(ddbMock).toHaveReceivedCommandTimes(PutCommand, 1);
+      expect(ddbMock.commandCalls(PutCommand)).toHaveLength(1);
       // BatchWriteCommand should not be called (no new tags, no old tags to clean)
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('setWithTags handles zero TTL for tags', async () => {
@@ -592,7 +592,7 @@ describe('DynamoDBCacheStore', () => {
       const count = await store.invalidateByTag('tagA');
 
       expect(count).toBe(2);
-      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
+      expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
 
       const queryInput = ddbMock.commandCalls(QueryCommand)[0]!.args[0].input;
       expect(queryInput.KeyConditionExpression).toBe('pk = :pk');
@@ -630,8 +630,8 @@ describe('DynamoDBCacheStore', () => {
       const count = await store.invalidateByTag('tagA');
 
       expect(count).toBe(0);
-      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('invalidateByTags aggregates across multiple tags and deduplicates', async () => {
@@ -657,7 +657,7 @@ describe('DynamoDBCacheStore', () => {
 
       // Should return 3 unique hashes (hash1, hash2, hash3)
       expect(count).toBe(3);
-      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 2);
+      expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(2);
 
       // Verify delete keys: 3 unique cache entries + 4 tag items = 7 total deletes
       const batchCalls = ddbMock.commandCalls(BatchWriteCommand);
@@ -711,8 +711,8 @@ describe('DynamoDBCacheStore', () => {
       const count = await store.invalidateByTags([]);
 
       expect(count).toBe(0);
-      expect(ddbMock).not.toHaveReceivedCommand(QueryCommand);
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(QueryCommand).length).toBe(0);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('invalidateByTags returns 0 when tags have no associated entries', async () => {
@@ -721,8 +721,8 @@ describe('DynamoDBCacheStore', () => {
       const count = await store.invalidateByTags(['nonexistent']);
 
       expect(count).toBe(0);
-      expect(ddbMock).toHaveReceivedCommandTimes(QueryCommand, 1);
-      expect(ddbMock).not.toHaveReceivedCommand(BatchWriteCommand);
+      expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
+      expect(ddbMock.commandCalls(BatchWriteCommand).length).toBe(0);
     });
 
     it('invalidateByTag throws on destroyed store', async () => {
@@ -915,5 +915,11 @@ describe('DynamoDBCacheStore', () => {
         'was not found. Create the table using your infrastructure',
       );
     });
+  });
+  it('propagates tag cleanup scan failures during deletion', async () => {
+    const failure = new Error('tag scan failed');
+    ddbMock.on(DeleteCommand).resolves({});
+    ddbMock.on(ScanCommand).rejects(failure);
+    await expect(store.delete('failed-tags')).rejects.toBe(failure);
   });
 });

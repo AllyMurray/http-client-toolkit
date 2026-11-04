@@ -1,8 +1,9 @@
-import nock from 'nock';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'bun:test';
 import { HttpClient } from './http-client.js';
 import { isCacheEntry, type CacheEntry } from '../cache/index.js';
 import { HttpClientError } from '../errors/http-client-error.js';
 import { hashRequest } from '../stores/index.js';
+import { mockHttp } from '../test/mock-http.js';
 import type { HttpClientEvent } from '../types/index.js';
 
 const baseUrl = 'https://api.example.com';
@@ -11,12 +12,16 @@ const alternateBaseUrl = 'https://api-alt.example.com';
 describe('HttpClient', () => {
   let httpClient: HttpClient;
   beforeEach(() => {
-    nock.cleanAll();
+    mockHttp.reset();
     httpClient = new HttpClient({ name: 'test' });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    try {
+      mockHttp.verify();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   test('should store name from constructor options', () => {
@@ -42,7 +47,7 @@ describe('HttpClient', () => {
 
   test('should return a successful response', async () => {
     const mockResponse = { data: [1, 2, 3], status: 'ok' };
-    nock(baseUrl).get('/items').reply(200, mockResponse);
+    mockHttp(baseUrl).get('/items').reply(200, mockResponse);
 
     const result = await httpClient.get(`${baseUrl}/items`);
 
@@ -51,7 +56,7 @@ describe('HttpClient', () => {
 
   test('should apply responseTransformer when provided', async () => {
     const mockResponse = { snake_case_key: 'value' };
-    nock(baseUrl).get('/transform').reply(200, mockResponse);
+    mockHttp(baseUrl).get('/transform').reply(200, mockResponse);
 
     const client = new HttpClient({
       name: 'test',
@@ -69,7 +74,7 @@ describe('HttpClient', () => {
 
   test('should apply responseHandler when provided', async () => {
     const mockResponse = { error_code: 404, message: 'Not found' };
-    nock(baseUrl).get('/handled').reply(200, mockResponse);
+    mockHttp(baseUrl).get('/handled').reply(200, mockResponse);
 
     const client = new HttpClient({
       name: 'test',
@@ -88,7 +93,7 @@ describe('HttpClient', () => {
   });
 
   test('should use custom errorHandler when provided', async () => {
-    nock(baseUrl).get('/error').reply(500, { message: 'Server error' });
+    mockHttp(baseUrl).get('/error').reply(500, { message: 'Server error' });
 
     class CustomError extends Error {
       constructor(message: string) {
@@ -106,7 +111,7 @@ describe('HttpClient', () => {
   });
 
   test('should pass HTTP response context to custom errorHandler once', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/rate-limited')
       .reply(429, { message: 'Too many requests' });
 
@@ -161,7 +166,7 @@ describe('HttpClient', () => {
   });
 
   test('should throw HttpClientError on HTTP errors by default', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/server-error')
       .reply(500, { message: 'Internal error' });
 
@@ -171,7 +176,7 @@ describe('HttpClient', () => {
   });
 
   test('should throw HttpClientError with status code on HTTP errors', async () => {
-    nock(baseUrl).get('/not-found').reply(404);
+    mockHttp(baseUrl).get('/not-found').reply(404);
 
     try {
       await httpClient.get(`${baseUrl}/not-found`);
@@ -183,7 +188,7 @@ describe('HttpClient', () => {
   });
 
   test('should include data and headers on default HttpClientError', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/error-with-body')
       .reply(422, { message: 'Validation failed', errors: ['field required'] });
 
@@ -204,7 +209,7 @@ describe('HttpClient', () => {
   });
 
   test('should throw HttpClientError when request fails with no response', async () => {
-    nock(baseUrl).get('/failed-request').replyWithError('Complete failure');
+    mockHttp(baseUrl).get('/failed-request').replyWithError('Complete failure');
 
     await expect(httpClient.get(`${baseUrl}/failed-request`)).rejects.toThrow(
       HttpClientError,
@@ -212,7 +217,7 @@ describe('HttpClient', () => {
   });
 
   test('should support successful text responses', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/plain-text')
       .reply(200, 'hello world', { 'Content-Type': 'text/plain' });
 
@@ -222,7 +227,7 @@ describe('HttpClient', () => {
   });
 
   test('should support successful no-content responses', async () => {
-    nock(baseUrl).get('/empty').reply(204);
+    mockHttp(baseUrl).get('/empty').reply(204);
 
     const result = await httpClient.get<undefined>(`${baseUrl}/empty`);
 
@@ -230,9 +235,9 @@ describe('HttpClient', () => {
   });
 
   test('should parse JSON-like body when Content-Type is absent', async () => {
-    nock(baseUrl).get('/no-content-type').reply(200, '{"id":1}');
+    mockHttp(baseUrl).get('/no-content-type').reply(200, '{"id":1}');
 
-    // nock sets Content-Type by default for objects; raw string avoids it
+    // The HTTP fixture sets Content-Type by default for objects; raw string avoids it
     const result = await httpClient.get<{ id: number }>(
       `${baseUrl}/no-content-type`,
     );
@@ -240,7 +245,7 @@ describe('HttpClient', () => {
   });
 
   test('should return JSON primitive when response is a non-object JSON value', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/json-primitive')
       .reply(200, '42', { 'Content-Type': 'application/json' });
 
@@ -249,7 +254,7 @@ describe('HttpClient', () => {
   });
 
   test('should return raw body when JSON parsing fails on JSON-like content', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/bad-json')
       .reply(200, '{invalid json', { 'Content-Type': 'application/json' });
 
@@ -292,7 +297,7 @@ describe('HttpClient', () => {
   });
 
   test('should enforce Retry-After cooldown from throttled responses', async () => {
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/throttled')
       .reply(429, { message: 'Too many requests' }, { 'Retry-After': '1' });
 
@@ -308,7 +313,7 @@ describe('HttpClient', () => {
   });
 
   test('should honor non-X RateLimit headers with exhausted remaining quota', async () => {
-    nock(baseUrl).get('/quota-status').reply(
+    mockHttp(baseUrl).get('/quota-status').reply(
       200,
       { ok: true },
       {
@@ -328,7 +333,7 @@ describe('HttpClient', () => {
   });
 
   test('should allow custom non-standard rate-limit header names', async () => {
-    nock(baseUrl).get('/custom-headers').reply(
+    mockHttp(baseUrl).get('/custom-headers').reply(
       200,
       { ok: true },
       {
@@ -368,7 +373,7 @@ describe('HttpClient', () => {
       record: [],
     };
 
-    nock(baseUrl).get('/priority-aware').reply(200, { ok: true });
+    mockHttp(baseUrl).get('/priority-aware').reply(200, { ok: true });
 
     let canProceedChecks = 0;
 
@@ -460,7 +465,7 @@ describe('HttpClient', () => {
   });
 
   test('should remain compatible with basic rate-limit stores', async () => {
-    nock(baseUrl).get('/basic-rate-limit').reply(200, { ok: true });
+    mockHttp(baseUrl).get('/basic-rate-limit').reply(200, { ok: true });
 
     const calls = {
       canProceed: 0,
@@ -510,11 +515,11 @@ describe('HttpClient', () => {
   test('should generate distinct cache keys for different URL origins', async () => {
     const observedHashes: Array<string> = [];
 
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/same-path')
       .query({ q: '1' })
       .reply(200, { source: 'a' });
-    nock(alternateBaseUrl)
+    mockHttp(alternateBaseUrl)
       .get('/same-path')
       .query({ q: '1' })
       .reply(200, { source: 'b' });
@@ -559,7 +564,11 @@ describe('HttpClient', () => {
   test('should generate distinct cache keys for repeated query params', async () => {
     const observedHashes: Array<string> = [];
 
-    nock(baseUrl).get('/multi').query(true).times(2).reply(200, { ok: true });
+    mockHttp(baseUrl)
+      .get('/multi')
+      .query(true)
+      .times(2)
+      .reply(200, { ok: true });
 
     const cacheStoreStub = {
       async get() {
@@ -601,7 +610,7 @@ describe('HttpClient', () => {
   test('should generate distinct hashes when repeated params have extra values', async () => {
     const observedHashes: Array<string> = [];
 
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/multi-values')
       .query(true)
       .times(2)
@@ -734,7 +743,7 @@ describe('HttpClient', () => {
 
     test('emits request lifecycle events in order for a normal request', async () => {
       const observed = collectEvents();
-      nock(baseUrl).get('/observed-normal').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-normal').reply(200, { ok: true });
 
       const client = new HttpClient({
         name: 'observed',
@@ -770,7 +779,7 @@ describe('HttpClient', () => {
       const observed = collectEvents();
       const cache = makeCacheStore();
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=60' });
 
@@ -808,7 +817,7 @@ describe('HttpClient', () => {
       const observed = collectEvents();
       const cache = makeCacheStore();
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-304')
         .reply(
           200,
@@ -826,7 +835,7 @@ describe('HttpClient', () => {
       observed.events.length = 0;
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-304')
         .matchHeader('If-None-Match', '"cache-304"')
         .reply(304, '', { 'Cache-Control': 'max-age=60' });
@@ -868,7 +877,7 @@ describe('HttpClient', () => {
       const observed = collectEvents();
       const cache = makeCacheStore();
 
-      nock(baseUrl).get('/observed-cache-swr').reply(
+      mockHttp(baseUrl).get('/observed-cache-swr').reply(
         200,
         { version: 1 },
         {
@@ -887,7 +896,7 @@ describe('HttpClient', () => {
       observed.events.length = 0;
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-swr')
         .matchHeader('If-None-Match', '"swr-1"')
         .reply(200, { version: 2 }, { 'Cache-Control': 'max-age=60' });
@@ -930,7 +939,7 @@ describe('HttpClient', () => {
       const observed = collectEvents();
       const cache = makeCacheStore();
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-sie')
         .reply(
           200,
@@ -948,7 +957,7 @@ describe('HttpClient', () => {
       observed.events.length = 0;
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-sie')
         .reply(500, { message: 'Server error' });
 
@@ -989,7 +998,7 @@ describe('HttpClient', () => {
       const observed = collectEvents();
       const cache = makeCacheStore();
 
-      nock(baseUrl).get('/observed-cache-swr-error').reply(
+      mockHttp(baseUrl).get('/observed-cache-swr-error').reply(
         200,
         { version: 1 },
         {
@@ -1008,7 +1017,7 @@ describe('HttpClient', () => {
       observed.events.length = 0;
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cache-swr-error')
         .matchHeader('If-None-Match', '"swr-error-1"')
         .reply(503, { message: 'Try later' });
@@ -1034,7 +1043,7 @@ describe('HttpClient', () => {
 
     test('emits retry scheduled and exhausted events', async () => {
       const scheduled = collectEvents();
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-retry-success')
         .reply(500, { message: 'fail' })
         .get('/observed-retry-success')
@@ -1058,7 +1067,7 @@ describe('HttpClient', () => {
       );
 
       const exhausted = collectEvents();
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-retry-exhausted')
         .times(2)
         .reply(500, { message: 'fail' });
@@ -1088,8 +1097,10 @@ describe('HttpClient', () => {
 
     test('does not call retryCondition again when emitting retry exhausted', async () => {
       const observed = collectEvents();
-      const retryCondition = vi.fn(() => true);
-      nock(baseUrl)
+      const retryCondition = vi.fn(
+        (_context: unknown, _attempt: number) => true,
+      );
+      mockHttp(baseUrl)
         .get('/observed-retry-condition-count')
         .times(2)
         .reply(500, { message: 'fail' });
@@ -1127,8 +1138,10 @@ describe('HttpClient', () => {
 
     test('does not call retryCondition when no retry attempt is available', async () => {
       const observed = collectEvents();
-      const retryCondition = vi.fn(() => true);
-      nock(baseUrl)
+      const retryCondition = vi.fn(
+        (_context: unknown, _attempt: number) => true,
+      );
+      mockHttp(baseUrl)
         .get('/observed-retry-condition-no-attempts')
         .reply(500, { message: 'fail' });
 
@@ -1171,7 +1184,7 @@ describe('HttpClient', () => {
         },
       } as const;
 
-      nock(baseUrl).get('/observed-rate-wait').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-rate-wait').reply(200, { ok: true });
 
       const waitClient = new HttpClient({
         name: 'observed',
@@ -1224,7 +1237,7 @@ describe('HttpClient', () => {
       );
 
       const cooldownObserved = collectEvents();
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/observed-cooldown-source')
         .reply(429, { message: 'slow down' }, { 'Retry-After': '1' });
 
@@ -1257,7 +1270,7 @@ describe('HttpClient', () => {
       );
 
       const cooldownWaitObserved = collectEvents();
-      nock(baseUrl).get('/observed-cooldown-wait').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-cooldown-wait').reply(200, { ok: true });
 
       const cooldownWaitClient = new HttpClient({
         name: 'observed',
@@ -1340,7 +1353,10 @@ describe('HttpClient', () => {
         },
       } as const;
 
-      nock(baseUrl).get('/observed-dedupe').delay(20).reply(200, { ok: true });
+      mockHttp(baseUrl)
+        .get('/observed-dedupe')
+        .delay(20)
+        .reply(200, { ok: true });
 
       const client = new HttpClient({
         name: 'observed',
@@ -1366,7 +1382,7 @@ describe('HttpClient', () => {
     });
 
     test('swallows observer errors without affecting request results', async () => {
-      nock(baseUrl).get('/observed-swallow-sync').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-swallow-sync').reply(200, { ok: true });
       const throwingClient = new HttpClient({
         name: 'observed',
         observability: {
@@ -1380,7 +1396,7 @@ describe('HttpClient', () => {
         throwingClient.get(`${baseUrl}/observed-swallow-sync`),
       ).resolves.toEqual({ ok: true });
 
-      nock(baseUrl).get('/observed-swallow-async').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-swallow-async').reply(200, { ok: true });
       const rejectingClient = new HttpClient({
         name: 'observed',
         observability: {
@@ -1399,7 +1415,7 @@ describe('HttpClient', () => {
       const observedEvents: Array<HttpClientEvent> = [];
       const timeout = Symbol('timeout');
 
-      nock(baseUrl).get('/observed-unawaited').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/observed-unawaited').reply(200, { ok: true });
 
       const client = new HttpClient({
         name: 'observed',
@@ -1499,7 +1515,7 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/dedupe-race')
       .query({ page: '1' })
       .delay(50)
@@ -1561,7 +1577,7 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    nock(baseUrl)
+    mockHttp(baseUrl)
       .get('/dedupe-failure')
       .reply(503, { message: 'Service unavailable' }, { 'Retry-After': '0' });
 
@@ -1687,6 +1703,9 @@ describe('HttpClient', () => {
       let registerOrJoinCalls = 0;
 
       const dedupeStoreStub = {
+        async register() {
+          return 'owner-job';
+        },
         async waitFor() {
           waitForCalls += 1;
 
@@ -1786,7 +1805,7 @@ describe('HttpClient', () => {
         cache: { store: cache },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/cached-pending')
         .reply(200, { ok: true }, { 'Cache-Control': 'max-age=60' });
 
@@ -2117,7 +2136,7 @@ describe('HttpClient', () => {
       },
     } as const;
 
-    nock(baseUrl).get('/signal-wait').reply(200, { ok: true });
+    mockHttp(baseUrl).get('/signal-wait').reply(200, { ok: true });
 
     const client = new HttpClient({
       name: 'test',
@@ -2133,7 +2152,7 @@ describe('HttpClient', () => {
   });
 
   test('should use atomic acquire when rate-limit store provides it', async () => {
-    nock(baseUrl).get('/atomic-acquire').reply(200, { ok: true });
+    mockHttp(baseUrl).get('/atomic-acquire').reply(200, { ok: true });
 
     const acquireStore = {
       async canProceed() {
@@ -2255,7 +2274,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/data')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=60' });
 
@@ -2271,12 +2290,12 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/fresh')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
 
       const result1 = await client.get(`${baseUrl}/fresh`);
-      // No second nock — if it fetches, nock will throw
+      // No second fixture — an unexpected fetch will throw
       const result2 = await client.get(`${baseUrl}/fresh`);
 
       expect(result1).toEqual({ id: 1 });
@@ -2290,7 +2309,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-store')
         .reply(200, { id: 1 }, { 'Cache-Control': 'no-store' });
 
@@ -2311,7 +2330,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/ignore-no-store')
         .reply(200, { id: 1 }, { 'Cache-Control': 'no-store, max-age=60' });
 
@@ -2329,7 +2348,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/etag-data')
         .reply(
           200,
@@ -2342,7 +2361,7 @@ describe('HttpClient', () => {
       // Advance past freshness
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/etag-data')
         .matchHeader('If-None-Match', '"abc123"')
         .reply(304, '', { 'Cache-Control': 'max-age=60' });
@@ -2358,7 +2377,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl).get('/lm-data').reply(
+      mockHttp(baseUrl).get('/lm-data').reply(
         200,
         { id: 2 },
         {
@@ -2371,7 +2390,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/lm-data')
         .matchHeader('If-Modified-Since', 'Mon, 01 Jan 2024 00:00:00 GMT')
         .reply(304, '', { 'Cache-Control': 'max-age=60' });
@@ -2388,7 +2407,7 @@ describe('HttpClient', () => {
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
       // No ETag or Last-Modified
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-validators')
         .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=1' });
 
@@ -2396,7 +2415,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-validators')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60' });
 
@@ -2411,7 +2430,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl).get('/swr').reply(
+      mockHttp(baseUrl).get('/swr').reply(
         200,
         { v: 1 },
         {
@@ -2426,7 +2445,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
       // Background revalidation will happen
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr')
         .matchHeader('If-None-Match', '"swr1"')
         .reply(304, '', { 'Cache-Control': 'max-age=60' });
@@ -2447,7 +2466,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl).get('/swr-200').reply(
+      mockHttp(baseUrl).get('/swr-200').reply(
         200,
         { v: 1 },
         {
@@ -2460,7 +2479,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr-200')
         .reply(
           200,
@@ -2491,7 +2510,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl).get('/swr-lm').reply(
+      mockHttp(baseUrl).get('/swr-lm').reply(
         200,
         { v: 1 },
         {
@@ -2504,7 +2523,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr-lm')
         .matchHeader('If-Modified-Since', 'Mon, 01 Jan 2024 00:00:00 GMT')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=300' });
@@ -2531,7 +2550,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl).get('/swr-handler').reply(
+      mockHttp(baseUrl).get('/swr-handler').reply(
         200,
         { v: 1 },
         {
@@ -2544,7 +2563,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr-handler')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=300', ETag: '"h2"' });
 
@@ -2563,7 +2582,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl).get('/swr-fail').reply(
+      mockHttp(baseUrl).get('/swr-fail').reply(
         200,
         { v: 1 },
         {
@@ -2576,7 +2595,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl).get('/swr-fail').replyWithError('Network error');
+      mockHttp(baseUrl).get('/swr-fail').replyWithError('Network error');
 
       const result = await client.get(`${baseUrl}/swr-fail`);
       expect(result).toEqual({ v: 1 });
@@ -2592,7 +2611,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/sie')
         .reply(
           200,
@@ -2604,7 +2623,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl).get('/sie').reply(500, { message: 'Server error' });
+      mockHttp(baseUrl).get('/sie').reply(500, { message: 'Server error' });
 
       const result = await client.get(`${baseUrl}/sie`);
       expect(result).toEqual({ v: 1 });
@@ -2617,7 +2636,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/sie-net')
         .reply(
           200,
@@ -2630,11 +2649,11 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
       // Real fetch throws TypeError on network failures.
-      // nock's replyWithError creates a regular Error, so we mock fetch directly.
+      // The fixture's replyWithError creates a regular Error, so we mock fetch directly.
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi
-        .fn()
-        .mockRejectedValue(new TypeError('fetch failed'));
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+        new TypeError('fetch failed'),
+      );
 
       try {
         const result = await client.get(`${baseUrl}/sie-net`);
@@ -2651,14 +2670,14 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-cache')
         .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache', ETag: '"nc1"' });
 
       await client.get(`${baseUrl}/no-cache`);
 
       // Even though entry is "fresh", no-cache forces revalidation
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-cache')
         .matchHeader('If-None-Match', '"nc1"')
         .reply(304, '', { 'Cache-Control': 'no-cache', ETag: '"nc1"' });
@@ -2677,13 +2696,13 @@ describe('HttpClient', () => {
         cache: { store: cache, overrides: { ignoreNoCache: true } },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/ignore-no-cache')
         .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache, max-age=3600' });
 
       await client.get(`${baseUrl}/ignore-no-cache`);
 
-      // No second nock — should return cached value without fetching
+      // No second fixture — should return cached value without fetching
       const result = await client.get(`${baseUrl}/ignore-no-cache`);
       expect(result).toEqual({ v: 1 });
     });
@@ -2699,7 +2718,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/min-ttl')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
@@ -2721,7 +2740,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/max-ttl')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
 
@@ -2760,7 +2779,7 @@ describe('HttpClient', () => {
         dedupe: dedupeStub,
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/304-dedup')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"d1"' });
 
@@ -2769,7 +2788,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/304-dedup')
         .reply(304, '', { 'Cache-Control': 'max-age=60' });
 
@@ -2784,7 +2803,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl).get('/must-reval').reply(
+      mockHttp(baseUrl).get('/must-reval').reply(
         200,
         { v: 1 },
         {
@@ -2797,7 +2816,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/must-reval')
         .matchHeader('If-None-Match', '"mr1"')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60' });
@@ -2813,7 +2832,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/sie-4xx')
         .reply(
           200,
@@ -2825,7 +2844,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl).get('/sie-4xx').reply(404);
+      mockHttp(baseUrl).get('/sie-4xx').reply(404);
 
       await expect(client.get(`${baseUrl}/sie-4xx`)).rejects.toThrow(
         HttpClientError,
@@ -2843,7 +2862,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/transform-cache')
         .reply(200, { raw: 'value' }, { 'Cache-Control': 'max-age=60' });
 
@@ -2867,7 +2886,7 @@ describe('HttpClient', () => {
       });
 
       // TTL of 50 should be clamped to 100 (minimum)
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/clamp-min')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=50' });
 
@@ -2876,7 +2895,7 @@ describe('HttpClient', () => {
       expect(cache._store.get(hash1)?.ttl).toBe(100);
 
       // TTL of 500 should be clamped to 200 (maximum)
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/clamp-max')
         .reply(200, { id: 2 }, { 'Cache-Control': 'max-age=500' });
 
@@ -2892,7 +2911,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
-      nock(baseUrl).get('/no-headers').reply(200, { id: 1 });
+      mockHttp(baseUrl).get('/no-headers').reply(200, { id: 1 });
 
       await client.get(`${baseUrl}/no-headers`);
 
@@ -2933,7 +2952,7 @@ describe('HttpClient', () => {
         dedupe: dedupeStub,
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/sie-dedup')
         .reply(
           200,
@@ -2946,7 +2965,9 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl).get('/sie-dedup').reply(500, { message: 'Server error' });
+      mockHttp(baseUrl)
+        .get('/sie-dedup')
+        .reply(500, { message: 'Server error' });
 
       const result = await client.get(`${baseUrl}/sie-dedup`);
       expect(result).toEqual({ v: 1 });
@@ -3001,7 +3022,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/vary-match')
         .reply(
           200,
@@ -3024,7 +3045,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/vary-miss')
         .reply(
           200,
@@ -3037,7 +3058,7 @@ describe('HttpClient', () => {
       });
 
       // Different Accept header — should re-fetch
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/vary-miss')
         .reply(
           200,
@@ -3055,7 +3076,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/vary-star')
         .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=3600', Vary: '*' });
 
@@ -3064,7 +3085,7 @@ describe('HttpClient', () => {
       });
 
       // Even with identical headers, Vary: * always re-fetches
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/vary-star')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=3600', Vary: '*' });
 
@@ -3077,7 +3098,7 @@ describe('HttpClient', () => {
     test('user headers are sent with fetch', async () => {
       const client = new HttpClient({ name: 'test' });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/custom-headers')
         .matchHeader('x-custom', 'hello')
         .reply(200, { ok: true });
@@ -3095,7 +3116,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/merge-headers')
         .reply(200, { v: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"e1"' });
 
@@ -3106,7 +3127,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
       // Should send both user header and conditional header
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/merge-headers')
         .matchHeader('x-api-key', 'secret')
         .matchHeader('If-None-Match', '"e1"')
@@ -3125,7 +3146,7 @@ describe('HttpClient', () => {
       const cache = makeCacheStore();
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl).get('/swr-headers').reply(
+      mockHttp(baseUrl).get('/swr-headers').reply(
         200,
         { v: 1 },
         {
@@ -3141,7 +3162,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
 
       // Background revalidation should include user headers
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr-headers')
         .matchHeader('x-token', 'abc')
         .matchHeader('If-None-Match', '"s1"')
@@ -3189,7 +3210,7 @@ describe('HttpClient', () => {
     });
 
     test('falls back to globalThis.fetch when fetchFn is not provided', async () => {
-      nock(baseUrl).get('/default-fetch').reply(200, { default: true });
+      mockHttp(baseUrl).get('/default-fetch').reply(200, { default: true });
 
       const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ default: boolean }>(
@@ -3240,7 +3261,7 @@ describe('HttpClient', () => {
 
   describe('requestInterceptor', () => {
     test('interceptor can add headers', async () => {
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/intercepted')
         .matchHeader('Authorization', 'Bearer token123')
         .reply(200, { authed: true });
@@ -3289,7 +3310,7 @@ describe('HttpClient', () => {
     });
 
     test('async interceptor is awaited', async () => {
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/async-intercepted')
         .matchHeader('X-Async', 'resolved')
         .reply(200, { ok: true });
@@ -3311,7 +3332,7 @@ describe('HttpClient', () => {
     });
 
     test('no interceptor does not affect default path', async () => {
-      nock(baseUrl).get('/no-interceptor').reply(200, { ok: true });
+      mockHttp(baseUrl).get('/no-interceptor').reply(200, { ok: true });
 
       const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ ok: boolean }>(
@@ -3339,7 +3360,7 @@ describe('HttpClient', () => {
       let capturedUrl: string | undefined;
       let capturedStatus: number | undefined;
 
-      nock(baseUrl).get('/response-intercepted').reply(200, { v: 1 });
+      mockHttp(baseUrl).get('/response-intercepted').reply(200, { v: 1 });
 
       const client = new HttpClient({
         name: 'test',
@@ -3356,7 +3377,7 @@ describe('HttpClient', () => {
     });
 
     test('interceptor can replace the Response', async () => {
-      nock(baseUrl).get('/replace-response').reply(200, { original: true });
+      mockHttp(baseUrl).get('/replace-response').reply(200, { original: true });
 
       const client = new HttpClient({
         name: 'test',
@@ -3375,7 +3396,7 @@ describe('HttpClient', () => {
     });
 
     test('async interceptor is awaited', async () => {
-      nock(baseUrl).get('/async-response').reply(200, { v: 1 });
+      mockHttp(baseUrl).get('/async-response').reply(200, { v: 1 });
 
       const client = new HttpClient({
         name: 'test',
@@ -3392,7 +3413,9 @@ describe('HttpClient', () => {
     });
 
     test('no interceptor does not affect default path', async () => {
-      nock(baseUrl).get('/no-response-interceptor').reply(200, { ok: true });
+      mockHttp(baseUrl)
+        .get('/no-response-interceptor')
+        .reply(200, { ok: true });
 
       const client = new HttpClient({ name: 'test' });
       const result = await client.get<{ ok: boolean }>(
@@ -3402,7 +3425,9 @@ describe('HttpClient', () => {
     });
 
     test('interceptor errors propagate correctly', async () => {
-      nock(baseUrl).get('/response-interceptor-error').reply(200, { ok: true });
+      mockHttp(baseUrl)
+        .get('/response-interceptor-error')
+        .reply(200, { ok: true });
 
       const client = new HttpClient({
         name: 'test',
@@ -3419,7 +3444,7 @@ describe('HttpClient', () => {
     test('interceptor runs before responseTransformer', async () => {
       const callOrder: Array<string> = [];
 
-      nock(baseUrl).get('/order-check').reply(200, { v: 1 });
+      mockHttp(baseUrl).get('/order-check').reply(200, { v: 1 });
 
       const client = new HttpClient({
         name: 'test',
@@ -3440,7 +3465,7 @@ describe('HttpClient', () => {
 
   describe('interceptor integration', () => {
     test('requestInterceptor + responseInterceptor work together', async () => {
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/both-interceptors')
         .matchHeader('X-Request', 'added')
         .reply(200, { v: 1 });
@@ -3526,6 +3551,13 @@ describe('HttpClient', () => {
       };
 
       const cacheStoreStub = {
+        async setWithTags() {},
+        async invalidateByTag() {
+          return 0;
+        },
+        async invalidateByTags() {
+          return 0;
+        },
         async get() {
           return freshEntry;
         },
@@ -3564,6 +3596,13 @@ describe('HttpClient', () => {
       function makeCacheStore() {
         const store = new Map<string, { value: unknown; ttl: number }>();
         return {
+          async setWithTags() {},
+          async invalidateByTag() {
+            return 0;
+          },
+          async invalidateByTags() {
+            return 0;
+          },
           async get(hash: string) {
             return store.get(hash)?.value;
           },
@@ -3593,7 +3632,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl).get('/swr-interceptors').reply(
+      mockHttp(baseUrl).get('/swr-interceptors').reply(
         200,
         { v: 1 },
         {
@@ -3607,7 +3646,7 @@ describe('HttpClient', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/swr-interceptors')
         .reply(200, { v: 2 }, { 'Cache-Control': 'max-age=60', ETag: '"i2"' });
 
@@ -3626,6 +3665,13 @@ describe('HttpClient', () => {
       function makeCacheStore() {
         const store = new Map<string, { value: unknown; ttl: number }>();
         return {
+          async setWithTags() {},
+          async invalidateByTag() {
+            return 0;
+          },
+          async invalidateByTags() {
+            return 0;
+          },
           async get(hash: string) {
             return store.get(hash)?.value;
           },
@@ -3643,7 +3689,7 @@ describe('HttpClient', () => {
 
       const cache = makeCacheStore();
 
-      // Use a real nock for the initial request, then a custom fetchFn for bg revalidation
+      // Use an HTTP fixture for the initial request, then a custom fetchFn for bg revalidation
       let fetchCallCount = 0;
       const originalFetch = globalThis.fetch;
 
@@ -3652,7 +3698,7 @@ describe('HttpClient', () => {
         .mockImplementation((url: string, init?: RequestInit) => {
           fetchCallCount += 1;
           if (fetchCallCount === 1) {
-            // First call: use real fetch (nock will intercept)
+            // First call: use the fetch spy (the HTTP fixture will respond)
             return originalFetch(url, init);
           }
           // Second call: background revalidation
@@ -3674,7 +3720,7 @@ describe('HttpClient', () => {
         fetchFn: customFetch,
       });
 
-      nock(baseUrl).get('/swr-fetchfn').reply(
+      mockHttp(baseUrl).get('/swr-fetchfn').reply(
         200,
         { v: 1 },
         {
@@ -3697,7 +3743,7 @@ describe('HttpClient', () => {
   describe('retry', () => {
     describe('basic retry behavior', () => {
       test('retries on 500 and succeeds on next attempt', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-500')
           .reply(500, { message: 'Internal Server Error' })
           .get('/retry-500')
@@ -3714,7 +3760,7 @@ describe('HttpClient', () => {
       });
 
       test('retries on 502', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-502')
           .reply(502, { message: 'Bad Gateway' })
           .get('/retry-502')
@@ -3731,7 +3777,7 @@ describe('HttpClient', () => {
       });
 
       test('retries on 503', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-503')
           .reply(
             503,
@@ -3752,7 +3798,7 @@ describe('HttpClient', () => {
       });
 
       test('retries on 504', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-504')
           .reply(504, { message: 'Gateway Timeout' })
           .get('/retry-504')
@@ -3798,12 +3844,12 @@ describe('HttpClient', () => {
         expect(result).toEqual({ ok: true });
         expect(callCount).toBe(2);
         expect(retryCalls).toHaveLength(1);
-        expect(retryCalls[0].url).toBe(`${baseUrl}/retry-network`);
-        expect(retryCalls[0].attempt).toBe(1);
+        expect(retryCalls[0]!.url).toBe(`${baseUrl}/retry-network`);
+        expect(retryCalls[0]!.attempt).toBe(1);
       });
 
       test('retries on 429 and respects Retry-After header', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-429')
           .reply(429, { message: 'Too many requests' }, { 'Retry-After': '0' })
           .get('/retry-429')
@@ -3833,7 +3879,9 @@ describe('HttpClient', () => {
       test.each([400, 401, 403, 404, 422])(
         'does NOT retry %i status',
         async (status) => {
-          nock(baseUrl).get('/no-retry').reply(status, { message: 'Error' });
+          mockHttp(baseUrl)
+            .get('/no-retry')
+            .reply(status, { message: 'Error' });
 
           const onRetry = vi.fn();
           const client = new HttpClient({
@@ -3867,7 +3915,7 @@ describe('HttpClient', () => {
 
     describe('configuration', () => {
       test('maxRetries honored — gives up after N attempts', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/max-retries')
           .times(3)
           .reply(500, { message: 'fail' });
@@ -3883,7 +3931,7 @@ describe('HttpClient', () => {
       });
 
       test('maxRetries: 0 disables retries', async () => {
-        nock(baseUrl).get('/no-retries').reply(500, { message: 'fail' });
+        mockHttp(baseUrl).get('/no-retries').reply(500, { message: 'fail' });
 
         const onRetry = vi.fn();
         const client = new HttpClient({
@@ -3898,7 +3946,7 @@ describe('HttpClient', () => {
       });
 
       test('constructor-level defaults used when no per-request override', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/ctor-defaults')
           .reply(500, { message: 'fail' })
           .get('/ctor-defaults')
@@ -3916,7 +3964,7 @@ describe('HttpClient', () => {
       });
 
       test('per-request override takes precedence over constructor', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/per-request-override')
           .reply(500, { message: 'fail' });
 
@@ -3944,7 +3992,9 @@ describe('HttpClient', () => {
       });
 
       test('retry: false on constructor disables globally', async () => {
-        nock(baseUrl).get('/global-disabled').reply(500, { message: 'fail' });
+        mockHttp(baseUrl)
+          .get('/global-disabled')
+          .reply(500, { message: 'fail' });
 
         const client = new HttpClient({ name: 'test', retry: false });
 
@@ -3954,7 +4004,7 @@ describe('HttpClient', () => {
       });
 
       test('retry: false on per-request disables for that call', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/per-request-disabled')
           .reply(500, { message: 'fail' });
 
@@ -3969,7 +4019,7 @@ describe('HttpClient', () => {
       });
 
       test('default config when retry: {} provided', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/default-config')
           .reply(500, { message: 'fail' })
           .get('/default-config')
@@ -3997,7 +4047,7 @@ describe('HttpClient', () => {
 
     describe('backoff', () => {
       test('exponential delay increases with jitter: none', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/backoff')
           .times(4)
           .reply(500, { message: 'fail' })
@@ -4023,7 +4073,7 @@ describe('HttpClient', () => {
       });
 
       test('delay capped at maxDelay', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/max-delay')
           .times(4)
           .reply(500, { message: 'fail' })
@@ -4050,7 +4100,7 @@ describe('HttpClient', () => {
       });
 
       test('Retry-After header overrides calculated backoff when larger', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/retry-after-override')
           .reply(429, { message: 'slow down' }, { 'Retry-After': '2' })
           .get('/retry-after-override')
@@ -4077,7 +4127,7 @@ describe('HttpClient', () => {
 
     describe('callbacks', () => {
       test('onRetry called with correct context, attempt, and delay', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/on-retry')
           .reply(503, { message: 'unavailable' })
           .get('/on-retry')
@@ -4109,14 +4159,16 @@ describe('HttpClient', () => {
 
         await client.get(`${baseUrl}/on-retry`);
         expect(calls).toHaveLength(1);
-        expect(calls[0].context.statusCode).toBe(503);
-        expect(calls[0].context.url).toBe(`${baseUrl}/on-retry`);
-        expect(calls[0].attempt).toBe(1);
-        expect(calls[0].delay).toBe(1);
+        expect(calls[0]!.context.statusCode).toBe(503);
+        expect(calls[0]!.context.url).toBe(`${baseUrl}/on-retry`);
+        expect(calls[0]!.attempt).toBe(1);
+        expect(calls[0]!.delay).toBe(1);
       });
 
       test('retryCondition returning false stops retries', async () => {
-        nock(baseUrl).get('/condition-false').reply(500, { message: 'fail' });
+        mockHttp(baseUrl)
+          .get('/condition-false')
+          .reply(500, { message: 'fail' });
 
         const client = new HttpClient({
           name: 'test',
@@ -4132,7 +4184,7 @@ describe('HttpClient', () => {
       });
 
       test('retryCondition can make normally non-retryable errors retryable', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/condition-override')
           .reply(404, { message: 'not found' })
           .get('/condition-override')
@@ -4158,7 +4210,7 @@ describe('HttpClient', () => {
       test('requestInterceptor runs on each retry attempt', async () => {
         let interceptorCalls = 0;
 
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/interceptor-retry')
           .matchHeader('Authorization', 'Bearer token-1')
           .reply(500, { message: 'fail' })
@@ -4187,7 +4239,7 @@ describe('HttpClient', () => {
       test('responseInterceptor runs on each retry attempt', async () => {
         let interceptorCalls = 0;
 
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/resp-interceptor-retry')
           .reply(500, { message: 'fail' })
           .get('/resp-interceptor-retry')
@@ -4213,6 +4265,13 @@ describe('HttpClient', () => {
         function makeCacheStore() {
           const store = new Map<string, { value: unknown; ttl: number }>();
           return {
+            async setWithTags() {},
+            async invalidateByTag() {
+              return 0;
+            },
+            async invalidateByTags() {
+              return 0;
+            },
             async get(hash: string) {
               return store.get(hash)?.value;
             },
@@ -4235,7 +4294,7 @@ describe('HttpClient', () => {
           retry: { maxRetries: 2, jitter: 'none', baseDelay: 1 },
         });
 
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/sie-retry')
           .reply(
             200,
@@ -4248,7 +4307,7 @@ describe('HttpClient', () => {
         vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
 
         // All retries also return 500
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/sie-retry')
           .times(3)
           .reply(500, { message: 'Server error' });
@@ -4258,7 +4317,7 @@ describe('HttpClient', () => {
       });
 
       test('errorHandler receives final error after retries exhausted', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/error-handler-retry')
           .times(3)
           .reply(500, { message: 'Server error' });
@@ -4289,7 +4348,9 @@ describe('HttpClient', () => {
       });
 
       test('AbortSignal cancels retry wait', async () => {
-        nock(baseUrl).get('/abort-retry-wait').reply(500, { message: 'fail' });
+        mockHttp(baseUrl)
+          .get('/abort-retry-wait')
+          .reply(500, { message: 'fail' });
 
         const controller = new AbortController();
 
@@ -4316,7 +4377,9 @@ describe('HttpClient', () => {
 
     describe('no retry by default', () => {
       test('does not retry when no retry config provided', async () => {
-        nock(baseUrl).get('/no-retry-default').reply(500, { message: 'fail' });
+        mockHttp(baseUrl)
+          .get('/no-retry-default')
+          .reply(500, { message: 'fail' });
 
         const client = new HttpClient({ name: 'test' });
 
@@ -4419,7 +4482,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
-      nock(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
+      mockHttp(baseUrl).get('/per-req-ttl').reply(200, { id: 1 });
 
       await client.get(`${baseUrl}/per-req-ttl`, { cache: { ttl: 120 } });
 
@@ -4438,7 +4501,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-min-ttl')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
@@ -4463,7 +4526,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-max-ttl')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=3600' });
 
@@ -4485,7 +4548,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-no-store')
         .reply(200, { id: 1 }, { 'Cache-Control': 'no-store, max-age=60' });
 
@@ -4505,7 +4568,7 @@ describe('HttpClient', () => {
       // Constructor does NOT set ignoreNoCache
       const client = new HttpClient({ name: 'test', cache: { store: cache } });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-no-cache')
         .reply(200, { v: 1 }, { 'Cache-Control': 'no-cache, max-age=3600' });
 
@@ -4513,7 +4576,7 @@ describe('HttpClient', () => {
         cache: { overrides: { ignoreNoCache: true } },
       });
 
-      // No second nock — should return cached value without fetching
+      // No second fixture — should return cached value without fetching
       const result = await client.get(`${baseUrl}/pr-no-cache`, {
         cache: { overrides: { ignoreNoCache: true } },
       });
@@ -4531,7 +4594,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-merge')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
@@ -4555,7 +4618,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true, ttl: 900 },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-304')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=1', ETag: '"v1"' });
 
@@ -4568,7 +4631,7 @@ describe('HttpClient', () => {
       // but calculateStoreTTL sees maxAge=1 → returns 1.
       // Without per-request cacheTTL the clamp would use constructor defaults.
       // With per-request minimumTTL we can observe the override.
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-304')
         .matchHeader('If-None-Match', '"v1"')
         .reply(304, '');
@@ -4593,7 +4656,7 @@ describe('HttpClient', () => {
       });
 
       // Initial response with SWR
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/pr-swr')
         .reply(
           200,
@@ -4607,7 +4670,7 @@ describe('HttpClient', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 2000);
 
       // Background revalidation will get fresh response
-      nock(baseUrl).get('/pr-swr').reply(200, { v: 2 });
+      mockHttp(baseUrl).get('/pr-swr').reply(200, { v: 2 });
 
       // This returns stale value but triggers background revalidation
       const result = await client.get(`${baseUrl}/pr-swr`, {
@@ -4635,7 +4698,7 @@ describe('HttpClient', () => {
         },
       });
 
-      nock(baseUrl)
+      mockHttp(baseUrl)
         .get('/no-override')
         .reply(200, { id: 1 }, { 'Cache-Control': 'max-age=10' });
 
@@ -4652,6 +4715,13 @@ describe('HttpClient', () => {
     function makeCacheStore() {
       const store = new Map<string, { value: unknown; ttl: number }>();
       return {
+        async setWithTags() {},
+        async invalidateByTag() {
+          return 0;
+        },
+        async invalidateByTags() {
+          return 0;
+        },
         async get(hash: string) {
           return store.get(hash)?.value;
         },
@@ -4684,7 +4754,7 @@ describe('HttpClient', () => {
           cache: { store: cache },
         });
 
-        nock(baseUrl).get('/scoped').reply(200, { v: 1 });
+        mockHttp(baseUrl).get('/scoped').reply(200, { v: 1 });
 
         await client.get(`${baseUrl}/scoped`);
 
@@ -4704,7 +4774,7 @@ describe('HttpClient', () => {
           cache: { store: cache, globalScope: true },
         });
 
-        nock(baseUrl).get('/global').reply(200, { v: 1 });
+        mockHttp(baseUrl).get('/global').reply(200, { v: 1 });
 
         await client.get(`${baseUrl}/global`);
 
@@ -4738,7 +4808,7 @@ describe('HttpClient', () => {
           dedupe: dedupeStub,
         });
 
-        nock(baseUrl).get('/scoped-dedupe').reply(200, { v: 1 });
+        mockHttp(baseUrl).get('/scoped-dedupe').reply(200, { v: 1 });
 
         await client.get(`${baseUrl}/scoped-dedupe`);
 
@@ -4759,8 +4829,8 @@ describe('HttpClient', () => {
           cache: { store: cache },
         });
 
-        nock(baseUrl).get('/shared').reply(200, { source: 'A' });
-        nock(baseUrl).get('/shared').reply(200, { source: 'B' });
+        mockHttp(baseUrl).get('/shared').reply(200, { source: 'A' });
+        mockHttp(baseUrl).get('/shared').reply(200, { source: 'B' });
 
         await clientA.get(`${baseUrl}/shared`);
         await clientB.get(`${baseUrl}/shared`);
@@ -4834,7 +4904,7 @@ describe('HttpClient', () => {
       });
 
       test('uses the custom resolver for canProceed, getWaitTime, and record', async () => {
-        nock(baseUrl).get('/api/issues').reply(200, { ok: true });
+        mockHttp(baseUrl).get('/api/issues').reply(200, { ok: true });
 
         const calls = {
           canProceed: [] as Array<string>,
@@ -4880,7 +4950,7 @@ describe('HttpClient', () => {
       });
 
       test('normalizes retrieve and list URLs into the same rate-limit bucket', async () => {
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/api/issue/4000-123')
           .reply(429, { message: 'slow down' }, { 'Retry-After': '1' });
 
@@ -5121,7 +5191,7 @@ describe('HttpClient', () => {
         });
 
         // Trigger a 429 with Retry-After to invoke applyServerRateLimitHints
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/cooldown-delegate')
           .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
 
@@ -5234,7 +5304,7 @@ describe('HttpClient', () => {
         });
 
         // Trigger a 429 to invoke applyServerRateLimitHints
-        nock(baseUrl)
+        mockHttp(baseUrl)
           .get('/cooldown-fallback')
           .reply(429, { message: 'slow down' }, { 'Retry-After': '5' });
 
@@ -5338,7 +5408,7 @@ describe('HttpClient', () => {
           rateLimit: { store: rateLimitStub, throw: false, maxWaitTime: 5000 },
         });
 
-        nock(baseUrl).get('/cooldown-enforce').reply(200, { ok: true });
+        mockHttp(baseUrl).get('/cooldown-enforce').reply(200, { ok: true });
 
         // Expired cooldown should be cleared and request should proceed
         const result = await client.get<{ ok: boolean }>(
@@ -5354,6 +5424,13 @@ describe('HttpClient', () => {
       test('passes name prefix to cache.clear by default', async () => {
         let clearArg: string | undefined;
         const cacheStub = {
+          async setWithTags() {},
+          async invalidateByTag() {
+            return 0;
+          },
+          async invalidateByTags() {
+            return 0;
+          },
           async get() {
             return undefined;
           },
@@ -5377,6 +5454,13 @@ describe('HttpClient', () => {
         let clearCalled = false;
         let clearArg: string | undefined = 'sentinel';
         const cacheStub = {
+          async setWithTags() {},
+          async invalidateByTag() {
+            return 0;
+          },
+          async invalidateByTags() {
+            return 0;
+          },
           async get() {
             return undefined;
           },
@@ -5416,8 +5500,8 @@ describe('HttpClient', () => {
           cache: { store: cache },
         });
 
-        nock(baseUrl).get('/shared-clear').reply(200, { source: 'A' });
-        nock(baseUrl).get('/shared-clear').reply(200, { source: 'B' });
+        mockHttp(baseUrl).get('/shared-clear').reply(200, { source: 'A' });
+        mockHttp(baseUrl).get('/shared-clear').reply(200, { source: 'B' });
 
         await clientA.get(`${baseUrl}/shared-clear`);
         await clientB.get(`${baseUrl}/shared-clear`);
@@ -5521,7 +5605,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+      mockHttp(baseUrl).get('/users').reply(200, { data: 'value' });
 
       await client.get(`${baseUrl}/users`, {
         cache: { tags: ['users'] },
@@ -5541,7 +5625,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl).get('/items').reply(200, { data: 'value' });
+      mockHttp(baseUrl).get('/items').reply(200, { data: 'value' });
 
       await client.get(`${baseUrl}/items`);
 
@@ -5562,7 +5646,7 @@ describe('HttpClient', () => {
         cache: { store: cache },
       });
 
-      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+      mockHttp(baseUrl).get('/users').reply(200, { data: 'value' });
 
       await client.get(`${baseUrl}/users`, {
         cache: { tags: ['users'] },
@@ -5582,7 +5666,7 @@ describe('HttpClient', () => {
         cache: { store: cache, globalScope: true },
       });
 
-      nock(baseUrl).get('/users').reply(200, { data: 'value' });
+      mockHttp(baseUrl).get('/users').reply(200, { data: 'value' });
 
       await client.get(`${baseUrl}/users`, {
         cache: { tags: ['users', 'user:123'] },
@@ -5661,5 +5745,93 @@ describe('HttpClient', () => {
       expect(invalidateCalls).toHaveLength(1);
       expect(invalidateCalls[0]!.args[0]).toBe('users');
     });
+  });
+
+  test('reports observed cooldown exhaustion without issuing a request', async () => {
+    const events: Array<HttpClientEvent> = [];
+    const client = new HttpClient({
+      name: 'cooldown-budget',
+      rateLimit: { throw: false, maxWaitTime: 0 },
+      observability: {
+        onEvent: (event) => {
+          events.push(event);
+        },
+      },
+    });
+    const privateClient = client as unknown as {
+      serverCooldowns: Map<string, number>;
+      resolveRateLimitKey(url: string): string;
+    };
+    privateClient.serverCooldowns.set(
+      privateClient.resolveRateLimitKey(baseUrl),
+      Date.now() + 1000,
+    );
+    await expect(client.get(`${baseUrl}/exhausted`)).rejects.toThrow(
+      /maxWaitTime/,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'rateLimit:throw',
+        source: 'serverCooldown',
+      }),
+    );
+  });
+
+  test('reports unusable legacy cache values before fetching a response', async () => {
+    const events: Array<HttpClientEvent> = [];
+    mockHttp(baseUrl).get('/legacy-cache').reply(200, { fresh: true });
+    const client = new HttpClient({
+      name: 'legacy-cache',
+      cache: {
+        store: {
+          get: async () => ({ legacy: true }),
+          set: async () => {},
+          setWithTags: async () => {},
+          invalidateByTag: async () => 0,
+          invalidateByTags: async () => 0,
+          delete: async () => {},
+          clear: async () => {},
+        },
+      },
+      observability: {
+        onEvent: (event) => {
+          events.push(event);
+        },
+      },
+    });
+    expect(await client.get(`${baseUrl}/legacy-cache`)).toEqual({
+      fresh: true,
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'cache:miss', cacheStatus: 'unusable' }),
+    );
+  });
+
+  test('emits and propagates errors thrown during client error generation', async () => {
+    const events: Array<HttpClientEvent> = [];
+    const failure = new Error('error generation failed');
+    const client = new HttpClient({
+      name: 'error-generation',
+      fetchFn: async () => {
+        throw new TypeError('network failed');
+      },
+      observability: {
+        onEvent: (event) => {
+          events.push(event);
+        },
+      },
+    });
+    vi.spyOn(
+      client as unknown as { generateClientError(error: unknown): Error },
+      'generateClientError',
+    ).mockImplementation(() => {
+      throw failure;
+    });
+    await expect(client.get(`${baseUrl}/generation-error`)).rejects.toBe(
+      failure,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'request:error', error: failure }),
+    );
   });
 });

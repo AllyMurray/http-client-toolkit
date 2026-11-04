@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, vi } from 'bun:test';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
@@ -5,7 +6,6 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   batchDeleteWithRetries,
   queryCountAllPages,

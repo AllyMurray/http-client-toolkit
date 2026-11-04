@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'bun:test';
 import * as dynamodb from './index.js';
 
 describe('store-dynamodb index exports', () => {

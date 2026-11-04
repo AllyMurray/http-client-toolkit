@@ -1,7 +1,7 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SQLiteCacheStore } from './sqlite-cache-store.js';
 
 describe('SQLiteCacheStore', () => {

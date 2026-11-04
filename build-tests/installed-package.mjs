@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   realpathSync,
   readdirSync,
@@ -35,43 +36,39 @@ const packed = tarballs.map((tarball) => ({
 }));
 
 try {
+  const overrides = { ...manifest.overrides };
+  for (const { tarball, manifest: pkg } of packed)
+    overrides[pkg.name] = `file:${tarball}`;
   writeFileSync(
     join(consumer, 'package.json'),
-    JSON.stringify({ private: true, packageManager: manifest.packageManager }),
+    JSON.stringify({
+      private: true,
+      packageManager: manifest.packageManager,
+      dependencies: Object.fromEntries([
+        ...packed.map(({ tarball, manifest: pkg }) => [
+          pkg.name,
+          `file:${tarball}`,
+        ]),
+        ['@types/node', manifest.devDependencies['@types/node']],
+      ]),
+      overrides,
+      trustedDependencies: manifest.trustedDependencies,
+    }),
   );
-  // All dependency edges must use the staged tarballs, including dependencies
-  // between packages. Merely adding them at the root still lets pnpm resolve
-  // nested toolkit dependencies from npm, where the next version does not exist.
-  const localOverrides = packed
-    .map(
-      ({ tarball, manifest: pkg }) =>
-        `  ${JSON.stringify(`${pkg.name}@${pkg.version}`)}: ${JSON.stringify(`file:${tarball}`)}`,
-    )
-    .join('\n');
-  const policy = readFileSync(
-    new URL('../pnpm-workspace.yaml', import.meta.url),
-    'utf8',
+  copyFileSync(
+    new URL('../bunfig.toml', import.meta.url),
+    join(consumer, 'bunfig.toml'),
   );
-  assert.match(policy, /^overrides:\s*$/m);
-  writeFileSync(
-    join(consumer, 'pnpm-workspace.yaml'),
-    policy.replace(/^overrides:\s*$/m, `overrides:\n${localOverrides}`),
+  mkdirSync(join(consumer, 'scripts'));
+  copyFileSync(
+    new URL('../scripts/release-age-scanner.mjs', import.meta.url),
+    join(consumer, 'scripts/release-age-scanner.mjs'),
   );
-  execFileSync(
-    'pnpm',
-    [
-      'add',
-      '--prod',
-      '--config.engineStrict=true',
-      ...tarballs,
-      `@types/node@${manifest.devDependencies['@types/node']}`,
-    ],
-    {
-      cwd: consumer,
-      stdio: 'inherit',
-      env: { ...process.env, npm_config_engine_strict: 'true' },
-    },
-  );
+  execFileSync('bun', ['install', '--production'], {
+    cwd: consumer,
+    stdio: 'inherit',
+    env: { ...process.env, npm_config_engine_strict: 'true' },
+  });
   const consumerRequire = createRequire(join(consumer, 'package.json'));
   const stagedCore = realpathSync(
     consumerRequire.resolve('@http-client-toolkit/core'),

@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   createServer,
   type Server,
@@ -10,7 +11,6 @@ import {
   InMemoryDedupeStore,
   InMemoryRateLimitStore,
 } from '@http-client-toolkit/store-memory';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDashboard } from './middleware.js';
 
 function startServer(

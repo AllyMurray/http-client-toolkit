@@ -1,5 +1,5 @@
+import { describe, it, expect, vi } from 'bun:test';
 import type { ServerResponse } from 'http';
-import { describe, it, expect, vi } from 'vitest';
 import {
   sendJson,
   sendError,
