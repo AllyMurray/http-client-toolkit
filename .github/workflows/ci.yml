@@ -23,6 +23,9 @@ jobs:
         with:
           node-version: 26.x
 
+      - name: Check Bun version consistency
+        run: node scripts/check-bun-version.mjs
+
       - name: Set up pinned Bun
         run: npm install --global "bun@$(cat "$GITHUB_WORKSPACE/.bun-version")"
 
@@ -46,7 +49,7 @@ jobs:
       - name: Test dependency policy
         run: |
           bun run test:dependency-policy
-          node --test build-tests/audit-dependencies.test.mjs build-tests/coverage.test.mjs
+          node --test build-tests/audit-dependencies.test.mjs build-tests/coverage.test.mjs build-tests/bun-version.test.mjs
 
       - name: Build packages
         run: bun run build

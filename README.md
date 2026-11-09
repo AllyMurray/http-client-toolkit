@@ -92,6 +92,9 @@ separate documentation project, Bun versions, and GitHub Actions through
   closed. Local registry tests verify this policy. Selected stable development-tool patches wait three
   days and can automerge after CI passes. Runtime, documentation, shared-config,
   peer, compiler, Bun, and major updates require review.
+- The Bun manager updates manifests and their matching lockfiles in each PR.
+  CI runs `node scripts/check-bun-version.mjs` before installing dependencies to
+  ensure `.bun-version` matches the root, workspace, and docs declarations.
 - Lockfile maintenance runs in the same overnight window, gets priority, and
   requires review. Security alert PRs bypass Renovate's schedule and release-age
   delay but still require review; installs continue to enforce the Bun policy.
@@ -108,9 +111,11 @@ changes also run the [strict config validator](https://docs.renovatebot.com/conf
 Consumer-facing dependency updates need an appropriate changeset before merging
 so the release workflow publishes the affected packages.
 
-The Renovate GitHub App must have access to this repository. Branch protection
-should require `validate`, `docs`, and every `consumers` matrix check; the path-filtered
-`validate-renovate` check only runs when its configuration changes.
+The Renovate GitHub App must have access to this repository. The active `Required CI on main` ruleset
+requires `validate`, `docs`, and every `consumers` matrix check against the current
+base branch. Only `github-actions[bot]` bypasses this rule so the release workflow
+can push its validated version commits. The path-filtered `validate-renovate`
+check only runs when its configuration changes.
 
 ### Compatibility exceptions
 
@@ -118,8 +123,8 @@ should require `validate`, `docs`, and every `consumers` matrix check; the path-
   `@typescript/typescript6` compatibility package supplies the compiler API for
   coverage analysis and installed-consumer checks. Source and test typechecks use
   native `bun check`. Node types follow Node 26.
-- `rimraf` stays on 6.1.3 until 6.1.4 meets the release-age policy. Its `glob`
-  dependency is overridden to the same patched version used by 6.1.4.
+- `rimraf` uses the patched glob 14 release through an override. The minimatch
+  override applies only to glob 14 so legacy glob keeps its compatible API.
 - The audit wrapper excludes only minimatch **3.1.5** for
   [GHSA-g3hv-75wg-m249](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249):
   that legacy version lacks the affected optimization algorithm. Affected
