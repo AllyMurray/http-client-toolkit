@@ -471,13 +471,13 @@ describe('InMemoryDedupeStore', () => {
     it('should handle completing non-existent jobs', async () => {
       await expect(
         store.complete('non-existent', 'value'),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('should handle failing non-existent jobs', async () => {
       await expect(
         store.fail('non-existent', new Error('Test')),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('should handle double completion', async () => {
