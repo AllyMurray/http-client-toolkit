@@ -140,8 +140,7 @@
       {
         "default": "generic"
       }
-    ],
-    "no-octal": "error"
+    ]
   },
   "overrides": [
     {

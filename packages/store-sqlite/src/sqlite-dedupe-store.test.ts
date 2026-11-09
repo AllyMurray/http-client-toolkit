@@ -351,13 +351,13 @@ describe('SQLiteDedupeStore', () => {
     it('should handle completing non-existent jobs', async () => {
       await expect(
         store.complete('non-existent', 'value'),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('should handle failing non-existent jobs', async () => {
       await expect(
         store.fail('non-existent', new Error('test')),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('should handle double completion', async () => {
@@ -366,7 +366,7 @@ describe('SQLiteDedupeStore', () => {
       await store.complete(hash, 'value1');
 
       // Second completion should not throw
-      await expect(store.complete(hash, 'value2')).resolves.not.toThrow();
+      await expect(store.complete(hash, 'value2')).resolves.toBeUndefined();
 
       const result = await store.waitFor(hash);
       expect(result).toBe('value1'); // First value should be preserved
