@@ -65,8 +65,8 @@
     "packages/*"
   ],
   "overrides": {
-    "@typescript-eslint/typescript-estree": {
-      "minimatch": "11.0.4"
+    "glob@^14.0.0": {
+      "minimatch": "11.0.5"
     },
     "rimraf": {
       "glob": "14.0.3"
