@@ -58,13 +58,13 @@ describe('DynamoDBCacheStore', () => {
     it('should delete values and clean up associated tags', async () => {
       ddbMock.on(DeleteCommand).resolvesOnce({});
       ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
-      await expect(store.delete('key1')).resolves.not.toThrow();
+      await expect(store.delete('key1')).resolves.toBeUndefined();
     });
 
     it('should handle deletion of non-existent keys', async () => {
       ddbMock.on(DeleteCommand).resolvesOnce({});
       ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
-      await expect(store.delete('non-existent')).resolves.not.toThrow();
+      await expect(store.delete('non-existent')).resolves.toBeUndefined();
     });
 
     it('should clear all cache values', async () => {
@@ -75,12 +75,12 @@ describe('DynamoDBCacheStore', () => {
         ],
       });
       ddbMock.on(BatchWriteCommand).resolvesOnce({});
-      await expect(store.clear()).resolves.not.toThrow();
+      await expect(store.clear()).resolves.toBeUndefined();
     });
 
     it('should handle clear with empty table', async () => {
       ddbMock.on(ScanCommand).resolvesOnce({ Items: [] });
-      await expect(store.clear()).resolves.not.toThrow();
+      await expect(store.clear()).resolves.toBeUndefined();
     });
 
     it('should use CACHE# and TAG# prefix filter when clearing without scope', async () => {
@@ -124,7 +124,7 @@ describe('DynamoDBCacheStore', () => {
         });
       ddbMock.on(BatchWriteCommand).resolves({});
 
-      await expect(store.clear()).resolves.not.toThrow();
+      await expect(store.clear()).resolves.toBeUndefined();
       expect(ddbMock.calls()).toHaveLength(4);
     });
 

@@ -642,7 +642,7 @@ describe('SqliteAdaptiveRateLimitStore', () => {
     it('clearCooldown does not throw for a non-existent origin', async () => {
       await expect(
         store.clearCooldown('non-existent.example.com'),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('clear() also removes all server cooldowns', async () => {

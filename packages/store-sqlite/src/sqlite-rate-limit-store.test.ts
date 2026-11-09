@@ -421,7 +421,7 @@ describe('SQLiteRateLimitStore', () => {
     });
 
     it('should handle reset of non-existent resource', async () => {
-      await expect(store.reset('non-existent')).resolves.not.toThrow();
+      await expect(store.reset('non-existent')).resolves.toBeUndefined();
     });
 
     it('should handle status of non-existent resource', async () => {
@@ -738,7 +738,7 @@ describe('SQLiteRateLimitStore', () => {
     it('clearCooldown does not throw for a non-existent origin', async () => {
       await expect(
         store.clearCooldown('non-existent.example.com'),
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
 
     it('clear() also removes all server cooldowns', async () => {
