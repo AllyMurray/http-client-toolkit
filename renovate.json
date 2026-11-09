@@ -135,8 +135,8 @@
       "automerge": false
     },
     {
-      "description": "Keep every packageManager declaration on the same reviewed Bun release.",
-      "matchManagers": ["npm"],
+      "description": "Keep the runtime pin and every packageManager declaration on the same reviewed Bun release.",
+      "matchManagers": ["npm", "custom.regex"],
       "matchDepTypes": ["packageManager"],
       "matchPackageNames": ["bun"],
       "groupName": "bun",
