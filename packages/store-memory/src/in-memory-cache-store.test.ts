@@ -48,7 +48,7 @@ describe('InMemoryCacheStore', () => {
     });
 
     it('should handle deletion of non-existent keys', async () => {
-      await expect(store.delete('non-existent')).resolves.not.toThrow();
+      await expect(store.delete('non-existent')).resolves.toBeUndefined();
     });
 
     it('should clear all values', async () => {

@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "tsdown && bun run test",
-    "lint": "bun lint --no-script src",
+    "lint": "oxlint src",
     "test": "bun test ./src",
     "test:coverage": "bun test --coverage ./src && node ../../scripts/check-coverage.mjs",
     "test:watch": "bun test --watch ./src",

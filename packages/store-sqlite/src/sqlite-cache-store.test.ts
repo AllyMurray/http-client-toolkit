@@ -53,7 +53,7 @@ describe('SQLiteCacheStore', () => {
     });
 
     it('should handle deletion of non-existent keys', async () => {
-      await expect(store.delete('non-existent')).resolves.not.toThrow();
+      await expect(store.delete('non-existent')).resolves.toBeUndefined();
     });
 
     it('should clear all values', async () => {
@@ -675,7 +675,7 @@ describe('SQLiteCacheStore', () => {
 
         await expect(
           smallLimitStore.set('too-big', largeValue, 60),
-        ).resolves.not.toThrow();
+        ).resolves.toBeUndefined();
 
         const value = await smallLimitStore.get('too-big');
         expect(value).toBeUndefined();
