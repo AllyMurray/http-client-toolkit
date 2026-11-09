@@ -412,7 +412,7 @@ describe('InMemoryRateLimitStore', () => {
     });
 
     it('should handle reset of non-existent resource', async () => {
-      await expect(store.reset('non-existent')).resolves.not.toThrow();
+      await expect(store.reset('non-existent')).resolves.toBeUndefined();
     });
 
     it('should handle status of non-existent resource', async () => {
