@@ -59,7 +59,7 @@
   "bugs": {
     "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
   },
-  "packageManager": "bun@1.4.4-canary.20261104.1",
+  "packageManager": "bun@1.4.4",
   "workspaces": [
     "packages/*"
   ],
