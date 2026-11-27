@@ -24,7 +24,7 @@
     "@types/node": "26.6.6",
     "typescript": "7.0.2",
     "@repo/tsdown-config": "workspace:*",
-    "tsdown": "0.23.5"
+    "tsdown": "0.23.7"
   },
   "dependencies": {
     "@http-client-toolkit/core": "workspace:*",
