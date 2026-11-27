@@ -93,17 +93,17 @@ describe('SQLiteCacheStore', () => {
 
   describe('TTL functionality', () => {
     it('should expire values after TTL', async () => {
-      await store.set('key1', 'value1', 0.05); // 50ms TTL
-
-      // Should be available immediately
-      let value = await store.get('key1');
-      expect(value).toBe('value1');
-
-      // Wait for expiration
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      value = await store.get('key1');
-      expect(value).toBeUndefined();
+      const start = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+      try {
+        await store.set('key1', 'value1', 0.05);
+        clock.mockReturnValue(start + 49);
+        expect(await store.get('key1')).toBe('value1');
+        clock.mockReturnValue(start + 50);
+        expect(await store.get('key1')).toBeUndefined();
+      } finally {
+        clock.mockRestore();
+      }
     });
 
     it('should not expire values before TTL', async () => {

@@ -86,18 +86,21 @@ separate documentation project, Bun versions, and GitHub Actions through
 `iracing-data-client`, adapted to this monorepo:
 
 - Ordinary updates run between midnight and 06:00 Europe/London, with at most
-  five open PRs and two new PRs per hour. The Dependency Dashboard tracks updates.
+  two new PRs per hour and no cap on open PRs. The Dependency Dashboard tracks
+  updates.
+- GitHub automatically merges minor and patch updates after required CI passes.
+  This includes pre-1.0 packages, Bun, and GitHub Actions. Major updates require
+  manual review.
 - Both Bun installs and Renovate updates enforce a one-day release age, including
   transitive dependencies and frozen lockfiles; missing publication dates fail
-  closed. Local registry tests verify this policy. Selected stable development-tool patches wait three
-  days and can automerge after CI passes. Runtime, documentation, shared-config,
-  peer, compiler, Bun, and major updates require review.
+  closed. Local registry tests verify this policy. Stable development-tool
+  patches for `eslint-*`, `vite`, and `rimraf` wait three days.
 - The Bun manager updates manifests and their matching lockfiles in each PR.
   CI runs `node scripts/check-bun-version.mjs` before installing dependencies to
   ensure `.bun-version` matches the root, workspace, and docs declarations.
 - Lockfile maintenance runs in the same overnight window, gets priority, and
-  requires review. Security alert PRs bypass Renovate's schedule and release-age
-  delay but still require review; installs continue to enforce the Bun policy.
+  automerges after required CI passes. Security alert PRs bypass Renovate's
+  schedule and release-age delay. Installs still enforce the Bun policy.
 - Node engines and the CI runtime remain deliberate decisions; Node types follow
   the Node 26 development runtime. Peer dependency ranges are widened to preserve
   consumer support.

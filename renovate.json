@@ -1,24 +1,24 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "enabledManagers": ["npm", "bun", "github-actions", "custom.regex"],
+  "enabledManagers": ["npm", "bun", "github-actions", "bun-version"],
   "dependencyDashboard": true,
   "timezone": "Europe/London",
   "schedule": ["* 0-5 * * *"],
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 0,
   "prHourlyLimit": 2,
   "labels": ["dependencies"],
   "separateMajorMinor": true,
   "separateMinorPatch": false,
   "automerge": false,
   "automergeType": "pr",
-  "platformAutomerge": false,
+  "platformAutomerge": true,
   "ignoreTests": false,
   "rebaseWhen": "behind-base-branch",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["* 0-5 * * *"],
-    "automerge": false
+    "automerge": true
   },
   "vulnerabilityAlerts": {
     "enabled": true,
@@ -27,10 +27,14 @@
     "prConcurrentLimit": 0,
     "prCreation": "immediate",
     "dependencyDashboardApproval": false,
-    "minimumReleaseAge": null,
-    "automerge": false
+    "minimumReleaseAge": null
   },
   "packageRules": [
+    {
+      "description": "Automatically merge minor and patch updates after required CI passes.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
     {
       "description": "Wait 24 hours before proposing ordinary npm updates and reject releases with missing timestamps.",
       "matchDatasources": ["npm"],
@@ -39,7 +43,7 @@
       "internalChecksFilter": "strict"
     },
     {
-      "description": "Prioritize transitive refreshes over ordinary version bumps; review lockfile maintenance manually.",
+      "description": "Prioritize transitive refreshes over ordinary version bumps.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "prPriority": 10
     },
@@ -51,11 +55,17 @@
       "groupName": "lint and formatting tools"
     },
     {
-      "description": "Coordinate compiler and build updates across workspaces and the root TypeScript override.",
+      "description": "Coordinate compiler and build updates across workspaces.",
       "matchManagers": ["npm", "bun"],
       "matchUpdateTypes": ["minor", "patch"],
-      "matchPackageNames": ["typescript", "tsdown", "tsx", "esbuild", "turbo"],
+      "matchPackageNames": ["typescript", "@typescript/typescript6", "tsdown", "tsx", "esbuild", "turbo"],
       "groupName": "typescript and build tooling"
+    },
+    {
+      "description": "Keep the TS6 compiler API on its compatible major version.",
+      "matchManagers": ["npm", "bun"],
+      "matchPackageNames": ["@typescript/typescript6"],
+      "allowedVersions": ">=6.0.0 <7.0.0"
     },
     {
       "matchManagers": ["npm", "bun"],
@@ -65,7 +75,7 @@
       "groupName": "type definitions"
     },
     {
-      "description": "Separate stable development-tool patches from minor updates so only patches qualify for automerge.",
+      "description": "Track stable development-tool patches separately so they can use a longer release age.",
       "matchManagers": ["npm", "bun"],
       "matchDepTypes": ["devDependencies"],
       "matchCurrentVersion": ">=1.0.0",
@@ -73,7 +83,7 @@
       "separateMinorPatch": true
     },
     {
-      "description": "Automerge selected stable development-tool patches after three days and passing CI.",
+      "description": "Wait three days before merging selected stable development-tool patches.",
       "matchManagers": ["npm", "bun"],
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["patch"],
@@ -81,15 +91,13 @@
       "matchPackageNames": ["eslint-*", "vite", "rimraf"],
       "groupName": "development tooling patches",
       "minimumReleaseAge": "3 days",
-      "constraintsFiltering": "strict",
-      "automerge": true
+      "constraintsFiltering": "strict"
     },
     {
-      "description": "Runtime, documentation, and shared-config dependencies require review and must respect declared Node engines.",
+      "description": "Respect declared Node engines for runtime, documentation, and shared-config dependencies.",
       "matchManagers": ["npm", "bun"],
       "matchDepTypes": ["dependencies", "optionalDependencies"],
-      "constraintsFiltering": "strict",
-      "automerge": false
+      "constraintsFiltering": "strict"
     },
     {
       "description": "Preserve existing consumer support when proposing peer range extensions.",
@@ -97,15 +105,13 @@
       "matchDepTypes": ["peerDependencies"],
       "rangeStrategy": "widen",
       "groupName": null,
-      "groupSlug": null,
-      "automerge": false
+      "groupSlug": null
     },
     {
       "description": "Keep Node types aligned with the Node 26 development and CI runtime.",
       "matchManagers": ["npm", "bun"],
       "matchPackageNames": ["@types/node"],
-      "allowedVersions": ">=26.0.0 <27.0.0",
-      "automerge": false
+      "allowedVersions": ">=26.0.0 <27.0.0"
     },
     {
       "description": "Node support is a deliberate library compatibility decision.",
@@ -120,12 +126,11 @@
       "enabled": false
     },
     {
-      "description": "Pre-1.0 upgrades may break compatibility even in patches; keep unrelated packages separate and manually reviewed.",
+      "description": "Keep unrelated pre-1.0 packages separate so CI checks each upgrade independently.",
       "matchManagers": ["npm", "bun"],
       "matchCurrentVersion": "<1.0.0",
       "groupName": null,
-      "groupSlug": null,
-      "automerge": false
+      "groupSlug": null
     },
     {
       "description": "Unrelated major upgrades stay separate and require review.",
@@ -135,34 +140,22 @@
       "automerge": false
     },
     {
-      "description": "Keep the runtime pin and every packageManager declaration on the same reviewed Bun release.",
-      "matchManagers": ["npm", "bun", "custom.regex"],
-      "matchDepTypes": ["packageManager"],
+      "description": "Keep the runtime pin and every packageManager declaration on the same Bun release.",
+      "matchManagers": ["npm", "bun", "bun-version"],
       "matchPackageNames": ["bun"],
       "groupName": "bun",
       "groupSlug": "bun",
-      "automerge": false
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
     },
     {
-      "description": "Review GitHub Actions updates together, including majors, matching the reference repositories' committed policy.",
+      "description": "Group GitHub Actions updates, keeping majors separate from minor and patch updates.",
       "matchManagers": ["github-actions"],
       "matchDatasources": ["github-tags"],
       "groupName": "github actions",
       "groupSlug": "github-actions",
-      "separateMajorMinor": false,
-      "separateMinorPatch": false,
-      "automerge": false
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.bun-version$/"],
-      "matchStrings": ["(?<currentValue>\\d+\\.\\d+\\.\\d+(?:-[^\\s]+)?)"],
-      "depNameTemplate": "bun",
-      "depTypeTemplate": "packageManager",
-      "datasourceTemplate": "npm",
-      "versioningTemplate": "npm"
+      "separateMajorMinor": true,
+      "separateMinorPatch": false
     }
   ]
 }
