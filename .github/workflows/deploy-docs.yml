@@ -3,21 +3,24 @@ name: Deploy Documentation
 on:
   push:
     branches: [main]
-    paths: ['docs-site/**']
+    paths: ['docs-site/**', '.github/workflows/deploy-docs.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  pages: read
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
+    env:
+      ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
+    outputs:
+      artifact_name: ${{ env.ARTIFACT_NAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -42,8 +45,21 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
+          name: ${{ env.ARTIFACT_NAME }}
           path: docs-site/dist
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact_name }}
