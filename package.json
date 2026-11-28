@@ -60,7 +60,7 @@
   "bugs": {
     "url": "https://github.com/AllyMurray/http-client-toolkit/issues"
   },
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "workspaces": [
     "packages/*"
   ],
