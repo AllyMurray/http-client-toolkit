@@ -21,7 +21,7 @@
     "organization": false
   },
   "devDependencies": {
-    "@types/node": "26.6.6",
+    "@types/node": "26.6.11",
     "rimraf": "6.1.4",
     "typescript": "7.0.2",
     "@repo/tsdown-config": "workspace:*",
